@@ -21,6 +21,8 @@ const COIN = "/kash/kash-plus-coin.png";
 
 interface KashCardProps {
   onBuy: () => void;
+  /** Open the Send Kash modal. */
+  onSend: () => void;
   /** Settle accrued points into KSH now. Absent while there is nothing to claim. */
   onClaim?: () => void;
   claiming?: boolean;
@@ -37,6 +39,7 @@ interface KashCardProps {
 // a way a bare lock never does.
 export function KashCard({
   onBuy,
+  onSend,
   onClaim,
   claiming,
   onConvert,
@@ -181,8 +184,12 @@ export function KashCard({
         >
           {t("buy")}
         </button>
-        {/* Send is off the card for now. The modal and its wiring stay; only
-            the door is gone, so restoring it is this one button. */}
+        <button
+          onClick={onSend}
+          className="flex-1 cursor-pointer rounded-xl border border-white/14 bg-white/6 px-4 py-2.5 font-sans text-[13px] font-medium text-white transition-colors hover:border-white/22 hover:bg-white/10"
+        >
+          {t("send")}
+        </button>
         <button
           onClick={onConvert}
           className="flex-1 cursor-pointer rounded-xl border border-white/14 bg-white/6 px-4 py-2.5 font-sans text-[13px] font-medium text-white transition-colors hover:border-white/22 hover:bg-white/10"

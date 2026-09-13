@@ -266,6 +266,7 @@ export function PortfolioView({
         <BalanceCard onOpenFunds={onOpenFunds} onOpenWithdraw={onOpenWithdraw} />
         <KashCard
           onBuy={() => setKashModal("buy")}
+          onSend={() => setKashModal("send")}
           onClaim={
             kashWallet
               ? () =>
