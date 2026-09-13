@@ -33,9 +33,11 @@ export const CASHIER_KEYS = {
 // The config is deployment state, not user state; it changes when the backend
 // team flips it on, so an occasional re-read is plenty.
 const CONFIG_STALE_MS = 5 * 60_000;
-// Stakes lock and settle server-side, so the balance moves without any local
-// action; poll it while a cashier screen is mounted.
-const BALANCE_POLL_MS = 15_000;
+// Money-changing actions invalidate this query immediately. This slower poll
+// is only a repair path for a settlement or deposit confirmation missed while
+// the client was disconnected.
+export const CASHIER_BALANCE_STALE_MS = 60_000;
+export const CASHIER_BALANCE_POLL_MS = 2 * 60_000;
 
 // The service wants the deposit transfer at its confirmation depth before it
 // credits, so the first confirm right after the send can legitimately fail.
@@ -90,8 +92,13 @@ export function useChessCashierStatus() {
     // again or links the wallet, so stop there instead of hammering the route.
     retry: (failureCount, error) =>
       !isCashierAccessDenied(error) && !isCashierUnavailable(error) && failureCount < 4,
+    staleTime: CASHIER_BALANCE_STALE_MS,
     refetchInterval: (query) =>
-      isCashierAccessDenied(query.state.error) ? false : BALANCE_POLL_MS,
+      isCashierAccessDenied(query.state.error) ? false : CASHIER_BALANCE_POLL_MS,
+    refetchIntervalInBackground: false,
+    // Refresh when the user returns without keeping an active game on a short
+    // polling loop.
+    refetchOnWindowFocus: true,
   });
 
   return {

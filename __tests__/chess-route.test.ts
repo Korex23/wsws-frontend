@@ -132,7 +132,7 @@ describe("chess proxy route", () => {
     }
   });
 
-  it("prefers the platform gateway over the legacy public chess url", async () => {
+  it("pins deployed chess requests to the staging gateway", async () => {
     vi.stubEnv("NODE_ENV", "production");
     auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
@@ -150,7 +150,7 @@ describe("chess proxy route", () => {
       expect(res.status).toBe(200);
       const [url] = (global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock
         .calls[0];
-      expect(url).toBe("https://staging.test/v1/chess/play?setup=hook");
+      expect(url).toBe("https://staging.tsionark.com/v1/chess/play?setup=hook");
     } finally {
       vi.unstubAllEnvs();
     }
@@ -159,12 +159,6 @@ describe("chess proxy route", () => {
   it("does not cache failed upstream reads", async () => {
     global.fetch = vi
       .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ success: false }), {
-          status: 404,
-          headers: { "content-type": "application/json" },
-        })
-      )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ success: false }), {
           status: 404,
@@ -183,7 +177,7 @@ describe("chess proxy route", () => {
 
     expect((await GET(request(), context)).status).toBe(404);
     expect((await GET(request(), context)).status).toBe(200);
-    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("never caches player coach state", async () => {

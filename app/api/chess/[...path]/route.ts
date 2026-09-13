@@ -12,12 +12,8 @@ import {
 import { detectRequestCountry } from "@/lib/server/ipinfo";
 import { lotterySchemaFor } from "@/lib/api/schemas/lottery";
 import { checkUpstream } from "@/lib/server/validate-upstream";
-import { wsapiService } from "@/lib/wsapi-base";
-import {
-  fetchUpstreamRead,
-  fetchUpstreamWrite,
-  upstreamCandidates,
-} from "@/lib/server/upstream-failover";
+import { chessUpstreamCandidates } from "@/lib/server/chess-upstream";
+import { fetchUpstreamRead, fetchUpstreamWrite } from "@/lib/server/upstream-failover";
 
 // Server-side proxy for the chess service on the platform gateway. Same
 // arrangement as the other service proxies in this app: routing through our
@@ -28,23 +24,7 @@ import {
 // spectator-visible, except per-caller reads such as cashier balance and the
 // caller's own bets. Writes act on a game or a cashier balance, so they need a
 // verified session and the wallet that session owns.
-// Each configured override can contain a comma-separated priority list. The
-// legacy public env remains in the pool so existing deployments keep working.
-const LOCAL_DEV_CHESS_API = "http://127.0.0.1:8082";
-const PLATFORM_CHESS_API = wsapiService("chess");
-const UPSTREAMS =
-  process.env.NODE_ENV === "development"
-    ? upstreamCandidates(
-        process.env.CHESS_API_URL,
-        LOCAL_DEV_CHESS_API,
-        PLATFORM_CHESS_API,
-        process.env.NEXT_PUBLIC_CHESS_API_URL
-      )
-    : upstreamCandidates(
-        PLATFORM_CHESS_API,
-        process.env.CHESS_API_URL,
-        process.env.NEXT_PUBLIC_CHESS_API_URL
-      );
+const UPSTREAMS = chessUpstreamCandidates();
 const NO_STORE = "no-store, max-age=0, must-revalidate";
 const COUNTRY_WRITE = /^(?:matches|matches\/[^/]+\/join|arenas\/[^/]+\/join|play\/computer)$/u;
 const PLAYER_PROFILE_WRITE = /^(?:matches|matches\/[^/]+\/join|computer\/matches|play\/computer)$/u;

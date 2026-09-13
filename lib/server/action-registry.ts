@@ -1,6 +1,7 @@
 import "server-only";
 import { wsapiService } from "@/lib/wsapi-base";
-import { fetchUpstreamRead, upstreamCandidates } from "@/lib/server/upstream-failover";
+import { chessUpstreamCandidates } from "@/lib/server/chess-upstream";
+import { fetchUpstreamRead } from "@/lib/server/upstream-failover";
 import { CONTRACTS as POLYMARKET, POLYGON_CHAIN_ID } from "@/lib/polymarket/config";
 
 // The activity feed reads raw token transfers, which only know a direction:
@@ -87,11 +88,7 @@ async function kashPaymentAddress(): Promise<string | null> {
 // deployment secret, but the cashier config exposes its address publicly, so it
 // is read at runtime like the KASH treasury. Same failure-tolerant shape.
 async function arkadeCashierAddress(): Promise<string | null> {
-  const upstreams = upstreamCandidates(
-    process.env.CHESS_API_URL,
-    process.env.NEXT_PUBLIC_CHESS_API_URL,
-    wsapiService("chess")
-  );
+  const upstreams = chessUpstreamCandidates();
   try {
     const res = await fetchUpstreamRead(
       upstreams,
