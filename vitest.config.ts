@@ -10,6 +10,7 @@ const shared = {
     ".next",
     "out",
     "build",
+    ".worktrees/**",
     "casino-service",
     "reference",
     "ui/**",

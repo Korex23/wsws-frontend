@@ -115,6 +115,22 @@ export function isCashierAccessDenied(error: unknown): boolean {
   return code === "UNAUTHORIZED" || code === "NO_WALLET";
 }
 
+// Confirmation can race the chain indexer even after the wallet reports a
+// successful send. Retry only that narrow state; validation failures must be
+// surfaced immediately instead of being mislabeled as pending confirmation.
+export function isChessDepositPending(error: unknown): boolean {
+  const gatewayError = error as GatewayApiError | null;
+  if (!gatewayError) return false;
+  const message = gatewayError.message.toLowerCase();
+  const pendingMessage =
+    message.includes("receipt not found yet") ||
+    message.includes("no block number yet") ||
+    message.includes("confirmation(s); need");
+  return (
+    pendingMessage && (gatewayError.code === "CONFLICT" || gatewayError.code === "BAD_REQUEST")
+  );
+}
+
 function nonNegativeUsdc(value: string | undefined): string {
   if (!value?.trim()) return "0";
   const units = toBaseUnits(value, USDC_DECIMALS);

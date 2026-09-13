@@ -374,7 +374,7 @@ describe("chess proxy route", () => {
     );
 
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/casino/chess/play?match=game-1");
+    expect(res.headers.get("location")).toBe("/api/chess/round/game-1");
     const [, init] = (
       global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
     ).mock.calls.find(([url]) => url.endsWith("/play/computer"))!;
@@ -404,7 +404,7 @@ describe("chess proxy route", () => {
     );
 
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/casino/chess/invite?code=challenge-1");
+    expect(res.headers.get("location")).toBe("/api/chess/challenge/challenge-1");
     const [, init] = (
       global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }
     ).mock.calls.find(([url]) => url.endsWith("/challenge"))!;
@@ -427,7 +427,7 @@ describe("chess proxy route", () => {
     );
 
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/casino/chess/invite?code=challenge-2");
+    expect(res.headers.get("location")).toBe("/api/chess/challenge/funded/challenge-2");
   });
 
   it("opens accepted friend challenges on the interactive board", async () => {
@@ -441,6 +441,6 @@ describe("chess proxy route", () => {
     });
 
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/casino/chess/play?match=game-1");
+    expect(res.headers.get("location")).toBe("/api/chess/round/game-1");
   });
 });

@@ -157,7 +157,6 @@ function playerData(
           id,
           username: name,
           online: true,
-          title: lobbyBot ? "BOT" : undefined,
           perfs: {},
         },
   };
@@ -198,7 +197,7 @@ function roundSteps(match: ChessMatch) {
   ];
 }
 
-function roundData(
+export function roundData(
   match: ChessMatch,
   viewer: ChessColor | null,
   proxy?: Record<string, unknown>,

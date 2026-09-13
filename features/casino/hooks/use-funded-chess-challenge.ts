@@ -9,6 +9,7 @@ import {
   confirmChessDeposit,
   exceedsUsdcBalance,
   HUMAN_CHESS_WAGER_FEE_BPS,
+  isChessDepositPending,
   normalizeUsdcAmount,
 } from "@/features/casino/lib/api/cashier";
 import type { ChessMatch, CreateChessChallengeInput } from "@/features/casino/lib/api/types";
@@ -83,7 +84,8 @@ export function useFundedChessChallenge() {
         try {
           await confirmChessDeposit(wallet.address, pending.txHash);
           return pending.txHash;
-        } catch {
+        } catch (error) {
+          if (!isChessDepositPending(error)) throw error;
           throw new Error(
             "Your Base USDC transfer is still confirming. Retry shortly; no second transfer will be sent."
           );
@@ -157,6 +159,7 @@ export function useFundedChessChallenge() {
   return {
     create,
     accept,
+    fundEntry: runFunded,
     availableUsdc,
     balanceLoading: portfolio.loading,
     configured: cashier.configured,

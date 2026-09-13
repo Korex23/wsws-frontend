@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCasinoNavGuard } from "@/features/casino/components/casino-nav-guard";
+import { ChessHeaderActions } from "@/features/casino/components/chess-app/chess-profile-balance";
 import { usePrefetchDepositCatalog } from "@/hooks/use-catalog-prefetch";
 import { markKnownUser } from "@/lib/known-user";
 import { cn } from "@/lib/utils";
@@ -82,6 +83,7 @@ export function ChessSiteHeader({ compact = false }: { compact?: boolean }) {
   return (
     <header
       id="top"
+      className="chess-site-header"
       data-compact={compact || undefined}
       style={{
         position: "sticky",
@@ -120,11 +122,9 @@ export function ChessSiteHeader({ compact = false }: { compact?: boolean }) {
           ))}
         </nav>
       </div>
-      <div
-        className="h-[60px] w-[232px] shrink-0 min-[1020px]:w-[304px]"
-        data-chess-header-actions-space
-        aria-hidden="true"
-      />
+      <div className="chess-header-actions-space" data-chess-header-actions-space>
+        <ChessHeaderActions placement="header" />
+      </div>
     </header>
   );
 }
@@ -148,10 +148,10 @@ export function ChessSiteShell({
     <>
       <div
         className={cn(
-          "relative bg-black text-white",
+          "ark-chess-page relative bg-black text-white",
           fixedViewport
-            ? "min-h-dvh overflow-x-hidden xl:flex xl:h-dvh xl:min-h-0 xl:flex-col xl:overflow-hidden"
-            : "min-h-dvh overflow-x-hidden"
+            ? "min-h-[calc(100dvh-158px-var(--ws-live-bar,0px))] overflow-x-hidden md:min-h-[calc(100dvh-79px-var(--ws-live-bar,0px))] xl:flex xl:h-[calc(100dvh-79px-var(--ws-live-bar,0px))] xl:min-h-0 xl:flex-col xl:overflow-hidden"
+            : "min-h-[calc(100dvh-158px-var(--ws-live-bar,0px))] overflow-x-hidden md:min-h-[calc(100dvh-79px-var(--ws-live-bar,0px))]"
         )}
       >
         <ChessSiteHeader compact={compact} />

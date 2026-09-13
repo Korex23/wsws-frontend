@@ -1,11 +1,5 @@
-"use client";
-
-import { ArenaCreateForm, CasinoPage } from "@/features/casino";
+import { ChessLobbyFrame } from "@/features/casino/components/chess-app/chess-lobby-frame";
 
 export default function ChessTournamentCreatePage() {
-  return (
-    <CasinoPage hideBackLink>
-      <ArenaCreateForm />
-    </CasinoPage>
-  );
+  return <ChessLobbyFrame source="/api/chess/competition/arenas/new" />;
 }

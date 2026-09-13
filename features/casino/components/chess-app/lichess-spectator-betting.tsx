@@ -9,6 +9,7 @@ import { useChessCashier } from "@/features/casino/hooks/use-chess-cashier";
 import {
   confirmChessDeposit,
   exceedsUsdcBalance,
+  isChessDepositPending,
   normalizeUsdcAmount,
   parseUsdcAmount,
 } from "@/features/casino/lib/api/cashier";
@@ -138,7 +139,8 @@ function BetForm({
         txHash = pending.txHash;
         try {
           await confirmChessDeposit(viewer, txHash);
-        } catch {
+        } catch (error) {
+          if (!isChessDepositPending(error)) throw error;
           throw new Error(
             "Your Base USDC transfer is still confirming. Retry shortly; no second transfer will be sent."
           );

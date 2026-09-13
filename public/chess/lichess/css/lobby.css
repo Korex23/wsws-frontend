@@ -1756,32 +1756,85 @@ html.transp .daily-feed__update__marker.nobg {
   text-align: center;
   white-space: nowrap;
 }
+.lobby__rail {
+  grid-area: rail;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  gap: var(---block-gap);
+}
+.lobby__rail .lobby__side {
+  margin: 0.35rem 0 0;
+}
+.lobby__rail .lobby__start {
+  margin: 0;
+}
+.lobby__rail .lobby__counters {
+  position: static;
+  flex-flow: row wrap;
+  align-items: center;
+}
+@media (max-width: 799.29px) {
+  .lobby {
+    grid-template-columns: 1fr;
+    grid-template-areas: "app" "rail";
+  }
+}
 @media (min-width: 799.3px) and (max-width: 1259.29px) {
   .lobby {
-    grid-template-rows: auto auto auto;
-    grid-template-areas: "table app" "side app" "about about";
+    grid-template-columns: minmax(0, 2fr) minmax(17rem, 1fr);
+    grid-template-rows: auto auto;
+    grid-template-areas: "app rail" "about about";
   }
 }
 @media (min-width: 1259.3px) {
   .lobby {
+    grid-template-columns: repeat(3, 1fr);
     grid-template-rows: auto auto;
-    grid-template-areas: "side app app table" "about about about about";
+    grid-template-areas: "app app rail" "about about about";
   }
 }
 @media (max-width: 620px) {
   .lobby__activities {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding-inline: 0.5rem;
   }
   .lobby-activity {
-    display: grid;
-    grid-template-columns: minmax(9rem, 42%) 1fr;
+    display: block;
+    min-width: 0;
   }
   .lobby-activity:nth-child(3) {
-    grid-column: auto;
-    width: 100%;
+    grid-column: 1 / -1;
+    width: calc(50% - 0.25rem);
+    justify-self: center;
   }
   .lobby-activity__content {
-    min-height: 0;
+    min-height: 6.5rem;
+    padding: 0.55rem;
+    gap: 0.45rem;
+  }
+  .lobby-activity__header {
+    gap: 0.35rem;
+  }
+  .lobby-activity__icon {
+    display: none;
+  }
+  .lobby-activity__title {
+    font-size: 0.78rem;
+  }
+  .lobby-activity__detail {
+    font-size: 0.65rem;
+  }
+  .lobby-activity__button {
+    padding: 0.55rem 0.2rem;
+    font-size: 0.82rem;
+    line-height: 1.1;
+    white-space: normal;
+  }
+  .lobby__rail {
+    margin-inline: 0.5rem;
   }
 }
 

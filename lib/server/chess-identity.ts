@@ -4,6 +4,7 @@ const PRIVATE_READ_PATTERNS = [
   /^play(?:\/|$)/u,
   /^challenge(?:\/|$)/u,
   /^challenges(?:\/|$)/u,
+  /^competition(?:\/|$)/u,
   /^cashier\/players\/[^/]+\/balance$/u,
   /^betting\/markets\/[^/]+\/bets$/u,
   /^betting\/swiss\/[^/]+\/bets$/u,

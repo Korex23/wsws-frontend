@@ -131,6 +131,7 @@ export function SupportChatWidget({ defaultOpen = false }: SupportChatWidgetProp
           type="button"
           onClick={handleOpen}
           aria-label={topbarT("support")}
+          data-support-launcher
           className="group fixed right-[calc(var(--ws-frame-inset)+16px)] bottom-[calc(92px+env(safe-area-inset-bottom))] z-[80] flex cursor-pointer flex-col items-center gap-1 focus:outline-none md:right-6 md:bottom-6"
         >
           <span className="ws-glass relative grid size-[52px] place-items-center rounded-full shadow-[0_14px_40px_-12px_rgba(0,0,0,0.85)] transition-transform group-hover:scale-105 active:scale-95">

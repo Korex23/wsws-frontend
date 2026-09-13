@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChessMatch } from "@/features/casino/lib/api/types";
 
 const roundState = vi.hoisted(() => ({
   current: {
@@ -23,7 +24,57 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-import { LichessRound } from "@/features/casino/components/chess-app/lichess-round";
+import { LichessRound, roundData } from "@/features/casino/components/chess-app/lichess-round";
+
+const lobbyBotMatch: ChessMatch = {
+  id: "lobby-bot-match",
+  state: "in_progress",
+  videoEnabled: false,
+  white: {
+    id: "human",
+    username: "Abraham Anavheoba",
+    rating: 108,
+    walletAddress: "0x1111111111111111111111111111111111111111",
+  },
+  black: null,
+  timeControl: "5+3",
+  clockMode: "real_time",
+  computer: {
+    player: "0x00000000000000000000000000000000000000b1",
+    name: "Haruto Sato",
+    bot: true,
+    countryCode: "JP",
+    rating: 112,
+    side: "black",
+    level: 1,
+    coachEnabled: false,
+    hintsUsed: 0,
+    wager: null,
+  },
+  variant: "standard",
+  initialFen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+  chess960Position: null,
+  fen: "rnbqkbnr/pppppppp/8/8/8/4P3/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+  moves: ["e3"],
+  clocks: { w: 298, b: 300 },
+  clockUpdatedAt: "2026-09-13T11:50:16.000Z",
+  turn: "b",
+  result: null,
+  drawOffered: null,
+  takeback: { white: false, black: false, takebackable: true },
+  rematch: { offeredBy: null, nextMatchId: null },
+  timeExtensions: {
+    allowed: false,
+    used: 0,
+    totalSeconds: 0,
+    maxUses: 3,
+    maxTotalSeconds: 1_800,
+  },
+  stakeUsdc: null,
+  wagerStatus: null,
+  liveTopic: "chess:match:lobby-bot-match",
+  createdAt: "2026-09-13T11:49:00.000Z",
+};
 
 describe("LichessRound host", () => {
   beforeEach(() => {
@@ -50,5 +101,18 @@ describe("LichessRound host", () => {
       expect(container.querySelector("#main-wrap .round__app")).toBeInTheDocument();
     });
     expect(container.querySelector("#main-wrap")).toHaveStyle({ display: "none" });
+  });
+
+  it("shows a lobby fallback opponent without a BOT title", () => {
+    const data = roundData(lobbyBotMatch, "w");
+    const opponent = data.opponent as {
+      name: string;
+      user?: { username: string; title?: string };
+    };
+
+    expect(lobbyBotMatch.computer?.bot).toBe(true);
+    expect(opponent.name).toBe("Haruto Sato");
+    expect(opponent.user).toMatchObject({ username: "Haruto Sato" });
+    expect(opponent.user).not.toHaveProperty("title");
   });
 });

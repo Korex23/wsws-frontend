@@ -11,6 +11,7 @@ import {
   fetchCashierConfig,
   fetchChessBalance,
   isCashierAccessDenied,
+  isChessDepositPending,
   isCashierUnavailable,
   USDC_DECIMALS,
   type CashierWithdrawal,
@@ -173,9 +174,8 @@ export function useChessCashier() {
           try {
             const credited = await confirmChessDeposit(wallet, txHash);
             return { txHash, credited: credited.amountUsdc };
-          } catch {
-            // Most likely still short of the confirmation depth. The confirm
-            // is idempotent by hash, so trying again is free.
+          } catch (error) {
+            if (!isChessDepositPending(error)) throw error;
           }
         }
         // The money is with the cashier; only the credit acknowledgement is

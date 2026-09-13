@@ -138,6 +138,12 @@ body {
   overflow-x: hidden;
 }
 
+/* The Chess setup dialog is rendered inside an iframe. Parent-level floating
+   controls must yield while it is open or they cover its close and submit actions. */
+body:has([data-chess-setup-open]) [data-support-launcher] {
+  display: none;
+}
+
 :root {
   --chess-page-board-cap: 780px;
 }

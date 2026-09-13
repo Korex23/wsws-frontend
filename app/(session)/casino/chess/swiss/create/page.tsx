@@ -1,11 +1,5 @@
-"use client";
-
-import { CasinoPage, SwissCreateForm } from "@/features/casino";
+import { ChessLobbyFrame } from "@/features/casino/components/chess-app/chess-lobby-frame";
 
 export default function ChessSwissCreatePage() {
-  return (
-    <CasinoPage hideBackLink>
-      <SwissCreateForm />
-    </CasinoPage>
-  );
+  return <ChessLobbyFrame source="/api/chess/competition/swiss/new" />;
 }

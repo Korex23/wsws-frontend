@@ -15,15 +15,18 @@ describe("chess tournament routing", () => {
   it("mounts the Arena detail page for a tournament id", () => {
     const source = routeSource("app/(session)/casino/chess/tournaments/[id]/page.tsx");
 
-    expect(source).toContain("ArenaDetailSection");
-    expect(source).toContain("arenaId={id}");
+    expect(source).toContain("ChessLobbyFrame");
+    expect(source).toContain("/api/chess/competition/arenas/${encodeURIComponent(id)}");
+    expect(source).not.toContain("ArenaDetailSection");
     expect(source).not.toContain("SwissDetailSection");
   });
 
   it("mounts the Arena creation form", () => {
     const source = routeSource("app/(session)/casino/chess/tournaments/create/page.tsx");
 
-    expect(source).toContain("ArenaCreateForm");
+    expect(source).toContain("ChessLobbyFrame");
+    expect(source).toContain('source="/api/chess/competition/arenas/new"');
+    expect(source).not.toContain("ArenaCreateForm");
     expect(source).not.toContain("SwissCreateForm");
   });
 });

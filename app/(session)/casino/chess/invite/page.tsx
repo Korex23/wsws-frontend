@@ -1,14 +1,17 @@
 import { ChessLobbyFrame } from "@/features/casino/components/chess-app/chess-lobby-frame";
 
+export function chessInviteSource(code?: string | string[]) {
+  const inviteCode = Array.isArray(code) ? code[0] : code;
+  return inviteCode
+    ? `/api/chess/challenge/invite/${encodeURIComponent(inviteCode)}`
+    : "/api/chess/play?setup=friend#game-setup";
+}
+
 export default async function ChessInvitePage({
   searchParams,
 }: {
   searchParams: Promise<{ code?: string | string[] }>;
 }) {
   const rawCode = (await searchParams).code;
-  const code = Array.isArray(rawCode) ? rawCode[0] : rawCode;
-  const source = code
-    ? `/api/chess/challenge/funded/${encodeURIComponent(code)}`
-    : "/api/chess/play?setup=friend#game-setup";
-  return <ChessLobbyFrame source={source} />;
+  return <ChessLobbyFrame source={chessInviteSource(rawCode)} />;
 }

@@ -9,18 +9,28 @@ import { LegacyChessBalance } from "@/features/casino/components/chess-app/legac
 import { usePortfolio } from "@/hooks/use-portfolio";
 import styles from "./chess-profile-balance.module.css";
 
-export function ChessHeaderActions() {
+export function ChessHeaderActions({
+  placement = "overlay",
+}: {
+  placement?: "header" | "overlay";
+}) {
   const pathname = usePathname();
   const { ready, authenticated } = usePrivy();
 
   if (!ready || !authenticated || pathname === "/casino/chess/embed") return null;
 
+  const placementClass =
+    placement === "header"
+      ? "relative flex h-full min-w-0 items-center justify-end"
+      : "pointer-events-none fixed top-[66px] right-0 z-[120] flex h-[52px] w-[232px] items-center justify-end md:top-[79px] min-[1020px]:h-[60px] min-[1020px]:w-[304px]";
+
   return (
     <div
-      className="pointer-events-none fixed top-0 right-0 z-[120] flex h-[60px] w-[232px] items-center justify-end min-[1020px]:w-[304px]"
+      className={placementClass}
       data-chess-header-actions
+      data-placement={placement}
     >
-      <span className="pointer-events-auto">
+      <span className={placement === "overlay" ? "pointer-events-auto" : undefined}>
         <ChessProfileBalance />
       </span>
     </div>

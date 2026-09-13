@@ -54,6 +54,7 @@ next-env.d.ts
 
 # agent tooling and vendored skills (keep only the tracked engineering standards)
 .agents/
+.worktrees/
 .claude/*
 !.claude/skills/
 .claude/skills/*
