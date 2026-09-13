@@ -83,12 +83,22 @@ describe("CurvedTabBar", () => {
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
-  it("opens Market Square beside the app from the Square seat", () => {
+  it("sends the Square seat to the app's own Square page, as the desktop rail does", () => {
+    // The rail's entry opens /square in-app (ADR-2026-09-12); the phone seat
+    // opened the Square's deployment in a new tab instead (ogazboiz, 2026-09-13).
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    renderBar();
+    const { onNavigate } = renderBar();
     fireEvent.click(screen.getByRole("button", { name: "Square" }));
-    expect(open).toHaveBeenCalledWith("https://square.example", "_blank", "noopener,noreferrer");
+    expect(router.push).toHaveBeenCalledWith("/square");
+    expect(open).not.toHaveBeenCalled();
+    expect(onNavigate).not.toHaveBeenCalled();
     open.mockRestore();
+  });
+
+  it("raises the Square seat to the centre while on /square", () => {
+    renderBar(vi.fn(), "square");
+    // The seat is marked current, as the active seat is on every other route.
+    expect(screen.getByRole("button", { name: "Square" })).toHaveAttribute("aria-current", "page");
   });
 
   it("sends the Activity seat to Activity, since the phone has no drawer", () => {

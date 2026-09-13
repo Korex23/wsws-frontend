@@ -2,7 +2,6 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { marketSquareHref } from "@/lib/market-square";
 import { ClockIcon } from "@/components/ui/icons";
 import type { SectionId } from "@/lib/sections";
 import type { NavItem } from "@/components/layout/nav-items";
@@ -143,7 +142,10 @@ interface Tab {
 const TABS: Tab[] = [
   { key: "portfolio", label: "Home", section: "portfolio", Icon: PortfolioIcon },
   { key: "market", label: "Market", section: "spot", Icon: MarketIcon },
-  { key: "square", label: "Square", Icon: SquareIcon, ownColour: true },
+  // Its own page in the app (/square, ADR-2026-09-12), so it takes the
+  // "square" section and rides to the centre while the reader is there —
+  // the same seat logic as every other tab, no longer an outbound link.
+  { key: "square", label: "Square", section: "square", Icon: SquareIcon, ownColour: true },
   { key: "casino", label: "Arkade", section: "casino", Icon: CasinoIcon },
   { key: "activity", label: "Activity", section: "activity", Icon: ClockIcon },
 ];
@@ -179,14 +181,15 @@ interface CurvedTabBarProps {
 export function CurvedTabBar({ items, activeSection, onNavigate }: CurvedTabBarProps) {
   const router = useRouter();
   const reduce = useReducedMotion();
-  const squareHref = marketSquareHref() ?? "#";
 
   const onTap = (tab: Tab) => {
     if (tab.key === "portfolio") onNavigate("portfolio");
     else if (tab.key === "market") router.push("/market");
-    else if (tab.key === "square") {
-      if (squareHref !== "#") window.open(squareHref, "_blank", "noopener,noreferrer");
-    } else if (tab.key === "casino") onNavigate("casino");
+    // The Square seat opens the app's own Square page, exactly as the desktop
+    // rail's entry does; it used to open the Square's deployment in a new tab
+    // (ogazboiz, 2026-09-13). "Open the Square" on that page is the way out.
+    else if (tab.key === "square") router.push("/square");
+    else if (tab.key === "casino") onNavigate("casino");
     else router.push("/activity");
   };
 
