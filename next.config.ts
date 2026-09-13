@@ -1,6 +1,9 @@
 import packageJson from "./package.json";
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+// From "@sentry/nextjs/config", not "@sentry/nextjs". The root export of this
+// helper is deprecated in v10 and stops working in v11.
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 // Links the next-intl request config (i18n/request.ts) into the build. The app
 // localizes via a cookie, not locale URLs, so routing is untouched.
@@ -91,4 +94,67 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+// Source map upload is OFF unless explicitly asked for, and that default is
+// deliberate rather than lazy.
+//
+// Uploading maps is what turns an issue from a stack of minified frames into
+// something readable, so we do want it eventually. But the first build with it
+// enabled hung: `sentry-cli sourcemaps upload` sat against
+// watchtower-logger.vercel.app and never returned. The cause was a leftover
+// sentry.io account in .env; its SENTRY_AUTH_TOKEN was enough to make the
+// plugin attempt a real upload, against a host that could not authenticate it.
+// A build step that can hang is a broken CI pipeline, and a telemetry tool must
+// not be able to stop a release.
+//
+// Hence the WATCHTOWER_ names below rather than the plugin's conventional
+// SENTRY_ ones. The rename is the actual fix for that incident: the plugin
+// picks SENTRY_* up from the environment on its own, so as long as we read
+// those, any stray token in any environment can silently switch uploading back
+// on. Reading our own names means nothing happens unless we ask for it.
+//
+// Watchtower's upload endpoint now speaks the Sentry /api/0 protocol, so the
+// upload is enabled again. The switch is the presence of an org token rather
+// than a separate flag: a token only exists where an upload is wanted, which is
+// CI, and a laptop or a preview without one still builds and simply ships no
+// maps. One knob, and it is the credential itself.
+const UPLOAD_SOURCEMAPS = Boolean(
+  process.env.WATCHTOWER_AUTH_TOKEN && process.env.WATCHTOWER_ORG && process.env.WATCHTOWER_PROJECT
+);
+
+export default withSentryConfig(withNextIntl(nextConfig), {
+  // Watchtower is the upload target, not sentry.io.
+  sentryUrl: "https://watchtower-logger.vercel.app",
+  org: process.env.WATCHTOWER_ORG,
+  project: process.env.WATCHTOWER_PROJECT,
+  authToken: process.env.WATCHTOWER_AUTH_TOKEN,
+  silent: !process.env.CI,
+  // The plugin reports build metrics to Sentry's own servers by default. We do
+  // not use Sentry as a service, and our build details are not theirs to hold.
+  telemetry: false,
+  // Second belt to the opt-in above: if an upload is attempted and fails, say
+  // so and carry on. A missing source map degrades an issue; it must never
+  // fail a build.
+  errorHandler: (error: Error) => {
+    console.warn("[watchtower] source map upload failed, continuing:", error.message);
+  },
+  // Maps are uploaded, then stripped from what the browser downloads, so
+  // readers never fetch them and the app's source is not published.
+  sourcemaps: { disable: !UPLOAD_SOURCEMAPS, deleteSourcemapsAfterUpload: true },
+  // NO `tunnelRoute` here, and this is load-bearing. It looks like the right
+  // option (it proxies events through our own origin so an ad blocker cannot
+  // silence reporting), but the rewrite it generates is hardcoded to Sentry's
+  // SaaS ingest and ignores `sentryUrl` above. Verified in the build output:
+  //
+  //   destination: https://o:orgid.ingest.:region.sentry.io/api/:projectid/envelope/
+  //
+  // Enabling it would quietly forward this app's error payloads to sentry.io,
+  // a third party we have not chosen and have no agreement with, instead of to
+  // Watchtower. Do not add it back. If ad blockers ever turn out to be dropping
+  // events, the fix is our own route handler under app/api/ that forwards to
+  // Watchtower, which is what this codebase does for every other upstream
+  // anyway.
+  //
+  // No `disableLogger` either. It is deprecated in v10, and its replacement
+  // (webpack.treeshake.removeDebugLogging) is a webpack option that Turbopack
+  // does not support. This build is Turbopack, so there is nothing to set.
+});
