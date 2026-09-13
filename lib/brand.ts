@@ -8,4 +8,4 @@ export const BRAND = "Ark";
 export const SUPPORT_EMAIL = "support@tsionark.com";
 
 /** Where the Ark app is downloaded. The promo deck's first ticket opens it. */
-export const ARKSTORE_URL = "https://ark-store-beta.vercel.app/apps/ark";
+export const ARKSTORE_URL = "https://www.arkstore.xyz/apps/ark";
