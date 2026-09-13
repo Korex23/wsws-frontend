@@ -15,6 +15,11 @@ describe("chess match polling", () => {
     expect(chessMatchRefetchMs("in_progress", true)).toBe(5000);
   });
 
+  it("does not poll computer matches whose move writes return authoritative state", () => {
+    expect(chessMatchRefetchMs("in_progress", false, true)).toBe(false);
+    expect(chessMatchRefetchMs("in_progress", true, true)).toBe(false);
+  });
+
   it("stops polling once the game is over", () => {
     expect(chessMatchRefetchMs("settled", false)).toBe(false);
     expect(chessMatchRefetchMs("cancelled", true)).toBe(false);
@@ -32,6 +37,9 @@ describe("optimistic chess moves", () => {
       timeControl: "Unlimited",
       clockMode: "unlimited",
       computer: null,
+      variant: "standard",
+      initialFen: START_FEN,
+      chess960Position: null,
       fen: START_FEN,
       moves: [],
       clocks: { w: 600, b: 600 },

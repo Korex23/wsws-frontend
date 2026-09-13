@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { freshFor, type FreshScope } from "@/lib/portfolio/fresh-scope";
 import {
   decodeAbiParameters,
@@ -140,6 +141,11 @@ function markWarm(key: string): void {
   warmUntil.set(key, now + WARM_FOR_MS);
 }
 
+function contractsFingerprint(contracts: string[]): string {
+  const normalized = [...new Set(contracts.map((address) => address.toLowerCase()))].sort();
+  return createHash("sha256").update(normalized.join(",")).digest("hex");
+}
+
 // The chain answers a quantity as a 0x-prefixed hex string; an empty "0x"
 // (seen from some providers for an untouched account) means zero. Anything
 // else is a provider fault and is named as such rather than crashing later.
@@ -215,8 +221,12 @@ export async function readHoldings(
 ): Promise<HoldingRow[]> {
   const chainId = NETWORK_CHAIN_ID[network];
   if (!chainId) throw new Error(`No chain id for ${network}`);
-  const key = `${network}:${wallet.toLowerCase()}`;
-  const hot = HOT_NETWORKS.has(network) || (warmUntil.get(key) ?? 0) > Date.now();
+  const walletKey = `${network}:${wallet.toLowerCase()}`;
+  // The chess path intentionally reads a smaller fixed Base allowlist than
+  // the complete portfolio. Keep those snapshots separate so one path can
+  // never serve the other path rows for a different set of contracts.
+  const key = `${walletKey}:${contractsFingerprint(contracts)}`;
+  const hot = HOT_NETWORKS.has(network) || (warmUntil.get(walletKey) ?? 0) > Date.now();
 
   const hit = holdingsCache.get(key);
   if (!fresh && hit && hit.expires > Date.now()) return hit.rows;
@@ -260,13 +270,13 @@ export async function readHoldings(
       }
       const holding = rows.some((row) => BigInt(row.tokenBalance) > 0n);
       if (holding) {
-        markWarm(key);
-        emptyStreak.delete(key);
+        markWarm(walletKey);
+        emptyStreak.delete(walletKey);
       }
       let ttl = HOT_TTL_MS;
       if (!holding && !hot) {
-        const streak = (emptyStreak.get(key) ?? 0) + 1;
-        emptyStreak.set(key, streak);
+        const streak = (emptyStreak.get(walletKey) ?? 0) + 1;
+        emptyStreak.set(walletKey, streak);
         ttl = EMPTY_BACKOFF_MS[Math.min(streak - 1, EMPTY_BACKOFF_MS.length - 1)];
       } else if (!holding) {
         ttl = HOT_NETWORKS.has(network) ? HOT_TTL_MS : COLD_TTL_MS;

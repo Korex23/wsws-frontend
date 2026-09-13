@@ -1963,7 +1963,9 @@
         "historyTitle": "Ihre Partien",
         "historyEmpty": "Noch keine Partien. Erstellen Sie eine Herausforderung, um zu beginnen.",
         "downloadPgn": "PGN herunterladen",
-        "pgnFailed": "Die Partie konnte nicht geladen werden."
+        "pgnFailed": "Die Partie konnte nicht geladen werden.",
+        "signInToPlay": "Zum Spielen anmelden",
+        "sessionFailed": "Die Schachsitzung konnte nicht gestartet werden."
       },
       "lobby": {
         "subject": "Die Schachlobby",
@@ -2285,11 +2287,12 @@
       },
       "stake": {
         "label": "Einsatz (optional)",
-        "note": "Beide Spieler hinterlegen den Einsatz; der Sieger erhält den Pot abzüglich der {pct}%-Gebühr. Remis und Abbrüche erstatten beide Seiten.",
+        "note": "Beide Spieler hinterlegen den Einsatz; der Sieger erhält den Pot abzüglich der {pct}%-Gebühr. Bei Remis werden 50 % jedes Einsatzes zurückgezahlt; Abbrüche erstatten beide Seiten.",
         "needsBalance": "Sie benötigen {amount} USD verfügbar in Ihrem Schach-Guthaben für diesen Einsatz.",
         "joinLocks": "Beitreten sperrt {amount} USD aus Ihrem Schach-Guthaben.",
         "wagerEach": "Einsatz · {amount} USD pro Spieler",
         "wagerRefunded": "Einsätze an beide Spieler erstattet.",
+        "wagerDrawHalfRefunded": "Remis abgerechnet: 50 % jedes Einsatzes wurden zurückgezahlt.",
         "wagerSettled": "Pot an den Sieger ausgezahlt (nach der {pct}%-Gebühr).",
         "summaryStake": "Stake, each side",
         "summaryYouLock": "You lock now",

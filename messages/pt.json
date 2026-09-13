@@ -1963,7 +1963,9 @@
         "historyTitle": "Suas partidas",
         "historyEmpty": "Nenhuma partida ainda. Crie um desafio para começar.",
         "downloadPgn": "Baixar PGN",
-        "pgnFailed": "Não foi possível obter a partida."
+        "pgnFailed": "Não foi possível obter a partida.",
+        "signInToPlay": "Entrar para jogar",
+        "sessionFailed": "Não foi possível iniciar a sessão de xadrez."
       },
       "lobby": {
         "subject": "o salão de xadrez",
@@ -2285,11 +2287,12 @@
       },
       "stake": {
         "label": "Aposta (opcional)",
-        "note": "Ambos os jogadores bloqueiam a aposta; o vencedor leva o pote menos a taxa de {pct}%. Empates e cancelamentos reembolsam os dois lados.",
+        "note": "Ambos os jogadores bloqueiam a aposta; o vencedor leva o pote menos a taxa de {pct}%. Em caso de empate, 50% de cada aposta é devolvido; cancelamentos reembolsam os dois lados.",
         "needsBalance": "Você precisa de {amount} USD disponíveis no seu saldo de xadrez para esta aposta.",
         "joinLocks": "Entrar bloqueia {amount} USD do seu saldo de xadrez.",
         "wagerEach": "Aposta · {amount} USD cada",
         "wagerRefunded": "Apostas reembolsadas aos dois jogadores.",
+        "wagerDrawHalfRefunded": "Empate liquidado: 50% de cada aposta foi devolvido.",
         "wagerSettled": "Pote entregue ao vencedor (após a taxa de {pct}%).",
         "summaryStake": "Stake, each side",
         "summaryYouLock": "You lock now",

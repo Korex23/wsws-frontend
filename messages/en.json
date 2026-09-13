@@ -1963,7 +1963,9 @@
         "historyTitle": "Your games",
         "historyEmpty": "No games yet. Create a challenge to get started.",
         "downloadPgn": "Download PGN",
-        "pgnFailed": "Couldn't fetch the game record."
+        "pgnFailed": "Couldn't fetch the game record.",
+        "signInToPlay": "Sign in to play",
+        "sessionFailed": "Couldn't start your chess session."
       },
       "lobby": {
         "subject": "the chess lobby",
@@ -2285,11 +2287,12 @@
       },
       "stake": {
         "label": "Stake (optional)",
-        "note": "Both players lock the stake; the winner takes the pot minus the {pct}% fee. Draws and aborts refund both sides.",
+        "note": "Both players lock the stake; the winner takes the pot minus the {pct}% fee. A draw returns 50% of each stake; aborts refund both sides.",
         "needsBalance": "You need {amount} USD available in your chess balance for this stake.",
         "joinLocks": "Joining locks {amount} USD from your chess balance.",
         "wagerEach": "Staked · {amount} USD each",
         "wagerRefunded": "Stakes refunded to both players.",
+        "wagerDrawHalfRefunded": "Draw settled: 50% of each stake was returned.",
         "wagerSettled": "Pot settled to the winner (after the {pct}% fee).",
         "summaryStake": "Stake, each side",
         "summaryYouLock": "You lock now",

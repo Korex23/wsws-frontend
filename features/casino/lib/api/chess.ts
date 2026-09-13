@@ -23,6 +23,7 @@ import {
   type ChessCommentDeletedFrame,
   type ChessMatchAnalysisWire,
   type ChessMatchWire,
+  type ChessRoundSnapshotWire,
   type ChessMatchCommentWire,
   type ChessMatchCommentsWire,
   type ChessMatchNoteWire,
@@ -53,6 +54,8 @@ import type {
   ChessMatchNote,
   ChessVideoAccess,
   ChessWeaknessProfile,
+  ChessStudy,
+  ChessStudyList,
   CreateChessChallengeInput,
   MatchmakingTicket,
 } from "@/features/casino/lib/api/types";
@@ -146,6 +149,46 @@ async function fetchMatchWire(matchId: string): Promise<ChessMatchWire> {
   return chessGet<ChessMatchWire>(`/matches/${requireMatchId(matchId)}`);
 }
 
+async function fetchRoundSnapshotWire(matchId: string): Promise<ChessRoundSnapshotWire> {
+  return chessGet<ChessRoundSnapshotWire>(`/round/${requireMatchId(matchId)}/data`);
+}
+
+function roundSnapshotMoves(snapshot: ChessRoundSnapshotWire): ChessMoveWire[] {
+  return snapshot.steps.flatMap((step) => {
+    if (!step.uci || !step.san || !step.byPlayer || !step.createdAt) return [];
+    return [
+      {
+        ply: step.ply,
+        uci: step.uci,
+        san: step.san,
+        fenAfter: step.fen,
+        byPlayer: step.byPlayer,
+        clockMsRemaining: step.clockMsRemaining,
+        createdAt: step.createdAt,
+      },
+    ];
+  });
+}
+
+function matchFromRoundSnapshot(
+  snapshot: ChessRoundSnapshotWire,
+  previous: ChessMatch | null
+): ChessMatch {
+  return preserveOptionalMatchState(
+    previous,
+    snapshot.match,
+    toChessMatch(snapshot.match, {
+      moves: roundSnapshotMoves(snapshot),
+      round: {
+        steps: snapshot.steps,
+        legalMoves: snapshot.legalMoves,
+        check: snapshot.check,
+        serverTime: snapshot.serverTime,
+      },
+    })
+  );
+}
+
 export async function fetchMatchMoves(matchId: string): Promise<ChessMoveWire[]> {
   const data = await chessGet<MovesWire>(`/matches/${requireMatchId(matchId)}/moves`);
   return data.moves;
@@ -154,8 +197,12 @@ export async function fetchMatchMoves(matchId: string): Promise<ChessMoveWire[]>
 function canReuseMoveHistory(
   previous: ChessMatch | null | undefined,
   wire: Pick<ChessMatchWire, "ply">
-): previous is ChessMatch {
-  return !!previous && previous.moves.length === wire.ply;
+): boolean {
+  return (
+    !!previous &&
+    previous.moves.length === wire.ply &&
+    (!previous.round || previous.round.steps.length === wire.ply + 1)
+  );
 }
 
 function preserveOptionalMatchState(
@@ -176,6 +223,12 @@ export async function fetchMatch(
   previous: ChessMatch | null = null
 ): Promise<ChessMatch> {
   requireMatchId(matchId);
+  // Create/join mutations seed a compact match so navigation can begin
+  // immediately, but that response has no replay steps or legal moves. Treat
+  // it as bootstrap data, not a reusable round snapshot.
+  if (!previous?.round) {
+    return matchFromRoundSnapshot(await fetchRoundSnapshotWire(matchId), previous);
+  }
   const wire = await fetchMatchWire(matchId);
   if (canReuseMoveHistory(previous, wire)) {
     const justStarted = previous.state === "awaiting_opponent" && wire.status === "active";
@@ -184,6 +237,7 @@ export async function fetchMatch(
       wire,
       toChessMatch(wire, {
         moveSan: previous.moves,
+        round: previous.round,
         // When no new move landed, the last move timestamp we already have is
         // still the honest clock reference. A no-move poll must not restart the
         // displayed countdown.
@@ -193,9 +247,14 @@ export async function fetchMatch(
       })
     );
   }
-  if (wire.ply === 0) return preserveOptionalMatchState(previous, wire, toChessMatch(wire));
-  const moves = await fetchMatchMoves(matchId);
-  return preserveOptionalMatchState(previous, wire, toChessMatch(wire, { moves }));
+  if (wire.ply === 0) {
+    return preserveOptionalMatchState(
+      previous,
+      wire,
+      toChessMatch(wire, { round: previous.round })
+    );
+  }
+  return matchFromRoundSnapshot(await fetchRoundSnapshotWire(matchId), previous);
 }
 
 // Public open seats. Old waiting games read as abandoned in the lobby, so the
@@ -208,7 +267,9 @@ export async function fetchOpenChallenges(): Promise<ChessChallenge[]> {
 export async function fetchLiveMatches(): Promise<ChessMatch[]> {
   const data = await chessGet<MatchListWire>("/matches", { status: "active", limit: "50" });
   return data.items
-    .filter((wire) => !wire.computer && isPlausiblyActiveMatch(wire))
+    .filter(
+      (wire) => (!wire.computer || wire.computer.bot === true) && isPlausiblyActiveMatch(wire)
+    )
     .map((wire) => toChessMatch(wire));
 }
 
@@ -272,15 +333,15 @@ export async function createChallenge(
   const { initialSeconds, incrementSeconds } = parseTimeControl(input.timeControl);
   const wire = await chessPost<ChessMatchWire>("/matches", {
     creator: input.creator,
-    color: "random",
+    color: input.color ?? "random",
     initial_seconds: initialSeconds,
     increment_seconds: incrementSeconds,
     // Rating is a property of human PvP, not of whether USDC is at stake.
-    rated: true,
+    rated: input.rated ?? true,
     allow_time_extensions: input.allowTimeExtensions ?? false,
     // Every human match gets an Ark Stream room. Individual players can still
     // leave camera and microphone from the board.
-    videoEnabled: true,
+    videoEnabled: input.videoEnabled ?? true,
     ...(input.stakeUsdc ? { stake_usdc: input.stakeUsdc } : {}),
   });
 
@@ -313,21 +374,28 @@ export async function issueMatchVideoToken(
 export async function createComputerMatch(
   input: CreateComputerMatchInput & { player: string; idempotencyKey?: string }
 ): Promise<ChessMatch> {
-  const wire = await chessPost<ChessMatchWire>("/computer/matches", {
-    player: input.player,
-    level: input.level,
-    color: input.color,
-    time_mode: input.timeMode,
-    ...(input.timeMode === "real_time"
-      ? {
-          initial_seconds: input.initialSeconds,
-          increment_seconds: input.incrementSeconds,
-        }
-      : {}),
-    ...(input.stakeUsdc ? { stake_usdc: input.stakeUsdc } : {}),
-    ...(input.coachEnabled ? { coach_enabled: true } : {}),
-    ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
-  });
+  const wire = await chessPost<ChessMatchWire>(
+    input.lobbyBot ? "/computer/matches?lobbyBot=true" : "/computer/matches",
+    {
+      player: input.player,
+      level: input.level,
+      color: input.color,
+      variant: input.variant ?? "standard",
+      ...(input.variant === "fromPosition" && input.initialFen
+        ? { initial_fen: input.initialFen }
+        : {}),
+      time_mode: input.timeMode,
+      ...(input.timeMode === "real_time"
+        ? {
+            initial_seconds: input.initialSeconds,
+            increment_seconds: input.incrementSeconds,
+          }
+        : {}),
+      ...(input.stakeUsdc ? { stake_usdc: input.stakeUsdc } : {}),
+      ...(input.coachEnabled ? { coach_enabled: true } : {}),
+      ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
+    }
+  );
   return toChessMatch(wire);
 }
 
@@ -604,6 +672,25 @@ export async function fetchCoachProgress(player: string): Promise<ChessCoachProg
 
 export async function fetchCoachCatalog(): Promise<ChessCoachCatalog> {
   return chessGet<ChessCoachCatalog>("/coach/catalog");
+}
+
+export async function fetchChessStudies(limit = 50, offset = 0): Promise<ChessStudyList> {
+  return chessGet<ChessStudyList>("/studies", { limit, offset });
+}
+
+export async function fetchChessStudy(studyId: string): Promise<ChessStudy> {
+  return chessGet<ChessStudy>(`/studies/${encodeURIComponent(studyId)}`);
+}
+
+export async function createChessStudy(name = "New study"): Promise<ChessStudy> {
+  return chessPost<ChessStudy>("/studies", {
+    name,
+    visibility: "unlisted",
+    description: "",
+    topics: [],
+    chapterName: "Chapter 1",
+    orientation: "white",
+  });
 }
 
 export async function fetchCoachHome(player: string): Promise<ChessCoachHome> {

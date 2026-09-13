@@ -50,6 +50,14 @@ describe("friendlyError", () => {
     expect(message).not.toMatch(/busy|try again/i);
   });
 
+  it("recognizes Alchemy's BSO team sponsorship limit wording", () => {
+    const message = friendlyError(
+      "This transaction's USD cost will put your team over your gas sponsorship Limit."
+    );
+    expect(message).toMatch(/paused|unavailable/i);
+    expect(message).not.toMatch(/try again/i);
+  });
+
   it("maps rate limits", () => {
     expect(friendlyError("Request failed with status 429: Too Many Requests")).toMatch(/busy/i);
   });
@@ -72,6 +80,12 @@ describe("friendlyError", () => {
       "This gas-sponsored transaction is temporarily unavailable. Your funds are safe.";
     expect(friendlyError("ZeroDev sponsorship is not configured")).toBe(expected);
     expect(friendlyError("ZeroDev bundler timed out")).toBe(expected);
+  });
+
+  it("explains an incompatible gas-sponsorship policy", () => {
+    expect(friendlyError("Unsupported Policy Type: BUNDLER_SPONSORSHIP")).toBe(
+      "This gas-sponsored transaction is temporarily unavailable. Your funds are safe."
+    );
   });
 
   it("explains chess cashier balance failures precisely", () => {

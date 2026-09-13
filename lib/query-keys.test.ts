@@ -10,6 +10,7 @@ describe("queryKeys factory", () => {
   it("generates portfolio query keys with null defaults", () => {
     expect(queryKeys.portfolio.byWallet("0x123", "So111")).toEqual(["portfolio", "0x123", "So111"]);
     expect(queryKeys.portfolio.byWallet(undefined, null)).toEqual(["portfolio", null, null]);
+    expect(queryKeys.portfolio.baseByWallet("0x123")).toEqual(["portfolio", "base", "0x123"]);
   });
 
   it("generates activity query keys with null defaults", () => {

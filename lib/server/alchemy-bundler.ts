@@ -133,9 +133,11 @@ function sponsorPairsFor(
 // A bundler-sponsorship policy answers the paymaster path "Unsupported Policy
 // Type"; that pair can never serve this path, the same as a missing policy.
 const PAIR_REJECTED =
-  /policy not found|policy id\(s\) not found|unsupported policy type|must be authenticated|not authorized|unauthorized|invalid api key/i;
+  /policy not found|policy id\(s\) not found|unsupported policy type|does not support bundler sponsorship|must be authenticated|not authorized|unauthorized|invalid api key/i;
 
 function pairCannotServe(status: number, text: string): "capacity" | "rejected" | null {
+  // BSO returns the spending-limit failure inside a 200, while the paymaster
+  // path can return the same condition as an HTTP 429.
   if ((status === 429 || status === 200) && MONTHLY_CAPACITY_EXHAUSTED.test(text)) {
     return "capacity";
   }

@@ -11,6 +11,9 @@
    warning, just an unstyled component. `features/` was missed when the slices
    were created and the whole dashboard rendered without its grid and sizing
    utilities. */
+@import "@lichess-org/chessground/assets/chessground.base.css";
+@import "@lichess-org/chessground/assets/chessground.brown.css";
+@import "@lichess-org/chessground/assets/chessground.cburnett.css";
 @import "tailwindcss" source(none);
 @source "../app";
 @source "../components";
@@ -342,6 +345,153 @@ body {
 
 @utility tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* Lichess's runtime stylesheet intentionally ships a document-wide reset. The
+   round needs it, but the Ark shell is outside Lichess's DOM and must retain
+   its own spacing and colors after that stylesheet is loaded. */
+#ark-chess-header {
+  color: #fff;
+  font-family: var(--font-sans), sans-serif;
+  font-size: 16px;
+  line-height: normal;
+}
+
+#ark-chess-header .ark-chess-header-inner {
+  padding-inline: 0.75rem;
+}
+
+#ark-chess-header .ark-chess-brand {
+  margin-right: 0.25rem;
+  color: #fff;
+}
+
+#ark-chess-header .ark-chess-nav-link {
+  padding-inline: 0.75rem;
+  color: rgb(255 255 255 / 0.55);
+}
+
+#ark-chess-header .ark-chess-nav-link:hover,
+#ark-chess-header .ark-chess-nav-link-active {
+  color: #fff;
+}
+
+#ark-chess-header .ark-chess-nav {
+  align-self: stretch;
+  overflow: visible;
+}
+
+#ark-chess-header .ark-chess-nav-group {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+#ark-chess-header .ark-chess-nav-trigger {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding-inline: 0.8rem;
+  border-bottom: 2px solid transparent;
+  color: rgb(255 255 255 / 0.52);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+#ark-chess-header .ark-chess-nav-trigger:hover,
+#ark-chess-header .ark-chess-nav-trigger:focus-visible,
+#ark-chess-header .ark-chess-nav-trigger-active {
+  border-bottom-color: rgb(255 255 255 / 0.52);
+  background: rgb(255 255 255 / 0.045);
+  color: #fff;
+}
+
+#ark-chess-header .ark-chess-nav-menu {
+  position: absolute;
+  z-index: 90;
+  top: 100%;
+  left: 0;
+  min-width: 190px;
+  padding-block: 0.4rem;
+  visibility: hidden;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-top: 2px solid rgb(255 255 255 / 0.42);
+  border-radius: 0 0 8px 8px;
+  background: rgb(24 27 29 / 0.98);
+  box-shadow: 0 16px 32px rgb(0 0 0 / 0.48);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+}
+
+#ark-chess-header .ark-chess-nav-group:hover .ark-chess-nav-menu,
+#ark-chess-header .ark-chess-nav-group:focus-within .ark-chess-nav-menu {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#ark-chess-header .ark-chess-nav-menu-link {
+  display: block;
+  padding: 0.65rem 0.85rem;
+  color: rgb(255 255 255 / 0.7);
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+#ark-chess-header .ark-chess-nav-menu-link:hover,
+#ark-chess-header .ark-chess-nav-menu-link:focus-visible,
+#ark-chess-header .ark-chess-nav-menu-link-active {
+  background: rgb(255 255 255 / 0.085);
+  color: #fff;
+}
+
+#ark-chess-header .ark-chess-balance {
+  padding-inline: 0.625rem;
+  color: inherit;
+}
+
+#ark-chess-header .ark-chess-balance > span:first-child {
+  margin-right: 0.5rem;
+}
+
+#ark-chess-header .ark-chess-arkade {
+  padding-inline: 0.5rem;
+  color: rgb(255 255 255 / 0.35);
+}
+
+#ark-chess-header .ark-chess-arkade:hover {
+  color: rgb(255 255 255 / 0.72);
+}
+
+#ark-chess-header .ark-chess-account {
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: transparent;
+  color: inherit;
+}
+
+#ark-chess-header .ark-chess-mobile-nav {
+  padding: 0.375rem 0.5rem;
+}
+
+@media (min-width: 640px) {
+  #ark-chess-header .ark-chess-header-inner {
+    padding-inline: 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  #ark-chess-header .ark-chess-header-inner {
+    padding-inline: 1.75rem;
+  }
 }
 
 .ws-chess-round-shell {

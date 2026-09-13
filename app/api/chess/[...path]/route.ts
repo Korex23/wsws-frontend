@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Buffer } from "node:buffer";
-import { getRequestUser, verifyRequest } from "@/lib/server/auth";
+import { ACCESS_TOKEN_COOKIE, getRequestUser, verifyRequest } from "@/lib/server/auth";
 import {
   chessDisplayNameOfUser,
   chessReadNeedsSession,
@@ -38,8 +38,9 @@ const UPSTREAMS = upstreamCandidates(
   wsapiService("chess")
 );
 const NO_STORE = "no-store, max-age=0, must-revalidate";
-const COUNTRY_WRITE = /^(?:matches|matches\/[^/]+\/join|arenas\/[^/]+\/join)$/u;
-const PLAYER_PROFILE_WRITE = /^(?:matches|matches\/[^/]+\/join|computer\/matches)$/u;
+const COUNTRY_WRITE = /^(?:matches|matches\/[^/]+\/join|arenas\/[^/]+\/join|play\/computer)$/u;
+const PLAYER_PROFILE_WRITE = /^(?:matches|matches\/[^/]+\/join|computer\/matches|play\/computer)$/u;
+const SERVER_RENDERED_PAGE = /^(?:play|challenge)(?:\/|$)/u;
 
 // Just long enough to collapse the concurrent polls of two players watching the
 // same board, and short enough that neither sees a stale position. The match
@@ -51,7 +52,30 @@ const cache = new Map<
   { expires: number; body: string; status: number; contentType: string }
 >();
 
+function forwardedLocation(joined: string, location: string): string {
+  if (!location.startsWith("/") || location.startsWith("//")) return location;
+
+  const challenge = SERVER_RENDERED_PAGE.test(joined)
+    ? /^\/challenge\/(?:funded\/)?([^/?#]+)(?:[?#].*)?$/u.exec(location)
+    : null;
+  if (challenge) {
+    return `/casino/chess/invite?code=${encodeURIComponent(challenge[1])}`;
+  }
+
+  const round = SERVER_RENDERED_PAGE.test(joined)
+    ? /^\/round\/([^/?#]+)(?:[?#].*)?$/u.exec(location)
+    : null;
+  if (round) {
+    return `/casino/chess/play?match=${encodeURIComponent(round[1])}`;
+  }
+
+  return SERVER_RENDERED_PAGE.test(joined) ? `/api/chess${location}` : location;
+}
+
 function cacheTtlMs(joined: string): number {
+  // Server-rendered lobby and challenge pages contain viewer-specific state.
+  if (SERVER_RENDERED_PAGE.test(joined)) return 0;
+  if (/^challenges(?:\/|$)/u.test(joined)) return 0;
   // The exact match snapshot carries lifecycle transitions. It is the repair
   // path when a creator misses the opponent-joined socket frame, so even a tiny
   // cache can replay `waiting` after the game is active. Move history and PGN
@@ -111,7 +135,7 @@ function noWallet() {
 
 function forwardAuthHeaders(req: NextRequest, headers: Record<string, string>): void {
   const authorization = req.headers.get("authorization");
-  const accessToken = req.cookies.get("privy-token")?.value;
+  const accessToken = req.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
   const identityToken =
     req.headers.get("privy-id-token") ?? req.cookies.get("privy-id-token")?.value;
 
@@ -128,13 +152,19 @@ async function forward(
   wallet?: string,
   searchParams?: URLSearchParams,
   countryCode?: string | null,
-  displayName?: string | null
+  displayName?: string | null,
+  requestContentType?: string | null
 ) {
   const search = searchParams ? searchParams.toString() : req.nextUrl.searchParams.toString();
   const query = search ? `?${search}` : "";
   const cacheKey = `${joined}${query}`;
-  const headers: Record<string, string> = { accept: "application/json" };
-  if (method !== "GET") headers["content-type"] = "application/json";
+  const headers: Record<string, string> = {
+    accept: req.headers.get("accept") ?? "application/json",
+  };
+  if (method !== "GET") {
+    headers["content-type"] = requestContentType ?? "application/json";
+  }
+  if (SERVER_RENDERED_PAGE.test(joined)) headers["x-forwarded-prefix"] = "/api/chess";
   if (wallet) {
     headers["x-wallet-address"] = wallet;
     forwardAuthHeaders(req, headers);
@@ -151,6 +181,7 @@ async function forward(
       headers,
       body,
       cache: "no-store",
+      redirect: SERVER_RENDERED_PAGE.test(joined) ? "manual" : "follow",
     };
     const res =
       method === "GET"
@@ -196,9 +227,17 @@ async function forward(
         contentType,
       });
     }
+    const responseHeaders: Record<string, string> = {
+      "content-type": contentType,
+      "cache-control": NO_STORE,
+    };
+    const location = res.headers.get("location");
+    if (location) {
+      responseHeaders.location = forwardedLocation(joined, location);
+    }
     return new NextResponse(text, {
       status: res.status,
-      headers: { "content-type": contentType, "cache-control": NO_STORE },
+      headers: responseHeaders,
     });
   } catch (error) {
     console.error("Chess proxy failed:", joined, error);
@@ -219,6 +258,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   if (needsSession && !claims) return unauthorized();
   const user = needsSession ? await getRequestUser(req, claims) : null;
   const wallet = needsSession ? walletOfUser(user) : null;
+  const displayName = needsSession ? chessDisplayNameOfUser(user) : null;
   if (needsSession && !user) return walletUnavailable();
   if (needsSession && !wallet) return noWallet();
   const forwardedSearch = wallet
@@ -237,7 +277,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
     }
   }
 
-  return forward(req, joined, "GET", undefined, wallet ?? undefined, forwardedSearch);
+  return forward(
+    req,
+    joined,
+    "GET",
+    undefined,
+    wallet ?? undefined,
+    forwardedSearch,
+    undefined,
+    displayName
+  );
 }
 
 async function authedWrite(
@@ -258,7 +307,9 @@ async function authedWrite(
 
   const raw = await req.text();
   const joined = path.join("/");
-  const identified = withChessIdentity(joined, raw, wallet);
+  const requestContentType = req.headers.get("content-type");
+  const isForm = requestContentType?.startsWith("application/x-www-form-urlencoded") ?? false;
+  const identified = isForm ? raw : withChessIdentity(joined, raw, wallet);
   const country = COUNTRY_WRITE.test(joined) ? await detectRequestCountry(req.headers) : null;
   const displayName = PLAYER_PROFILE_WRITE.test(joined) ? chessDisplayNameOfUser(user) : null;
   return forward(
@@ -269,7 +320,8 @@ async function authedWrite(
     wallet,
     undefined,
     country,
-    displayName
+    displayName,
+    requestContentType
   );
 }
 

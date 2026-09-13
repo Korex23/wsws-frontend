@@ -151,6 +151,17 @@ describe("readHoldings", () => {
     await readHoldings(WALLET, "base-mainnet", [USDC], true);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps snapshots separate when the allowed contract set changes", async () => {
+    vi.mocked(fetch).mockImplementation(async () => answerBatch(0n, [0n, 0n]));
+    const { readHoldings } = await import("./portfolio-holdings");
+
+    await readHoldings(WALLET, "base-mainnet", [USDC]);
+    await readHoldings(WALLET, "base-mainnet", [USDC, CBBTC]);
+    await readHoldings(WALLET, "base-mainnet", [USDC]);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("refresh deadline", () => {

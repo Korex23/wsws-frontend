@@ -84,7 +84,7 @@ describe("useGameBalance", () => {
     });
     // Before any answer comes back, the cache already shows the stake gone;
     // the card follows on the next tick.
-    expect(client.getQueryData<Portfolio>(["portfolio", EVM, null])?.tokens[0].rawBalance).toBe(
+    expect(client.getQueryData<Portfolio>(["portfolio", "base", EVM])?.tokens[0].rawBalance).toBe(
       "20000000000000"
     );
     await vi.waitFor(() => expect(result.current.balanceUsd).toBeCloseTo(0.055, 6));

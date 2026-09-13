@@ -108,7 +108,7 @@ describe("usePayoutRefresh", () => {
         })
       );
     });
-    expect(client.getQueryData<Portfolio>(["portfolio", ME, null])?.tokens[0].rawBalance).toBe(
+    expect(client.getQueryData<Portfolio>(["portfolio", "base", ME])?.tokens[0].rawBalance).toBe(
       "140738723865610"
     );
     await vi.waitFor(() => expect(freshReads()).toBe(1));
@@ -127,7 +127,7 @@ describe("usePayoutRefresh", () => {
     await vi.waitFor(() => expect(result.current.balanceUsd).toBeCloseTo(0.055, 6));
 
     renderHook(() => usePayoutRefresh(ME, [ROW_425]), { wrapper });
-    expect(client.getQueryData<Portfolio>(["portfolio", ME, null])?.tokens[0].rawBalance).toBe(
+    expect(client.getQueryData<Portfolio>(["portfolio", "base", ME])?.tokens[0].rawBalance).toBe(
       "140738723865610"
     );
     await vi.waitFor(() => expect(freshReads()).toBe(1));

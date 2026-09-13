@@ -30,6 +30,8 @@ import type {
   ChessMatchState,
   ChessPlayer,
   ChessResult,
+  ChessRoundState,
+  ChessRoundStep,
   ChessWeaknessProfile,
   ChessInsightBucket,
   ChessTakebackState,
@@ -53,6 +55,9 @@ export interface ChessTimeControlWire {
 export interface ChessComputerOpponentWire {
   player: string;
   name: string;
+  bot?: boolean;
+  countryCode?: string | null;
+  rating?: number | null;
   side: ChessSideWire;
   level: number;
   coachEnabled?: boolean;
@@ -70,8 +75,9 @@ export interface ChessComputerWagerWire {
   payoutUsdc: string;
 }
 
-// A wager attached to a staked match. Stakes lock at create/join, draws and
-// aborts refund, decisive results settle to the winner minus the platform fee.
+// A wager attached to a staked match. Stakes lock at create/join, draws use
+// the product's partial-refund rule, aborts refund, and decisive results settle
+// to the winner minus the snapshotted platform fee.
 export interface ChessWagerWire {
   stakeUsdc: string;
   feeBps: number;
@@ -120,6 +126,9 @@ export interface ChessMatchWire {
   // WS-gateway topic for live frames, once the backend's relay publishes.
   liveTopic?: string;
   status: ChessStatusWire;
+  variant?: ChessMatch["variant"];
+  initialFen?: string;
+  chess960Position?: number | null;
   fen: string;
   turn: ChessSideWire;
   ply: number;
@@ -156,6 +165,25 @@ export interface ChessMoveWire {
   byPlayer: string;
   clockMsRemaining: number | null;
   createdAt: string;
+}
+
+export interface ChessRoundStepWire {
+  ply: number;
+  uci: string | null;
+  san: string | null;
+  fen: string;
+  check: boolean;
+  byPlayer: string | null;
+  clockMsRemaining: number | null;
+  createdAt: string | null;
+}
+
+export interface ChessRoundSnapshotWire {
+  match: ChessMatchWire;
+  steps: ChessRoundStepWire[];
+  legalMoves: string[];
+  check: boolean;
+  serverTime: string;
 }
 
 export interface ChessChatMessageWire {
@@ -437,6 +465,7 @@ export interface ToChessMatchOptions {
   moves?: ChessMoveWire[];
   moveSan?: string[];
   clockUpdatedAt?: string;
+  round?: ChessRoundState | null;
 }
 
 function normalizeClocks(wire: ChessMatchWire): Record<ChessColor, number> {
@@ -467,6 +496,9 @@ function toComputerOpponent(
   return {
     player: computer.player,
     name: computer.name,
+    bot: computer.bot ?? false,
+    countryCode: computer.countryCode ?? null,
+    rating: computer.rating ?? null,
     side: computer.side,
     level: computer.level,
     coachEnabled: computer.coachEnabled ?? false,
@@ -491,7 +523,13 @@ function nameComputerSeat(
   computer?: ChessComputerOpponentWire | null
 ): ChessPlayer | null {
   if (!player || !computer || computer.side !== side) return player;
-  return { ...player, username: computer.name, rating: null, provisional: null };
+  return {
+    ...player,
+    username: computer.name,
+    rating: computer.rating ?? null,
+    provisional: false,
+    countryCode: computer.countryCode ?? null,
+  };
 }
 
 export function toChessMatch(wire: ChessMatchWire, options: ToChessMatchOptions = {}): ChessMatch {
@@ -537,8 +575,12 @@ export function toChessMatch(wire: ChessMatchWire, options: ToChessMatchOptions 
         : formatTimeControl(wire.timeControl.initialSeconds, wire.timeControl.incrementSeconds),
     clockMode: wire.timeControl.mode ?? "real_time",
     computer: toComputerOpponent(wire.computer),
+    variant: wire.variant ?? "standard",
+    initialFen: wire.initialFen ?? wire.fen,
+    chess960Position: wire.chess960Position ?? null,
     fen: wire.fen,
     moves,
+    round: options.round ?? null,
     clocks: normalizeClocks(wire),
     clockUpdatedAt,
     turn: toColor(wire.turn),
@@ -557,6 +599,7 @@ export function toChessMatch(wire: ChessMatchWire, options: ToChessMatchOptions 
     // A staked match carries its per-player USDC stake; null = played for free.
     stakeUsdc: wire.wager?.stakeUsdc ?? wire.computer?.wager?.stakeUsdc ?? null,
     wagerStatus: wire.wager?.status ?? wire.computer?.wager?.status ?? null,
+    wagerFeeBps: wire.wager?.feeBps ?? wire.computer?.wager?.feeBps ?? null,
     // The doc says to take the topic from the response, never recompute it;
     // the fallback only covers an older service that predates the field.
     liveTopic: wire.liveTopic ?? `chess:match:${wire.id}`,
@@ -612,6 +655,9 @@ export interface ChessPositionFrame {
   clocks: ChessClocksWire;
   clockUpdatedAt?: string;
   status: ChessStatusWire;
+  legalMoves?: string[];
+  check?: boolean;
+  step?: ChessRoundStepWire;
 }
 
 // Fold a `position` frame into the cached match. The board (fen/turn/clocks)
@@ -622,6 +668,17 @@ export interface ChessPositionFrame {
 export function applyPositionFrame(prev: ChessMatch, frame: ChessPositionFrame): ChessMatch {
   const san = frame.lastMove?.san;
   const moves = san && frame.ply === prev.moves.length + 1 ? [...prev.moves, san] : prev.moves;
+  const canAppendStep = !!prev.round && !!frame.step && frame.ply === prev.round.steps.length;
+  const round: ChessRoundState | null | undefined = prev.round
+    ? {
+        ...prev.round,
+        steps: canAppendStep
+          ? [...prev.round.steps, frame.step as ChessRoundStep]
+          : prev.round.steps,
+        legalMoves: frame.legalMoves ?? prev.round.legalMoves,
+        check: frame.check ?? prev.round.check,
+      }
+    : prev.round;
   return {
     ...prev,
     fen: frame.fen,
@@ -630,6 +687,7 @@ export function applyPositionFrame(prev: ChessMatch, frame: ChessPositionFrame):
     clocks: { w: frame.clocks.whiteMs / 1000, b: frame.clocks.blackMs / 1000 },
     clockUpdatedAt: frame.clockUpdatedAt ?? new Date().toISOString(),
     moves,
+    round,
   };
 }
 
@@ -640,6 +698,11 @@ const MATCH_STATE_ORDER: Record<ChessMatchState, number> = {
   cancelled: 2,
 };
 
+function matchPly(match: ChessMatch): number {
+  const roundPly = match.round?.steps.at(-1)?.ply;
+  return typeof roundPly === "number" ? roundPly : match.moves.length;
+}
+
 // A REST repair can finish after a newer socket frame. Never let that older
 // response move a board backwards from active to waiting (or from finished to
 // active). This is the client-side equivalent of Lichess's socket-version check
@@ -649,9 +712,13 @@ export function mergeChessMatchSnapshot(
   incoming: ChessMatch
 ): ChessMatch {
   if (!previous || previous.id !== incoming.id) return incoming;
-  return MATCH_STATE_ORDER[incoming.state] < MATCH_STATE_ORDER[previous.state]
-    ? previous
-    : incoming;
+  const previousState = MATCH_STATE_ORDER[previous.state];
+  const incomingState = MATCH_STATE_ORDER[incoming.state];
+  if (incomingState < previousState) return previous;
+  if (incomingState === previousState && matchPly(incoming) < matchPly(previous)) {
+    return previous;
+  }
+  return incoming;
 }
 
 // Fold a `state` frame (a full match snapshot: join, draw-offer changes, terminal
@@ -663,9 +730,14 @@ export function applyStateFrame(prev: ChessMatch, wire: ChessMatchWire): ChessMa
   return mergeChessMatchSnapshot(prev, {
     ...next,
     moves: prev.moves,
+    round: prev.round,
     // A rolling deployment can send a compact state packet without newer
     // capabilities. Absence means "unchanged", not "disabled".
     timeExtensions: wire.timeExtensions ? next.timeExtensions : prev.timeExtensions,
+    variant: wire.variant ?? prev.variant,
+    initialFen: wire.initialFen ?? prev.initialFen,
+    chess960Position:
+      wire.chess960Position === undefined ? prev.chess960Position : wire.chess960Position,
     // Joining is anchored to server startedAt. Later state-only frames retain
     // the last move anchor on old backends instead of using browser receipt time.
     clockUpdatedAt: wire.clockUpdatedAt || justStarted ? next.clockUpdatedAt : prev.clockUpdatedAt,
@@ -786,6 +858,7 @@ export function toChessChallenge(wire: ChessMatchWire): ChessChallenge {
     // a future short-code scheme needs no client change.
     inviteCode: wire.inviteCode ?? wire.id,
     stakeUsdc: wire.wager?.stakeUsdc ?? null,
+    feeBps: wire.wager?.feeBps ?? null,
   };
 }
 

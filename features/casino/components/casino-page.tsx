@@ -14,7 +14,7 @@ import {
 } from "@/features/casino/components/casino-nav-guard";
 import { loadInterest } from "@/lib/preferences";
 import { DraughtsSiteHeader } from "@/features/casino/components/draughts/draughts-site-header";
-import { ChessSiteShell } from "@/features/casino/components/chess/chess-site-shell";
+import { ChessSiteShell } from "@/features/casino/components/chess-app/chess-site-shell";
 
 // Names for the routes that are somewhere to go back to. Anything else falls
 // back to its own last path segment.

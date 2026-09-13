@@ -291,10 +291,73 @@ describe("match", () => {
       })
     );
     expect(staked.stakeUsdc).toBe("10");
+    expect(staked.wagerFeeBps).toBe(500);
+    expect(
+      toChessChallenge(
+        wire({
+          status: "waiting",
+          wager: {
+            stakeUsdc: "10",
+            feeBps: 1_000,
+            status: "waiting",
+            winnerPlayer: null,
+          },
+        })
+      ).feeBps
+    ).toBe(1_000);
   });
 });
 
 describe("live game frames", () => {
+  it("appends the authoritative replay step and legal moves from a pushed position", () => {
+    const active = toChessMatch(wire(), {
+      round: {
+        steps: [
+          {
+            ply: 0,
+            uci: null,
+            san: null,
+            fen: START_FEN,
+            check: false,
+            byPlayer: null,
+            clockMsRemaining: null,
+            createdAt: null,
+          },
+        ],
+        legalMoves: ["e2e4", "d2d4"],
+        check: false,
+        serverTime: "2026-07-30T09:01:00.000Z",
+      },
+    });
+    const step = {
+      ply: 1,
+      uci: "e2e4",
+      san: "e4",
+      fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+      check: false,
+      byPlayer: "0xwhite",
+      clockMsRemaining: 299_000,
+      createdAt: "2026-07-30T09:01:30.000Z",
+    };
+
+    const next = applyPositionFrame(active, {
+      fen: step.fen,
+      turn: "black",
+      ply: 1,
+      lastMove: { uci: step.uci, san: step.san },
+      clocks: { whiteMs: 299_000, blackMs: 300_000 },
+      clockUpdatedAt: step.createdAt,
+      status: "active",
+      legalMoves: ["e7e5", "c7c5"],
+      check: false,
+      step,
+    });
+
+    expect(next.round?.steps).toHaveLength(2);
+    expect(next.round?.steps[1]).toEqual(step);
+    expect(next.round?.legalMoves).toEqual(["e7e5", "c7c5"]);
+  });
+
   it("uses the same server clock anchor for a pushed move in every browser", () => {
     const active = toChessMatch(wire());
     const next = applyPositionFrame(active, {
@@ -325,6 +388,18 @@ describe("live game frames", () => {
     expect(mergeChessMatchSnapshot(waiting, active)).toBe(active);
     expect(mergeChessMatchSnapshot(active, waiting)).toBe(active);
     expect(mergeChessMatchSnapshot(finished, active)).toBe(finished);
+  });
+
+  it("never lets a late lower-ply snapshot overwrite a newer live position", () => {
+    const newer = toChessMatch(wire({ status: "active", ply: 2 }), {
+      moveSan: ["e4", "e5"],
+    });
+    const older = toChessMatch(wire({ status: "active", ply: 1 }), {
+      moveSan: ["e4"],
+    });
+
+    expect(mergeChessMatchSnapshot(newer, older)).toBe(newer);
+    expect(mergeChessMatchSnapshot(older, newer)).toBe(newer);
   });
 
   it("keeps move history while applying the authoritative terminal snapshot", () => {

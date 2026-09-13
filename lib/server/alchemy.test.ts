@@ -175,6 +175,19 @@ describe("fetchPortfolio upstreams", () => {
     expect(seen.filter((u) => u.includes("rpc.zerodev.app")).length).toBe(EVM_NETWORKS.length);
   });
 
+  it("reads only Base and skips Solana for the Base-only portfolio", async () => {
+    const seen = stubFetch();
+    const { fetchPortfolio } = await import("./alchemy");
+    const SOLANA = "So1anaWa11etAddress111111111111111111111111";
+
+    await fetchPortfolio(WALLET, SOLANA, null, "base");
+
+    const chainReads = seen.filter((u) => u.includes("rpc.zerodev.app"));
+    expect(chainReads).toHaveLength(1);
+    expect(chainReads[0]).toContain("/chain/8453");
+    expect(seen.some((u) => u.includes("assets/tokens/by-address"))).toBe(false);
+  });
+
   // A trade on Base must not re-read the 27 other networks or re-page the
   // Solana Portfolio API: a scoped fresh read skips the snapshot cache and
   // re-reads only the networks in scope, everything else comes from cache.

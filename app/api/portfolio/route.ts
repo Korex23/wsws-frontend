@@ -9,6 +9,7 @@ import {
 import { parseFreshParam } from "@/lib/portfolio/fresh-scope";
 
 const KNOWN_NETWORKS = [...EVM_NETWORKS, SOLANA_NETWORK];
+const BASE_NETWORKS = ["base-mainnet"];
 
 // Balances are public on-chain data. The auth check only gates use of our
 // Alchemy key. The client passes its own embedded wallet addresses.
@@ -20,13 +21,23 @@ export async function GET(req: NextRequest) {
 
   const evm = req.nextUrl.searchParams.get("evm") ?? undefined;
   const solana = req.nextUrl.searchParams.get("solana") ?? undefined;
+  const requestedScope = req.nextUrl.searchParams.get("scope");
+  if (requestedScope && requestedScope !== "base") {
+    return NextResponse.json({ error: "Invalid portfolio scope" }, { status: 400 });
+  }
+  const baseOnly = requestedScope === "base";
   // A caller that just traded needs to observe its own effect on the
   // networks it named; the short shared cache would otherwise hand back the
   // pre-trade snapshot. `fresh=1` still means every network.
-  const fresh = parseFreshParam(req.nextUrl.searchParams.get("fresh"), KNOWN_NETWORKS);
+  const fresh = parseFreshParam(
+    req.nextUrl.searchParams.get("fresh"),
+    baseOnly ? BASE_NETWORKS : KNOWN_NETWORKS
+  );
 
   try {
-    const portfolio = await fetchPortfolio(evm, solana, fresh);
+    const portfolio = baseOnly
+      ? await fetchPortfolio(evm, undefined, fresh, "base")
+      : await fetchPortfolio(evm, solana, fresh);
     return NextResponse.json(portfolio, {
       headers: {
         // `private`, never `s-maxage`: this is one wallet's data, and a

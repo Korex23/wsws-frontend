@@ -8,6 +8,30 @@ import { withSentryConfig } from "@sentry/nextjs/config";
 // Links the next-intl request config (i18n/request.ts) into the build. The app
 // localizes via a cookie, not locale URLs, so routing is untouched.
 const withNextIntl = createNextIntlPlugin();
+const defaultChessAssetBaseUrl = "https://pub-669f5226f445418d8b07f013b8de572d.r2.dev";
+const chessAssetBaseUrl = (
+  process.env.R2_PUBLIC_URL ??
+  process.env.NEXT_PUBLIC_CHESS_ASSET_BASE_URL ??
+  defaultChessAssetBaseUrl
+).replace(/\/+$/u, "");
+const chessAssetPrefix = `${chessAssetBaseUrl}/chess-assets/v1`;
+const migratedLichessAssetRoots = [
+  "cursors",
+  "data",
+  "fide",
+  "flags",
+  "flair",
+  "font",
+  "images",
+  "javascripts",
+  "lifat",
+  "logo",
+  "oops",
+  "piece",
+  "sound",
+  "vendor",
+  "video",
+];
 
 // Without this id every wallet, login and signature in the app is dead, so a
 // production build that is missing it should not produce a bundle at all.
@@ -26,7 +50,10 @@ const nextConfig: NextConfig = {
   // Stamped into the client bundle so analytics can attribute an event to the
   // release it came from. Read from package.json, so it moves with a version
   // bump instead of being maintained by hand.
-  env: { NEXT_PUBLIC_APP_VERSION: packageJson.version },
+  env: {
+    NEXT_PUBLIC_APP_VERSION: packageJson.version,
+    NEXT_PUBLIC_CHESS_ASSET_BASE_URL: chessAssetBaseUrl,
+  },
   // Powerball became ArkBall. Shared links and bookmarks to the old slug still
   // land on the game.
   async redirects() {
@@ -36,7 +63,28 @@ const nextConfig: NextConfig = {
       // would fight a rollback. Flip to permanent once 2.0 has held.
       { source: "/dashboard", destination: "/portfolio", permanent: false },
       { source: "/dashboard/:path*", destination: "/portfolio/:path*", permanent: false },
+      ...migratedLichessAssetRoots.map((root) => ({
+        source: `/chess/lichess/${root}/:path*`,
+        destination: `${chessAssetPrefix}/chess/lichess/${root}/:path*`,
+        permanent: false,
+      })),
     ];
+  },
+  // Lichess assets are stored once under a namespace. Root URLs are retained
+  // as fallback aliases because the upstream CSS and runtime build them.
+  async rewrites() {
+    return {
+      fallback: [
+        {
+          source: "/npm/:path*",
+          destination: `${chessAssetPrefix}/npm/:path*`,
+        },
+        ...migratedLichessAssetRoots.map((root) => ({
+          source: `/${root}/:path*`,
+          destination: `${chessAssetPrefix}/chess/lichess/${root}/:path*`,
+        })),
+      ],
+    };
   },
   // Pin the Turbopack root to this project. Otherwise Next walks up the tree,
   // finds the stray ~/package-lock.json, and treats the whole home directory as

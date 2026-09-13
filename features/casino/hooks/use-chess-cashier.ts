@@ -101,8 +101,36 @@ export function useChessCashierStatus() {
     feePct: config.data ? feePctFromBps(config.data.platformFeeBps) : null,
     available: balance.data?.availableUsdc ?? "0",
     locked: balance.data?.lockedUsdc ?? "0",
+    total: balance.data?.totalUsdc ?? "0",
     lockBuckets: cashierLockBuckets(balance.data),
     balanceLoading: enabled && balance.isLoading,
+  };
+}
+
+// Withdrawal-only access for the global chess navigation. Unlike the full
+// cashier hook, this does not initialize token sending because legacy ledger
+// funds can only leave the ledger; they can never be topped up from this UI.
+export function useChessCashierWithdrawal() {
+  const queryClient = useQueryClient();
+  const status = useChessCashierStatus();
+  const { wallet } = status;
+
+  const withdraw = useMutation({
+    mutationFn: (amountUsdc: string): Promise<CashierWithdrawal> => {
+      if (!wallet) throw new Error("Connect your wallet first.");
+      return createChessWithdrawal(wallet, amountUsdc);
+    },
+    onSuccess: () => {
+      if (wallet) {
+        void queryClient.invalidateQueries({ queryKey: CASHIER_KEYS.balance(wallet) });
+      }
+    },
+  });
+
+  return {
+    ...status,
+    withdraw: withdraw.mutateAsync,
+    withdrawing: withdraw.isPending,
   };
 }
 

@@ -1963,7 +1963,9 @@
         "historyTitle": "Tus partidas",
         "historyEmpty": "Aún no hay partidas. Crea un desafío para empezar.",
         "downloadPgn": "Descargar PGN",
-        "pgnFailed": "No se pudo obtener la partida."
+        "pgnFailed": "No se pudo obtener la partida.",
+        "signInToPlay": "Inicia sesión para jugar",
+        "sessionFailed": "No se pudo iniciar la sesión de ajedrez."
       },
       "lobby": {
         "subject": "la sala de ajedrez",
@@ -2285,11 +2287,12 @@
       },
       "stake": {
         "label": "Apuesta (opcional)",
-        "note": "Ambos jugadores bloquean la apuesta; el ganador se lleva el pozo menos la comisión del {pct}%. Tablas y cancelaciones reembolsan a ambos.",
+        "note": "Ambos jugadores bloquean la apuesta; el ganador se lleva el pozo menos la comisión del {pct}%. En tablas se devuelve el 50 % de cada apuesta; las cancelaciones reembolsan a ambos.",
         "needsBalance": "Necesitas {amount} USD disponibles en tu saldo de ajedrez para esta apuesta.",
         "joinLocks": "Unirte bloquea {amount} USD de tu saldo de ajedrez.",
         "wagerEach": "Apuesta · {amount} USD cada uno",
         "wagerRefunded": "Apuestas reembolsadas a ambos jugadores.",
+        "wagerDrawHalfRefunded": "Tablas liquidadas: se devolvió el 50 % de cada apuesta.",
         "wagerSettled": "Pozo entregado al ganador (tras la comisión del {pct}%).",
         "summaryStake": "Stake, each side",
         "summaryYouLock": "You lock now",

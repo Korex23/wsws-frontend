@@ -1963,7 +1963,9 @@
         "historyTitle": "Vos parties",
         "historyEmpty": "Aucune partie pour l'instant. Créez un défi pour commencer.",
         "downloadPgn": "Télécharger le PGN",
-        "pgnFailed": "Impossible de récupérer la partie."
+        "pgnFailed": "Impossible de récupérer la partie.",
+        "signInToPlay": "Se connecter pour jouer",
+        "sessionFailed": "Impossible de démarrer la session d’échecs."
       },
       "lobby": {
         "subject": "le salon d'échecs",
@@ -2285,11 +2287,12 @@
       },
       "stake": {
         "label": "Mise (facultative)",
-        "note": "Les deux joueurs bloquent la mise ; le vainqueur remporte le pot moins les frais de {pct} %. Nulles et annulations remboursent les deux camps.",
+        "note": "Les deux joueurs bloquent la mise ; le vainqueur remporte le pot moins les frais de {pct} %. En cas de nulle, 50 % de chaque mise est remboursé ; les annulations remboursent les deux camps.",
         "needsBalance": "Il vous faut {amount} USD disponibles sur votre solde échecs pour cette mise.",
         "joinLocks": "Rejoindre bloque {amount} USD de votre solde échecs.",
         "wagerEach": "Mise · {amount} USD chacun",
         "wagerRefunded": "Mises remboursées aux deux joueurs.",
+        "wagerDrawHalfRefunded": "Nulle réglée : 50 % de chaque mise a été remboursé.",
         "wagerSettled": "Pot versé au vainqueur (après les frais de {pct} %).",
         "summaryStake": "Stake, each side",
         "summaryYouLock": "You lock now",

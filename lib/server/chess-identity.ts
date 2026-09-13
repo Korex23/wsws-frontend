@@ -1,6 +1,9 @@
 import type { User } from "@privy-io/node";
 
 const PRIVATE_READ_PATTERNS = [
+  /^play(?:\/|$)/u,
+  /^challenge(?:\/|$)/u,
+  /^challenges(?:\/|$)/u,
   /^cashier\/players\/[^/]+\/balance$/u,
   /^betting\/markets\/[^/]+\/bets$/u,
   /^betting\/swiss\/[^/]+\/bets$/u,

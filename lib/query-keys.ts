@@ -18,6 +18,8 @@ export const queryKeys = {
     all: ["portfolio"] as const,
     byWallet: (evm?: string | null, solana?: string | null) =>
       [...queryKeys.portfolio.all, evm ?? null, solana ?? null] as const,
+    baseByWallet: (evm?: string | null) =>
+      [...queryKeys.portfolio.all, "base", evm ?? null] as const,
   },
   activity: {
     all: ["activity"] as const,

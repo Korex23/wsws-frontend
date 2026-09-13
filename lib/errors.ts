@@ -169,6 +169,9 @@ export function friendlyError(
   if (/zerodev sponsorship is not configured|zerodev bundler/.test(m)) {
     return "This gas-sponsored transaction is temporarily unavailable. Your funds are safe.";
   }
+  if (/unsupported policy type|gas sponsorship policy .* missing/.test(m)) {
+    return "This gas-sponsored transaction is temporarily unavailable. Your funds are safe.";
+  }
   // Read the fee first. "gas required exceeds allowance" is the node saying the
   // account cannot pay for the gas, not that a token balance or an ERC-20
   // allowance is short, and the balance rule below would otherwise claim it
@@ -189,7 +192,11 @@ export function friendlyError(
   // saying "try again in a moment" would be a lie until the account is
   // topped up. Checked before the rate-limit rule, which it would otherwise
   // match through the 429 the upstream sends.
-  if (/out of monthly capacity|monthly capacity limit exceeded/.test(m)) {
+  if (
+    /out of monthly capacity|monthly capacity limit exceeded|over your gas sponsorship limit/.test(
+      m
+    )
+  ) {
     return "Gas-sponsored transactions are paused until sponsorship capacity is restored. Your funds are safe.";
   }
   // Provider is busy or rate limiting us.

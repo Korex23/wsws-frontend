@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { CasinoPage, SwissDetailSection } from "@/features/casino";
+import { ArenaDetailSection, CasinoPage } from "@/features/casino";
 
 export default function ChessTournamentDetailPage({
   params,
@@ -14,12 +14,7 @@ export default function ChessTournamentDetailPage({
   const query = use(searchParams);
   return (
     <CasinoPage hideBackLink>
-      <SwissDetailSection
-        tournamentId={id}
-        showCreatedShare={query.created === "1"}
-        game="chess"
-        format="champions"
-      />
+      <ArenaDetailSection arenaId={id} showCreatedShare={query.created === "1"} />
     </CasinoPage>
   );
 }

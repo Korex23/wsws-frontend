@@ -14,7 +14,7 @@ const SCOPE = [NETWORK] as const;
 // after the receipt is enough; if it fails the applied figure stays and the
 // regular poll corrects it.
 export function useGameBalance() {
-  const { tokens, refreshing, applyNativeDelta, refetchFresh } = usePortfolio();
+  const { tokens, refreshing, applyNativeDelta, refetchFresh } = usePortfolio({ scope: "base" });
   const eth = useMemo(
     () => tokens.find((tk) => tk.network === NETWORK && tk.symbol.toUpperCase() === "ETH"),
     [tokens]
