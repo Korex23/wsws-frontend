@@ -13,6 +13,9 @@ importers:
 
   .:
     dependencies:
+      '@badrap/result':
+        specifier: ^0.3.1
+        version: 0.3.1
       '@base-ui/react':
         specifier: ^1.6.0
         version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -85,6 +88,9 @@ importers:
       embla-carousel-react:
         specifier: ^8.6.0
         version: 8.6.0(react@19.2.4)
+      idb-keyval:
+        specifier: ^6.2.1
+        version: 6.3.0
       jsqr:
         specifier: ^1.4.0
         version: 1.4.0

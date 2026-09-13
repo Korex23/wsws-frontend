@@ -2,6 +2,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { build } from "esbuild";
 
+const chessSourceRoot = path.resolve("features/casino/components/chess");
+
 function condenseLiterals(text) {
   const backtick = "`".charCodeAt(0);
   const nextLiteral = (from) => {
@@ -52,6 +54,11 @@ await build({
   format: "esm",
   target: "es2018",
   conditions: ["source"],
+  alias: {
+    "keyboard-move": path.join(chessSourceRoot, "keyboardMove/src/exports.ts"),
+    lib: path.join(chessSourceRoot, "lib/src"),
+    voice: path.join(chessSourceRoot, "voice/src/voice.ts"),
+  },
   plugins: [
     {
       name: "lichess-condense-literals",

@@ -34,8 +34,8 @@ const LOCAL_DEV_CHESS_API = "http://127.0.0.1:8082";
 const UPSTREAMS = upstreamCandidates(
   process.env.CHESS_API_URL,
   process.env.NODE_ENV === "development" ? LOCAL_DEV_CHESS_API : undefined,
-  process.env.NEXT_PUBLIC_CHESS_API_URL,
-  wsapiService("chess")
+  wsapiService("chess"),
+  process.env.NEXT_PUBLIC_CHESS_API_URL
 );
 const NO_STORE = "no-store, max-age=0, must-revalidate";
 const COUNTRY_WRITE = /^(?:matches|matches\/[^/]+\/join|arenas\/[^/]+\/join|play\/computer)$/u;

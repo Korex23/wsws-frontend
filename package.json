@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "chess:assets:audit": "node scripts/chess-r2-assets.mjs audit",
+    "chess:assets:cors": "node scripts/chess-r2-assets.mjs cors",
     "chess:assets:publish": "node scripts/chess-r2-assets.mjs publish",
     "chess:assets:remote:verify": "node scripts/chess-r2-assets.mjs verify",
     "chess:assets:verify": "node scripts/verify-chess-assets.mjs",
@@ -29,6 +30,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@badrap/result": "^0.3.1",
     "@base-ui/react": "^1.6.0",
     "@esotericsoftware/spine-player": "4.1.56",
     "@lichess-org/chessground": "^10.1.1",
@@ -53,6 +55,7 @@
     "clsx": "^2.1.1",
     "driver.js": "^1.8.0",
     "embla-carousel-react": "^8.6.0",
+    "idb-keyval": "^6.2.1",
     "jsqr": "^1.4.0",
     "lightweight-charts": "^5.2.0",
     "livekit-client": "^2.22.0",

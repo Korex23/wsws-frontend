@@ -46,11 +46,15 @@ function mockRedirectingUpstream(location: string): void {
   }) as unknown as typeof fetch;
 }
 
-async function loadRoute(env: { chessApiUrl?: string; publicChessApiUrl?: string } = {}) {
+async function loadRoute(
+  env: { chessApiUrl?: string; publicChessApiUrl?: string; wsapiBaseUrl?: string } = {}
+) {
   vi.resetModules();
   if (env.chessApiUrl) process.env.CHESS_API_URL = env.chessApiUrl;
   else delete process.env.CHESS_API_URL;
   process.env.NEXT_PUBLIC_CHESS_API_URL = env.publicChessApiUrl ?? "https://chess.test";
+  process.env.WSAPI_BASE_URL = env.wsapiBaseUrl ?? "https://gateway.test";
+  delete process.env.NEXT_PUBLIC_WSAPI_BASE_URL;
   return import("@/app/api/chess/[...path]/route");
 }
 
@@ -117,6 +121,29 @@ describe("chess proxy route", () => {
       const [url] = (global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock
         .calls[0];
       expect(url).toBe("http://127.0.0.1:8082/coach/catalog");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("prefers the platform gateway over the legacy public chess url", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+
+    try {
+      const { GET } = await loadRoute({
+        publicChessApiUrl: "https://legacy-chess.test",
+        wsapiBaseUrl: "https://staging.test",
+      });
+      const res = await GET(makeReq("https://app.test/api/chess/play?setup=hook"), {
+        params: Promise.resolve({ path: ["play"] }),
+      });
+
+      expect(res.status).toBe(200);
+      const [url] = (global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock
+        .calls[0];
+      expect(url).toBe("https://staging.test/v1/chess/play?setup=hook");
     } finally {
       vi.unstubAllEnvs();
     }

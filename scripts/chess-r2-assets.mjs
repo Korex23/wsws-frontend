@@ -34,8 +34,8 @@ const REQUIRED_REMOTE_OBJECTS = [
 ].map((relativePath) => `${CHESS_ASSET_PREFIX}/${relativePath}`);
 
 const command = process.argv[2] ?? "audit";
-if (!["audit", "publish", "verify"].includes(command)) {
-  throw new Error("Usage: node scripts/chess-r2-assets.mjs [audit|publish|verify]");
+if (!["audit", "cors", "publish", "verify"].includes(command)) {
+  throw new Error("Usage: node scripts/chess-r2-assets.mjs [audit|cors|publish|verify]");
 }
 
 await loadIgnoredEnv();
@@ -43,10 +43,19 @@ await loadIgnoredEnv();
 if (command === "audit") {
   const manifest = await buildLocalManifest();
   printSummary(summarizeWithRoots(manifest));
+} else if (command === "cors") {
+  await configureCorsOnly();
 } else if (command === "publish") {
   await publishAssets();
 } else {
   await verifyPublicAssets();
+}
+
+async function configureCorsOnly() {
+  const client = createR2Client();
+  const bucket = requiredEnv("R2_BUCKET");
+  await configurePublicCors(client, bucket);
+  console.log(`Configured browser CORS for R2 bucket ${bucket}.`);
 }
 
 async function loadIgnoredEnv() {
@@ -72,17 +81,9 @@ async function loadIgnoredEnv() {
 }
 
 async function publishAssets() {
-  const endpoint = requiredEnv("R2_ENDPOINT");
-  const accessKeyId = requiredEnv("R2_ACCESS_KEY_ID");
-  const secretAccessKey = requiredEnv("R2_SECRET_ACCESS_KEY");
   const bucket = requiredEnv("R2_BUCKET");
   const publicUrl = normalizePublicUrl(requiredEnv("R2_PUBLIC_URL"));
-  const client = new S3Client({
-    endpoint,
-    region: "auto",
-    credentials: { accessKeyId, secretAccessKey },
-    maxAttempts: 4,
-  });
+  const client = createR2Client();
 
   console.log("Hashing local chess assets...");
   const manifest = await buildLocalManifest();
@@ -142,18 +143,10 @@ async function publishAssets() {
 }
 
 async function verifyPublicAssets() {
-  const endpoint = requiredEnv("R2_ENDPOINT");
-  const accessKeyId = requiredEnv("R2_ACCESS_KEY_ID");
-  const secretAccessKey = requiredEnv("R2_SECRET_ACCESS_KEY");
   const bucket = requiredEnv("R2_BUCKET");
   const publicUrl = normalizePublicUrl(requiredEnv("R2_PUBLIC_URL"));
   const summary = JSON.parse(await readFile(SUMMARY_PATH, "utf8"));
-  const client = new S3Client({
-    endpoint,
-    region: "auto",
-    credentials: { accessKeyId, secretAccessKey },
-    maxAttempts: 4,
-  });
+  const client = createR2Client();
   await verifyRemoteManifest(publicUrl, summary, client, bucket);
   printSummary(summary);
 }
@@ -193,7 +186,12 @@ async function configurePublicCors(client, bucket) {
     .filter(Boolean);
   const allowedOrigins = configuredOrigins?.length
     ? configuredOrigins
-    : ["http://localhost:3000", "https://staging.tsionark.com", "https://tsionark.com"];
+    : [
+        "http://localhost:3000",
+        "https://staging.tsionark.com",
+        "https://wsws-test.vercel.app",
+        "https://tsionark.com",
+      ];
 
   await sendWithTimeout(
     client,
@@ -212,6 +210,18 @@ async function configurePublicCors(client, bucket) {
       },
     })
   );
+}
+
+function createR2Client() {
+  return new S3Client({
+    endpoint: requiredEnv("R2_ENDPOINT"),
+    region: "auto",
+    credentials: {
+      accessKeyId: requiredEnv("R2_ACCESS_KEY_ID"),
+      secretAccessKey: requiredEnv("R2_SECRET_ACCESS_KEY"),
+    },
+    maxAttempts: 4,
+  });
 }
 
 async function remoteObjectMatches(client, bucket, entry) {
