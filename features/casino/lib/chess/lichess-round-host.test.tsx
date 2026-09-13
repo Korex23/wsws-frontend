@@ -103,7 +103,7 @@ describe("LichessRound host", () => {
     expect(container.querySelector("#main-wrap")).toHaveStyle({ display: "none" });
   });
 
-  it("shows a lobby fallback opponent without a BOT title", () => {
+  it("shows a lobby fallback opponent with its country flag and without a BOT title", () => {
     const data = roundData(lobbyBotMatch, "w");
     const opponent = data.opponent as {
       name: string;
@@ -111,8 +111,8 @@ describe("LichessRound host", () => {
     };
 
     expect(lobbyBotMatch.computer?.bot).toBe(true);
-    expect(opponent.name).toBe("Haruto Sato");
-    expect(opponent.user).toMatchObject({ username: "Haruto Sato" });
+    expect(opponent.name).toBe("🇯🇵 Haruto Sato");
+    expect(opponent.user).toMatchObject({ username: "🇯🇵 Haruto Sato" });
     expect(opponent.user).not.toHaveProperty("title");
   });
 });

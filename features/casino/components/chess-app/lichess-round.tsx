@@ -34,6 +34,7 @@ import {
 } from "@/features/casino/lib/chess/lichess-assets";
 import { LichessSpectatorChat } from "@/features/casino/components/chess-app/lichess-spectator-chat";
 import { LichessSpectatorBetting } from "@/features/casino/components/chess-app/lichess-spectator-betting";
+import { countryFlag } from "@/features/casino/lib/chess/social";
 
 type LichessColor = "white" | "black";
 
@@ -126,6 +127,11 @@ function viewerId(match: ChessMatch, viewer: ChessColor | null): string | undefi
   return undefined;
 }
 
+function playerName(name: string, countryCode: string | null | undefined): string {
+  const flag = countryFlag(countryCode);
+  return flag && !name.startsWith(flag) ? `${flag} ${name}` : name;
+}
+
 function playerData(
   player: ChessPlayer | null,
   side: LichessColor,
@@ -136,7 +142,8 @@ function playerData(
 ) {
   const computer = match.computer?.side === side ? match.computer : null;
   const lobbyBot = computer?.bot === true;
-  const name = (computer?.name ?? player?.username.trim()) || "Anonymous";
+  const plainName = (computer?.name ?? player?.username.trim()) || "Anonymous";
+  const name = playerName(plainName, computer?.countryCode ?? player?.countryCode);
   const id = player?.id ?? `${match.id}-${side}`;
   return {
     id,
@@ -312,7 +319,8 @@ function syncMetaPlayer(
 ): void {
   const player = side === "white" ? match.white : match.black;
   const computer = match.computer?.side === side ? match.computer : null;
-  const name = (computer?.name ?? player?.username.trim()) || "Anonymous";
+  const plainName = (computer?.name ?? player?.username.trim()) || "Anonymous";
+  const name = playerName(plainName, computer?.countryCode ?? player?.countryCode);
   const link = host.querySelector<HTMLElement>(`.game__meta__players .player.${side} .user-link`);
   if (!link) return;
 

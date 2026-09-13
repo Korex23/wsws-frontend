@@ -93,19 +93,25 @@ describe("chess proxy route", () => {
     expect(global.fetch).toHaveBeenCalledOnce();
   });
 
-  it("prefers the server-only chess url when both envs are set", async () => {
-    const { GET } = await loadRoute({
-      chessApiUrl: "http://127.0.0.1:18083",
-      publicChessApiUrl: "https://prod-chess.test",
-    });
-    const res = await GET(makeReq("https://app.test/api/chess/cashier/config"), {
-      params: Promise.resolve({ path: ["cashier", "config"] }),
-    });
+  it("prefers the server-only chess url during development", async () => {
+    vi.stubEnv("NODE_ENV", "development");
 
-    expect(res.status).toBe(200);
-    const [url] = (global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock
-      .calls[0];
-    expect(url).toBe("http://127.0.0.1:18083/cashier/config");
+    try {
+      const { GET } = await loadRoute({
+        chessApiUrl: "http://127.0.0.1:18083",
+        publicChessApiUrl: "https://prod-chess.test",
+      });
+      const res = await GET(makeReq("https://app.test/api/chess/cashier/config"), {
+        params: Promise.resolve({ path: ["cashier", "config"] }),
+      });
+
+      expect(res.status).toBe(200);
+      const [url] = (global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock
+        .calls[0];
+      expect(url).toBe("http://127.0.0.1:18083/cashier/config");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("uses the Docker chess service by default in development", async () => {
@@ -133,6 +139,7 @@ describe("chess proxy route", () => {
 
     try {
       const { GET } = await loadRoute({
+        chessApiUrl: "https://stale-server-chess.test",
         publicChessApiUrl: "https://legacy-chess.test",
         wsapiBaseUrl: "https://staging.test",
       });

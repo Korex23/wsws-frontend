@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api as ChessgroundApi } from "@lichess-org/chessground/api";
 import type { Key } from "@lichess-org/chessground/types";
-import { playerIdentityLabel } from "@/features/casino/lib/chess/social";
+import { countryFlag, playerIdentityLabel } from "@/features/casino/lib/chess/social";
 import type {
   ChessColor,
   ChessMatch,
@@ -193,13 +193,13 @@ function MiniPlayer({
     <span className="mini-game__player">
       <span className="mini-game__user">
         {player?.countryCode ? (
-          <img
+          <span
             className="mini-game__flag"
-            src={`/chess/lichess/flags/${player.countryCode.toLowerCase()}.webp`}
-            width={16}
-            height={11}
-            alt={`${player.countryCode.toUpperCase()} flag`}
-          />
+            role="img"
+            aria-label={`${player.countryCode.toUpperCase()} flag`}
+          >
+            {countryFlag(player.countryCode)}
+          </span>
         ) : null}
         {miniPlayerLabel(player, color === "w" ? "White" : "Black")}
       </span>

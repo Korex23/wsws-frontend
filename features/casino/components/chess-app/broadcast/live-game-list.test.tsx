@@ -58,6 +58,7 @@ describe("LiveGameList", () => {
 
     expect(screen.getByText("Amina (1742)")).toBeInTheDocument();
     expect(screen.getAllByRole("img", { name: "NG flag" })).toHaveLength(1);
+    expect(screen.getByRole("img", { name: "NG flag" })).toHaveTextContent("🇳🇬");
     expect(screen.getByText("Player video")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Watch/u })).toHaveAttribute(
       "href",

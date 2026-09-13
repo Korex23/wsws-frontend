@@ -234,7 +234,7 @@ describe("ChessLobbyFrame", () => {
     const frameDocument = document.implementation.createHTMLDocument("Ark Chess");
     frameDocument.body.innerHTML = `
       <a href="http://localhost:3000/api/chess/learn/puzzles" target="_top">Puzzles</a>
-      <form action="/api/chess/play/seeks" target="_top"></form>
+      <form action="/play/seeks" target="_top"></form>
       <form action="/api/chess/challenge" data-friend-setup></form>
       <button formtarget="_top">Submit</button>
     `;
@@ -245,12 +245,17 @@ describe("ChessLobbyFrame", () => {
     expect(link?.getAttribute("href")).toBe("http://localhost:3000/api/chess/learn/puzzles");
     expect(link?.dataset.arkRoute).toBe("/casino/chess/puzzles");
     expect(link?.getAttribute("target")).toBeNull();
-    expect(
-      frameDocument.querySelector('form[action="/api/chess/play/seeks"]')?.getAttribute("target")
-    ).toBeNull();
+    const seekForm = frameDocument.querySelector<HTMLFormElement>(
+      'form[action="/api/chess/play/seeks"]'
+    );
+    expect(seekForm).not.toBeNull();
+    expect(seekForm?.getAttribute("target")).toBeNull();
     expect(
       frameDocument.querySelector("form[data-friend-setup]")?.getAttribute("target")
     ).toBeNull();
+    expect(frameDocument.querySelector("form[data-friend-setup]")?.getAttribute("action")).toBe(
+      "/api/chess/challenge"
+    );
     expect(frameDocument.querySelector("button")?.getAttribute("formtarget")).toBeNull();
   });
 

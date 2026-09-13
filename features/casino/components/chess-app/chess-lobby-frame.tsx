@@ -261,8 +261,13 @@ export function rewriteChessFrameLinks(
     anchor.dataset.arkRoute = destination;
   }
 
-  for (const form of frameDocument.querySelectorAll<HTMLFormElement>('form[target="_top"]')) {
-    form.removeAttribute("target");
+  for (const form of frameDocument.querySelectorAll<HTMLFormElement>("form")) {
+    const action = new URL(form.action, appOrigin);
+    if (action.origin === appOrigin && !action.pathname.startsWith("/api/chess/")) {
+      action.pathname = `/api/chess${action.pathname}`;
+      form.action = `${action.pathname}${action.search}${action.hash}`;
+    }
+    if (form.target === "_top") form.removeAttribute("target");
   }
   for (const submitter of frameDocument.querySelectorAll<HTMLElement>('[formtarget="_top"]')) {
     submitter.removeAttribute("formtarget");
