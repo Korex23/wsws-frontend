@@ -9,18 +9,26 @@ import {
   useLegacyEvmSendBatch,
   useLegacySendToken,
 } from "@/features/migrate/hooks/use-legacy-send";
+import { useFreshLegacySession } from "@/features/migrate/hooks/use-fresh-legacy-session";
 
 // The old Privy wallets as a plain signer object, so venue adapters (which
 // never import Privy) can spend from them. Null until the user has signed in
-// to the old account. Must render inside LegacyPrivyProvider.
+// to the old account IN THIS PAGE LOAD — a session Privy restored on its own is
+// discarded first, see useFreshLegacySession. Must render inside
+// LegacyPrivyProvider.
 export function useLegacySigner(): LegacySigner | null {
   const { ready, authenticated, user } = usePrivy();
   const { wallets } = useWallets();
   const sendBatch = useLegacyEvmSendBatch();
   const sendToken = useLegacySendToken();
+  // A session restored from Privy's own storage is not proof of who is sitting
+  // here, and everything below spends real money on that basis. No signer is
+  // handed out until the inherited one has been discarded and the old account
+  // has signed in again.
+  const fresh = useFreshLegacySession();
 
   return useMemo(() => {
-    if (!ready || !authenticated) return null;
+    if (!fresh || !ready || !authenticated) return null;
     const evm = getWalletAddress(user, "ethereum");
     const solana = getWalletAddress(user, "solana");
     if (!evm && !solana) return null;
@@ -34,5 +42,5 @@ export function useLegacySigner(): LegacySigner | null {
         return (await wallet.getEthereumProvider()) as unknown as EIP1193Provider;
       },
     };
-  }, [ready, authenticated, user, wallets, sendBatch, sendToken]);
+  }, [fresh, ready, authenticated, user, wallets, sendBatch, sendToken]);
 }

@@ -8,7 +8,7 @@ import { useSocialAuth, useSocialWallet } from "decane-connect-kit";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { Avatar } from "@/components/ui/avatar";
 import { InviteFriendsModal } from "@/features/referrals";
-import { MoveOldMoneyEntry } from "@/features/migrate";
+import { MoveOldMoneyButton, MoveOldMoneySheet } from "@/features/migrate";
 import { MIGRATION_ADAPTERS } from "@/components/layout/migration-adapters";
 import { HelpIcon, SignOutIcon } from "@/components/ui/icons";
 import { WalletAddresses } from "@/components/layout/modals/wallet-addresses";
@@ -68,6 +68,7 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
   const popoverRef = useRef<HTMLDivElement>(null);
   const t = useTranslations("account");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const { profile, logout: sessionLogout } = useAuthSession();
   const { canUsePasskey } = useSocialAuth();
   const { addPasskey } = useSocialWallet();
@@ -191,10 +192,12 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
 
               {/* The always-available door into the migration. Mirrors the
                   phone Account modal, so a desktop user reaches the sweep from
-                  the same place. Self-contained: renders its own button and
-                  sheet, and shows a badge when the old wallet still holds
-                  funds. */}
-              <MoveOldMoneyEntry adapters={MIGRATION_ADAPTERS} className={itemClass} />
+                  the same place. Only the row lives here — the sheet is a
+                  sibling below, for the reason given there. */}
+              <MoveOldMoneyButton
+                onClick={() => setMoveOpen(true)}
+                className={itemClass}
+              />
 
               <a
                 href={SUPPORT_FORM_URL}
@@ -231,6 +234,22 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
           setInviteOpen(false);
           onClose();
         }}
+      />
+
+      {/* Outside the AnimatePresence on purpose, like the invite modal above.
+          The sheet portals to document.body, so every click inside it reads as
+          "outside the popover" and closes it — and a sheet rendered within the
+          popover body would be unmounted by that same click, half way through
+          handling it. Which is why Sign in and Move both did nothing on
+          desktop while the phone, whose door is a modal, was fine. */}
+      <MoveOldMoneySheet
+        open={moveOpen}
+        onClose={() => {
+          setMoveOpen(false);
+          onClose();
+        }}
+        adapters={MIGRATION_ADAPTERS}
+        entry="account_modal"
       />
     </>
   );

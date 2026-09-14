@@ -30,7 +30,11 @@ vi.mock("decane-connect-kit", () => ({
 // The migration door needs a query client and the whole venue-adapter graph;
 // neither is what this test is about.
 vi.mock("@/features/migrate", () => ({
-  MoveOldMoneyEntry: () => null,
+  MoveOldMoneyButton: ({ onClick }: { onClick: () => void }) => (
+    <button onClick={onClick}>open-migration</button>
+  ),
+  MoveOldMoneySheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="migration-sheet" /> : null,
 }));
 vi.mock("@/components/layout/migration-adapters", () => ({
   MIGRATION_ADAPTERS: [],
@@ -98,5 +102,27 @@ describe("AccountPopover", () => {
 
     rerender(<AccountPopover open={false} onClose={() => {}} triggerRef={triggerRef} />);
     await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+  });
+});
+
+describe("the migration sheet's lifetime", () => {
+  // The sheet portals to document.body, so every click inside it reads as
+  // "outside the popover" and closes it. Rendered within the popover body it
+  // was therefore unmounted by the very click it was handling: Sign in and
+  // Move both did nothing on desktop, while the phone's modal door was fine.
+  it("survives the popover closing", async () => {
+    const triggerRef = { current: null };
+    const { rerender } = render(
+      <AccountPopover open={true} onClose={() => {}} triggerRef={triggerRef} />
+    );
+
+    fireEvent.click(screen.getByText("open-migration"));
+    expect(screen.getByTestId("migration-sheet")).toBeInTheDocument();
+
+    // What a click inside the sheet does to the popover.
+    rerender(<AccountPopover open={false} onClose={() => {}} triggerRef={triggerRef} />);
+
+    await waitFor(() => expect(screen.queryByText("open-migration")).not.toBeInTheDocument());
+    expect(screen.getByTestId("migration-sheet")).toBeInTheDocument();
   });
 });

@@ -20,6 +20,8 @@ import { BalanceVisibilityProvider } from "@/components/ui/balance-visibility";
 // the same reason the root providers do: it composes a feature, and only the
 // app layer may. The gate loads the host itself on demand.
 import { MiniTimerGate } from "@/features/casino/components/last-standing/mini-timer-gate";
+import { MigrationOAuthReturn } from "@/features/migrate";
+import { MIGRATION_ADAPTERS } from "@/components/layout/migration-adapters";
 import { BroadcastSessionProvider } from "@/components/broadcast/broadcast-session";
 import {
   collectRotatedRecoveryPassword,
@@ -132,6 +134,16 @@ export function SessionProviders({ children }: { children: React.ReactNode }) {
                 the app. The gate loads the host only on Arkade routes or while
                 a game is followed; the rest of the time nothing is loaded. */}
             <MiniTimerGate />
+            {/* Google and Twitter sign-in for the OLD account returns the whole
+                page, landing wherever the user started with Privy's credentials
+                in the query string. Privy is no longer a provider on these
+                routes (see above), so with nothing mounted the code is never
+                exchanged: the sign-in quietly does not happen and the
+                credentials stay in the URL and in history. This reopens the
+                sheet on the way back, which both completes the login and puts
+                the user back where they were — about to move their money.
+                Renders nothing on any ordinary page load. */}
+            <MigrationOAuthReturn adapters={MIGRATION_ADAPTERS} />
           </BroadcastSessionProvider>
         </BalanceVisibilityProvider>
       </NetworkStatusProvider>
