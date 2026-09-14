@@ -16,10 +16,10 @@ const RISK_STYLE: Record<TokenRiskLevel, string> = {
 
 export function RiskBadge({ level }: { level: TokenRiskLevel | null | undefined }) {
   const t = useTranslations("meme");
-  // The wire schema marks riskLevel optional (lib/api/schemas/trade.ts) and
-  // the fetch layer casts without normalizing, so a token can arrive with no
-  // level at all: treat missing or unrecognized values as UNKNOWN instead of
-  // crashing the whole list.
+  // The client maps every token through lib/meme/parse.ts, which fills a
+  // missing level, but a token can still reach this badge from another path
+  // (a holding, a fixture): treat missing or unrecognized values as UNKNOWN
+  // instead of crashing the whole list.
   const resolved: TokenRiskLevel = level && level in RISK_STYLE ? level : "UNKNOWN";
   return (
     // shrink-0 keeps it inside the card when the price beside it is long, and
@@ -41,6 +41,18 @@ export function PctChange({ value }: { value: string | null }) {
       {n >= 0 ? "+" : ""}
       {n.toFixed(2)}%
     </span>
+  );
+}
+
+// The contract: a null liquidityUsd is "unknown liquidity", not low liquidity
+// and not zero. A neutral line, shown beside the warnings, with the quote left
+// to decide whether an executable route exists.
+export function LiquidityUnknownNote({ className = "" }: { className?: string }) {
+  const t = useTranslations("meme");
+  return (
+    <p className={`text-[11.5px] font-normal text-white/55 ${className}`}>
+      {t("liquidityUnknown")}
+    </p>
   );
 }
 

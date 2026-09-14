@@ -97,7 +97,14 @@ export function isWrappedMajor(chainId: number, address: string): boolean {
 // them as display hints and repeats every policy check when a quote is
 // created, so the server still refuses a token it will not trade. Defaulting
 // to false would instead make every trending coin look untradable.
-export function withRiskDefaults(token: MemeToken): MemeToken {
+// A token whose risk block may be missing, as the search route sends it.
+export type TokenWithOptionalRisk = Omit<
+  MemeToken,
+  "riskLevel" | "warnings" | "buyEnabled" | "sellEnabled"
+> &
+  Partial<Pick<MemeToken, "riskLevel" | "warnings" | "buyEnabled" | "sellEnabled">>;
+
+export function withRiskDefaults(token: TokenWithOptionalRisk): MemeToken {
   return {
     ...token,
     riskLevel: token.riskLevel ?? "UNKNOWN",

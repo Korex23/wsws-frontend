@@ -8,7 +8,13 @@ import { useTranslations } from "next-intl";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Portal } from "@/components/ui/portal";
 import { ProgressBar } from "@/components/ui/progress-bar";
-import { MemeCoin, PctChange, RiskBadge, priceLabel } from "@/features/trade/components/meme-bits";
+import {
+  LiquidityUnknownNote,
+  MemeCoin,
+  PctChange,
+  priceLabel,
+  RiskBadge,
+} from "@/features/trade/components/meme-bits";
 import { useSheetDismiss } from "@/features/trade/components/mobile-trade-sheet";
 import { useMemeToken } from "@/features/trade/hooks/use-meme-tokens";
 import {
@@ -157,7 +163,7 @@ export function MemeTradeSheet({
   const t = useTranslations("meme");
   const tErr = useTranslations("tradeErrors");
   // Fresh risk/tradability for the trade surface; the list row may be stale.
-  const { token: fresh } = useMemeToken(listed);
+  const { token: fresh, unavailable: freshUnavailable } = useMemeToken(listed);
   const token = fresh ?? listed;
 
   // Known-safe wrapped spot assets (cbBTC, cbDOGE) show as the coin they
@@ -902,6 +908,16 @@ export function MemeTradeSheet({
                     </div>
                   ))}
                 </div>
+              ) : null}
+              {showRisk && token.liquidityUsd === null ? (
+                <LiquidityUnknownNote className="mt-2" />
+              ) : null}
+              {freshUnavailable ? (
+                // The listed row stays tradable; this only says why its details
+                // are not fresh. A 502 is temporary, a 404 is a confirmed absence.
+                <p role="status" className="mt-2 text-[11.5px] font-normal text-white/55">
+                  {freshUnavailable === "not-found" ? t("detailNotFound") : t("detailUnavailable")}
+                </p>
               ) : null}
               {showRisk ? (
                 <p className="mt-2 text-[11px] font-normal text-white/40">{t("riskDisclaimer")}</p>

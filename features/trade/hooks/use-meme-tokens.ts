@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
+  TradeApiError,
   fetchToken,
   fetchTokenCatalog,
   fetchTrendingTokens,
@@ -82,6 +83,26 @@ export function useMemeSearch(raw: string) {
   };
 }
 
+// The contract's detail-route semantics. HTTP 502 PROVIDER_ERROR means every
+// Solana RPC provider was unavailable or rate-limited: temporary, so retry with
+// exponential backoff. HTTP 404 TOKEN_NOT_FOUND is a lookup that succeeded and
+// found nothing: never retried. A failure that never reached the service (no
+// TradeApiError) is treated as temporary too. Neither is cached as a missing
+// token: a failed query stores no data, and the relay caches only successes.
+const TOKEN_RETRIES = 4;
+const TOKEN_RETRY_BASE_MS = 1_000;
+
+export type MemeTokenUnavailable = "temporary" | "not-found";
+
+function isTemporary(error: unknown): boolean {
+  return !(error instanceof TradeApiError) || error.status === 502;
+}
+
+function unavailableReason(error: unknown): MemeTokenUnavailable | null {
+  if (!error) return null;
+  return error instanceof TradeApiError && error.status === 404 ? "not-found" : "temporary";
+}
+
 // Fresh risk-assessed details for the selected token; search rows don't carry
 // current risk/tradability, so the trade surface always re-reads this.
 // Identity is chainId + address, per the service contract: the detail route
@@ -97,9 +118,14 @@ export function useMemeToken(identity: Pick<MemeToken, "address" | "chainId"> | 
     enabled: !!address && chainId !== null,
     staleTime: 20_000,
     refetchInterval: 30_000,
+    retry: (failureCount, error) => isTemporary(error) && failureCount < TOKEN_RETRIES,
+    // 1 s, 2 s, 4 s, 8 s.
+    retryDelay: (failureCount) => TOKEN_RETRY_BASE_MS * 2 ** failureCount,
   });
   return {
-    token: (query.data ?? null) as MemeToken | null,
+    // The last good read stays on screen through a later failure.
+    token: query.data ?? null,
     isLoading: query.isPending && !!address,
+    unavailable: unavailableReason(query.error),
   };
 }

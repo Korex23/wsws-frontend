@@ -17,6 +17,7 @@ import {
   verifySolanaWallet,
 } from "@/lib/meme/api";
 import { BASE_CHAIN_ID, SOLANA_CHAIN_ID } from "@/lib/meme/chain";
+import { LIVE_TRADABILITY, SWAP_PREVIEW } from "@/lib/api/schemas/trade.fixtures";
 
 function token(chainId: number, address: string): MemeToken {
   return {
@@ -127,7 +128,7 @@ describe("meme discovery across the supported chains", () => {
     await fetchToken(sol(1).address, SOLANA_CHAIN_ID);
     expect(lastUrl()).toMatch(/\/tokens\/So1[1]+\?chain=solana$/);
 
-    apiFetch.mockResolvedValueOnce(ok({ buyEnabled: true, sellEnabled: true }));
+    apiFetch.mockResolvedValueOnce(ok(LIVE_TRADABILITY));
     await fetchTradability(base(1).address, BASE_CHAIN_ID);
     expect(lastUrl()).toMatch(/\/tradability\?chain=base$/);
   });
@@ -156,11 +157,11 @@ describe("Solana trade calls", () => {
 
   it("routes preview and quote by chain", async () => {
     const body = { side: "BUY" as const, tokenAddress: "So1", amount: "10", walletAddress: "w" };
-    apiFetch.mockResolvedValueOnce(ok({}));
+    apiFetch.mockResolvedValueOnce(ok(SWAP_PREVIEW));
     await previewSwap(body, SOLANA_CHAIN_ID);
     expect(lastUrl()).toMatch(/\/solana\/swaps\/preview$/);
 
-    apiFetch.mockResolvedValueOnce(ok({}));
+    apiFetch.mockResolvedValueOnce(ok(SWAP_PREVIEW));
     await previewSwap(body, BASE_CHAIN_ID);
     expect(lastUrl()).toMatch(/\/swaps\/preview$/);
     expect(lastUrl()).not.toContain("solana");

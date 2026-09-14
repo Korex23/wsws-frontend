@@ -50,8 +50,11 @@ vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
   useMemePreview: () => previewHook,
 }));
 
+const tokenHook = vi.hoisted(() => ({
+  unavailable: null as "temporary" | "not-found" | null,
+}));
 vi.mock("@/features/trade/hooks/use-meme-tokens", () => ({
-  useMemeToken: (listed: MemeToken) => ({ token: listed }),
+  useMemeToken: (listed: MemeToken) => ({ token: listed, unavailable: tokenHook.unavailable }),
 }));
 
 const portfolio = vi.hoisted(() => ({
@@ -159,6 +162,7 @@ function cta() {
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  tokenHook.unavailable = null;
   tradeHook.wallet = "0xwallet";
   tradeHook.phase = "idle";
   tradeHook.error = null;
@@ -478,5 +482,48 @@ describe("a trade service failure reads as our copy with the reference", () => {
     expect(alert).toHaveTextContent(messages.tradeErrors.noSwapRoute);
     expect(alert).toHaveTextContent("Ref: req-x1");
     expect(alert).not.toHaveTextContent("route table miss");
+  });
+});
+
+// The contract: a null liquidityUsd is "unknown liquidity", shown as a neutral
+// warning, with the quote left to decide whether a route exists. It is not
+// low liquidity and it is not zero.
+describe("unknown liquidity", () => {
+  const LINE = "Liquidity unknown — the quote decides whether this trade can execute.";
+
+  it("says liquidity is unknown when the service published none", () => {
+    renderSheet({ token: memeToken({ symbol: "NEW", liquidityUsd: null }) });
+    const line = screen.getByText(LINE);
+    expect(line.className).not.toContain("text-down");
+  });
+
+  it("says nothing about liquidity it knows, zero included", () => {
+    renderSheet({ token: memeToken({ symbol: "KNOWN", liquidityUsd: "0" }) });
+    expect(screen.queryByText(LINE)).toBeNull();
+  });
+});
+
+// A 502 on the detail read is temporary; a 404 is a confirmed absence. The
+// sheet keeps the listed row either way and says which one it is.
+describe("when the fresh token read fails", () => {
+  it("says the token's details are temporarily unavailable on a provider outage", () => {
+    tokenHook.unavailable = "temporary";
+    renderSheet();
+    const line = screen.getByText(
+      "This token's details are temporarily unavailable. Trying again shortly."
+    );
+    expect(line).toHaveAttribute("role", "status");
+  });
+
+  it("says the token was not found when the service confirms it is absent", () => {
+    tokenHook.unavailable = "not-found";
+    renderSheet();
+    expect(screen.getByText("This token wasn't found on its network.")).toBeInTheDocument();
+  });
+
+  it("says neither while the read is healthy", () => {
+    renderSheet();
+    expect(screen.queryByText(/temporarily unavailable/)).toBeNull();
+    expect(screen.queryByText(/wasn't found/)).toBeNull();
   });
 });

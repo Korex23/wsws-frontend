@@ -67,10 +67,10 @@ const CATALOG_LIMIT = 500;
 // rate limited at 20/min.
 const PREVIEW_DEBOUNCE_MS = 600;
 
-// compactUsd renders an em dash for anything it cannot show, zero included, and
-// a dash in the metrics panel reads as a figure rather than as a missing one.
-// So the absent case is decided here and the panel gets the null it draws as an
-// explicit "Unavailable": a $0 market cap reads as a real, worthless coin.
+// compactUsd renders an em dash only for a figure it cannot read (a published
+// zero is "$0"), and a dash in the metrics panel reads as a figure rather than
+// as a missing one. So the absent case is decided here and the panel gets the
+// null it draws as an explicit "Unavailable".
 function usdMetric(value: string | null): MemeMetricValue {
   if (value === null) return { display: null };
   const shown = compactUsd(value);

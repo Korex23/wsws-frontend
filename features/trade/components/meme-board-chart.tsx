@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useCoingeckoId } from "@/hooks/use-coingecko-id";
 import { type MemeToken } from "@/lib/meme/api";
 import { chainSlug } from "@/lib/meme/chain";
+import { chartUp } from "@/lib/meme/format";
 
 // The chart's drawing area on a phone. The design gives the disclosure the
 // width of the screen and about a third of its height.
@@ -26,7 +27,8 @@ const AssetChart = dynamic(() => import("@/components/ui/asset-chart").then((m) 
 export function BoardChart({ token }: { token: MemeToken }) {
   const t = useTranslations("meme");
   const { id, loading } = useCoingeckoId(chainSlug(token.chainId), token.address);
-  const up = Number(token.priceChange24hPercent ?? "0") >= 0;
+  // A change the service did not publish is not a gain: the chart draws neutral.
+  const up = chartUp(token.priceChange24hPercent);
 
   return (
     <div data-region="meme-chart" className="border-hairline rounded-card bg-surface border">

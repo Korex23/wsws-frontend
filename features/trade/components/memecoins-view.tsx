@@ -35,10 +35,11 @@ function pctOf(value: string | null): number {
   return Number.isFinite(n) ? n : NaN;
 }
 
-// Volume in the comp's compact dollar form ($84.2M, $182.9M).
+// Volume in the comp's compact dollar form ($84.2M, $182.9M). A published zero
+// is $0; only a figure the service did not publish is a dash.
 function compactUsd(value: string | null): string {
-  const n = value === null ? NaN : Number(value);
-  if (!Number.isFinite(n) || n <= 0) return "—";
+  const n = value === null || value.trim() === "" ? NaN : Number(value);
+  if (!Number.isFinite(n) || n < 0) return "—";
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
@@ -167,7 +168,11 @@ export function MemecoinsView() {
   const rows = useMemo(() => {
     const list = [...tokens];
     const chg = (t: MemeToken) => pctOf(t.priceChange24hPercent);
-    const vol = (t: MemeToken) => Number(t.volume24hUsd ?? "0") || 0;
+    // null when the service published no volume; never read as $0.
+    const vol = (t: MemeToken): number | null => {
+      const n = t.volume24hUsd === null ? NaN : Number(t.volume24hUsd);
+      return Number.isFinite(n) ? n : null;
+    };
     switch (filter) {
       case "Gainers":
         return list
@@ -178,7 +183,15 @@ export function MemecoinsView() {
           .filter((t) => Number.isFinite(chg(t)) && chg(t) < 0)
           .sort((a, b) => chg(a) - chg(b));
       case "Hot":
-        return list.sort((a, b) => vol(b) - vol(a));
+        // A coin with no published volume is not a $0 coin, so it goes last
+        // rather than being ranked beside the genuinely quiet ones.
+        return list.sort((a, b) => {
+          const va = vol(a);
+          const vb = vol(b);
+          if (va === null) return vb === null ? 0 : 1;
+          if (vb === null) return -1;
+          return vb - va;
+        });
       case "New":
       case "All":
       default:

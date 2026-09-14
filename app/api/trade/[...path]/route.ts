@@ -119,7 +119,10 @@ async function forward(req: NextRequest, method: "GET" | "POST") {
         return relayError("BAD_RESPONSE", "Trading response was not understood.", 502);
       }
     }
-    if (method === "GET" && cacheable(joined, !!auth)) {
+    // Only a successful read is cached. A 502 PROVIDER_ERROR is temporary and
+    // the client retries it with backoff; caching it would hand that retry the
+    // same failure, and a 404 must not become a remembered "missing mint".
+    if (method === "GET" && res.ok && cacheable(joined, !!auth)) {
       cache.set(url, { expires: Date.now() + CACHE_TTL_MS, body: text, status: res.status });
     }
     const responseHeaders: Record<string, string> = {
