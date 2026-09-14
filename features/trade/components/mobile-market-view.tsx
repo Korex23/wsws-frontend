@@ -125,8 +125,8 @@ function changeLabel(chg: number): string {
 }
 
 // A coin-feed USD field as a market-metric value, the same mapping meme-board
-// makes: compactUsd's em dash (a zero or a missing figure) becomes the null the
-// metrics panel draws as "Unavailable" rather than as "$0".
+// makes: compactUsd's em dash (a figure it cannot read) becomes the null the
+// metrics panel draws as "Unavailable"; a published zero stays "$0".
 function usdMetric(value: string | null): MemeMetricValue {
   if (value === null) return { display: null };
   const shown = compactUsd(value);

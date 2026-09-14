@@ -205,16 +205,30 @@ describe("the screen's two disclosures", () => {
   });
 });
 
+// The contract: null means "not currently available", never zero, and a real
+// zero is a figure. So a missing figure says Unavailable and a published "0"
+// says $0; neither is dressed up as the other.
 describe("figures the service does not publish", () => {
-  it("says Unavailable rather than showing a zero market cap", async () => {
+  it("says Unavailable for a missing figure and $0 for a published zero", async () => {
     catalog.tokens = [
       memeToken({ symbol: "AAA", marketCapUsd: null, volume24hUsd: null, liquidityUsd: "0" }),
     ];
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /Market Metrics/ }));
     const panel = screen.getByRole("group", { name: "Market metrics" });
-    // Market cap, volume, liquidity, age and the trader split: none of them are
-    // published for this coin, and none of them render as a figure.
+    // Market cap, volume, age and the trader split are not published for this
+    // coin; its liquidity is, and it is zero.
+    expect(within(panel).getAllByText("Unavailable").length).toBe(4);
+    expect(within(panel).getByText("$0")).toBeInTheDocument();
+  });
+
+  it("says Unavailable for liquidity the service did not publish", async () => {
+    catalog.tokens = [
+      memeToken({ symbol: "AAA", marketCapUsd: null, volume24hUsd: null, liquidityUsd: null }),
+    ];
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /Market Metrics/ }));
+    const panel = screen.getByRole("group", { name: "Market metrics" });
     expect(within(panel).getAllByText("Unavailable").length).toBe(5);
     expect(within(panel).queryByText("$0")).toBeNull();
   });

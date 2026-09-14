@@ -34,6 +34,7 @@ import { scopeOf } from "@/lib/portfolio/fresh-scope";
 import { displaySymbol } from "@/lib/buy";
 import { friendlyError } from "@/lib/errors";
 import { compactUsd, isValidTradeAmount, type MemeToken, type SwapPreview } from "@/lib/meme/api";
+import { chartUp } from "@/lib/meme/format";
 import { SOLANA_CHAIN_ID, chainSlug, networkOf } from "@/lib/meme/chain";
 import { buyFunding, estimateReceive, type BuyFunding } from "@/lib/meme/funding";
 import { exceedsHeld } from "@/lib/meme/sell-amount";
@@ -113,7 +114,8 @@ function MemeDeskChart({ token }: { token: MemeToken }) {
   // CoinGecko's asset platform ids are the same two slugs the trade service
   // uses for these chains.
   const { id, loading } = useCoingeckoId(chainSlug(token.chainId), token.address);
-  const up = Number(token.priceChange24hPercent ?? "0") >= 0;
+  // A change the service did not publish is not a gain: the chart draws neutral.
+  const up = chartUp(token.priceChange24hPercent);
 
   return (
     <div data-region="meme-chart">

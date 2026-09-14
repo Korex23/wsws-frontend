@@ -6,6 +6,8 @@ vi.mock("@/lib/api", () => ({ apiFetch: apiFetchMock }));
 import {
   TradeApiError,
   fetchSwapStatus,
+  fetchToken,
+  searchTokens,
   isValidTradeAmount,
   newIdempotencyKey,
   registerSubmission,
@@ -164,5 +166,61 @@ describe("registerSubmission", () => {
     const body = sentBody();
     expect(body).toEqual({ walletAddress: "0xwallet", callIndex: 1, userOperationHash: "0xuop" });
     expect(body).not.toHaveProperty("transactionHash");
+  });
+});
+
+// request<T> no longer casts the envelope's data to whatever the caller hoped
+// for: it parses through lib/meme/parse.ts, so a drifted body is a typed
+// failure carrying a request id, not a half-shaped object in a component.
+describe("responses are parsed, not cast", () => {
+  afterEach(() => apiFetchMock.mockReset());
+
+  function answer(data: unknown, headers: Record<string, string> = {}) {
+    apiFetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data }), {
+        status: 200,
+        headers: { "content-type": "application/json", ...headers },
+      })
+    );
+  }
+
+  it("turns a drifted body into a BAD_RESPONSE TradeApiError", async () => {
+    answer({ swapId: "swap-1", status: "DONE" }, { "x-request-id": "req-drift-1" });
+    const thrown = await fetchSwapStatus("swap-1").catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(TradeApiError);
+    const error = thrown as TradeApiError;
+    expect(error.code).toBe("BAD_RESPONSE");
+    expect(error.requestId).toBe("req-drift-1");
+  });
+
+  it("hands back the mapped token, with the risk block search omits filled", async () => {
+    answer([
+      {
+        chainId: 8453,
+        address: "0xaaa",
+        name: "AAA",
+        symbol: "AAA",
+        decimals: 18,
+        logoUrl: null,
+        priceUsd: "1",
+        liquidityUsd: "1000000",
+        volume24hUsd: "25000",
+        priceChange24hPercent: null,
+        marketCapUsd: null,
+        fdvUsd: null,
+        pairAddress: null,
+        dexName: null,
+        riskLevel: "LOW",
+      },
+    ]);
+    const [row] = await searchTokens("aaa");
+    expect(row.warnings).toEqual([]);
+    expect(row.priceChange24hPercent).toBeNull();
+  });
+
+  it("rejects a detail read that lost its risk level", async () => {
+    answer({ chainId: 8453, address: "0xaaa", name: null, symbol: null });
+    const thrown = await fetchToken("0xaaa", 8453).catch((e: unknown) => e);
+    expect((thrown as TradeApiError).code).toBe("BAD_RESPONSE");
   });
 });

@@ -4,7 +4,13 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { SearchIcon } from "@/components/ui/icons";
 import { AssetChart } from "@/components/ui/asset-chart";
-import { MemeCoin, PctChange, RiskBadge, priceLabel } from "@/features/trade/components/meme-bits";
+import {
+  LiquidityUnknownNote,
+  MemeCoin,
+  PctChange,
+  priceLabel,
+  RiskBadge,
+} from "@/features/trade/components/meme-bits";
 import { MobileTradeSheet } from "@/features/trade/components/mobile-trade-sheet";
 import { ListPagination } from "@/components/ui/list-pagination";
 import { useIsMobile } from "@/hooks/use-is-mobile";
@@ -16,6 +22,7 @@ import {
 } from "@/features/trade/hooks/use-meme-tokens";
 import { useCoingeckoId } from "@/hooks/use-coingecko-id";
 import { visibleWarnings, compactUsd, type MemeToken } from "@/lib/meme/api";
+import { chartUp } from "@/lib/meme/format";
 
 // The desk interface: provider-backed search (name, symbol or contract
 // address), the server-paginated catalog table with liquidity/volume/mcap,
@@ -249,6 +256,7 @@ export function MemeProView() {
                   </div>
                 ))}
               </div>
+              {shown.liquidityUsd === null ? <LiquidityUnknownNote className="mt-3" /> : null}
               {visibleWarnings(shown.warnings).length > 0 ? (
                 <div className="mt-3 flex flex-col gap-1">
                   {visibleWarnings(shown.warnings)
@@ -278,7 +286,7 @@ export function MemeProView() {
                   allowCandles
                   defaultType="candles"
                   height={260}
-                  up={Number(shown.priceChange24hPercent ?? 0) >= 0}
+                  up={chartUp(shown.priceChange24hPercent)}
                 />
               ) : (
                 <div className="grid h-[260px] place-items-center text-center text-[13px] font-normal text-white/45">
@@ -367,7 +375,7 @@ export function MemeProView() {
                       allowCandles={false}
                       defaultType="area"
                       height={110}
-                      up={Number(shown.priceChange24hPercent ?? 0) >= 0}
+                      up={chartUp(shown.priceChange24hPercent)}
                     />
                   ) : (
                     <div className="grid h-[110px] place-items-center text-center text-[13px] font-normal text-white/45">
@@ -404,6 +412,7 @@ export function MemeProView() {
             </div>
 
             {/* Warnings */}
+            {shown.liquidityUsd === null ? <LiquidityUnknownNote className="mt-3" /> : null}
             {visibleWarnings(shown.warnings).length > 0 ? (
               <div className="flex flex-col gap-1">
                 {visibleWarnings(shown.warnings)
