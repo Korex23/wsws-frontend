@@ -8,9 +8,9 @@ import {
   readUnsettledUsdcUsd,
   readWalletPusdUsd,
   refreshCollateralUsd,
-} from "@/features/prediction/lib/polymarket/collateral";
+} from "@/lib/polymarket/collateral";
 import { getWalletAddress } from "@/lib/user";
-import type { SecureClient } from "@/features/prediction/lib/polymarket/secure-client";
+import type { SecureClient } from "@/lib/polymarket/secure-client";
 
 type PositionsPage = Awaited<ReturnType<ReturnType<SecureClient["listPositions"]>["firstPage"]>>;
 type ClosedPositionsPage = Awaited<

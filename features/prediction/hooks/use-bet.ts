@@ -8,13 +8,10 @@ import {
   type SessionStatus,
 } from "@/features/prediction/hooks/use-polymarket-session";
 import { usePolymarketFunding } from "@/features/prediction/hooks/use-polymarket-funding";
-import {
-  readCollateralUsd,
-  waitForCollateralUsd,
-} from "@/features/prediction/lib/polymarket/collateral";
+import { readCollateralUsd, waitForCollateralUsd } from "@/lib/polymarket/collateral";
 import { ensureNegRiskBuyAllowance } from "@/features/prediction/lib/polymarket/allowance";
 import { BUILDER_CODE } from "@/lib/polymarket/config";
-import type { SecureClient } from "@/features/prediction/lib/polymarket/secure-client";
+import type { SecureClient } from "@/lib/polymarket/secure-client";
 import {
   isValidPredictionStake,
   predictionMinimumStakeMessage,

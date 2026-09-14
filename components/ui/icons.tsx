@@ -751,3 +751,12 @@ export function PasskeyIcon({ size = 20, className }: IconProps) {
     </svg>
   );
 }
+
+export function UserIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+      <circle cx="12" cy="8.5" r="3.5" stroke={stroke} strokeWidth="1.8" />
+      <path d="M5 19.5a7 7 0 0 1 14 0" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}

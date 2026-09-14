@@ -5,10 +5,10 @@ import { OrderSide, OrderType } from "@polymarket/client";
 import { approveErc1155ForAll, fetchNegRisk } from "@polymarket/client/actions";
 import { friendlyError } from "@/lib/errors";
 import { usePolymarketSession } from "@/features/prediction/hooks/use-polymarket-session";
-import { refreshCollateralUsd } from "@/features/prediction/lib/polymarket/collateral";
+import { refreshCollateralUsd } from "@/lib/polymarket/collateral";
 import { sellFloorPrice } from "@/features/prediction/lib/positions";
 import { BUILDER_CODE, CONTRACTS } from "@/lib/polymarket/config";
-import type { SecureClient } from "@/features/prediction/lib/polymarket/secure-client";
+import type { SecureClient } from "@/lib/polymarket/secure-client";
 
 export type CashoutPhase = "idle" | "quoting" | "selling" | "approving" | "settling";
 
