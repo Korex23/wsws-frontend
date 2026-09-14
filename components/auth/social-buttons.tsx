@@ -1,7 +1,10 @@
 "use client";
 
-import { useLoginWithOAuth, type OAuthProviderType } from "@privy-io/react-auth";
+import { useState } from "react";
+import { useSocialAuth } from "decane-connect-kit";
 import { useTranslations } from "next-intl";
+import { recordAuthMethod } from "@/lib/analytics/auth-method";
+import { rememberPending } from "@/lib/last-auth-method";
 import { toast } from "@/lib/toast";
 
 function GoogleLogo() {
@@ -31,57 +34,80 @@ function GoogleLogo() {
   );
 }
 
-function XLogo() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="#fff">
-      <path d="M18.9 2h3.3l-7.2 8.3L23.5 22h-6.6l-5.2-6.8L5.8 22H2.5l7.7-8.8L1.5 2h6.8l4.7 6.2L18.9 2Zm-1.2 18h1.8L7.1 3.9H5.2L17.7 20Z" />
-    </svg>
-  );
-}
-
 const BUTTON =
-  "flex w-full cursor-pointer items-center justify-center gap-[11px] rounded-full border border-white/14 bg-white/6 px-4 py-4 font-sans md:rounded-[14px] md:p-3.5 text-[15px] font-medium text-white transition-colors hover:border-white/28 hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-60";
+  "flex w-full cursor-pointer items-center justify-center gap-[11px] rounded-full border border-white/14 bg-white/6 px-4 py-4 font-sans md:rounded-[14px] md:p-3.5 text-[15px] font-medium text-white transition-colors hover:border-white/28 hover:bg-white/12 disabled:cursor-wait disabled:opacity-60";
 
-interface SocialButtonsProps {
-  /** Held back until the terms are accepted; the page says why. */
-  disabled?: boolean;
-}
-
-export function SocialButtons({ disabled = false }: SocialButtonsProps) {
+export function SocialButtons() {
   const t = useTranslations("auth");
-  const { initOAuth, loading } = useLoginWithOAuth();
+  const {
+    signInWithGoogle,
+    googleLoading,
+    signInWithKingsChat,
+    kingschatLoading,
+    canUsePasskey,
+    signInWithPasskey,
+  } = useSocialAuth();
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
 
-  const signIn = async (provider: OAuthProviderType) => {
+  const signIn = async () => {
     try {
-      await initOAuth({ provider });
+      recordAuthMethod("google");
+      rememberPending("google");
+      await signInWithGoogle();
     } catch (err) {
-      console.error("OAuth login failed:", err);
+      console.error("Google login failed:", err);
       toast.error(t("oauthError"));
+    }
+  };
+
+  // One biometric prompt instead of a Google round trip, offered when this
+  // device already holds a passkey-wrapped share for the remembered user, the
+  // common case after a closed tab dropped the session.
+  const passkeySignIn = async () => {
+    setPasskeyBusy(true);
+    try {
+      recordAuthMethod("passkey");
+      rememberPending("passkey");
+      await signInWithPasskey();
+    } catch (err) {
+      console.error("Passkey sign-in failed:", err);
+      toast.error(t("passkeyError"));
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
+
+  // KingsChat opens a consent popup that resolves in place (unlike Google's
+  // full-page redirect), so the click handler awaits it and surfaces failures
+  // as a toast. The kit invokes the popup synchronously, so no work precedes it.
+  const kingschatSignIn = async () => {
+    try {
+      recordAuthMethod("kingschat");
+      rememberPending("kingschat");
+      await signInWithKingsChat();
+    } catch (err) {
+      const name = (err as { name?: string })?.name;
+      // A user closing the KingsChat popup is a cancellation, not an error.
+      if (name !== "UserCancelledError") {
+        console.error("KingsChat login failed:", err);
+        toast.error(t("oauthError"));
+      }
     }
   };
 
   return (
     <div className="flex flex-col gap-[11px]">
-      <button className={BUTTON} disabled={loading || disabled} onClick={() => signIn("google")}>
+      {canUsePasskey ? (
+        <button className={BUTTON} disabled={passkeyBusy} onClick={passkeySignIn}>
+          {passkeyBusy ? t("passkeyWaiting") : t("passkeySignIn")}
+        </button>
+      ) : null}
+      <button className={BUTTON} disabled={googleLoading} onClick={signIn}>
         <GoogleLogo />
         {t("continueGoogle")}
       </button>
-      <button className={BUTTON} disabled={loading || disabled} onClick={() => signIn("twitter")}>
-        <XLogo />
-        {t("continueX")}
-      </button>
-      {/* Not wired yet — announced ahead of the integration, so it renders
-          disabled with the tag rather than firing an OAuth flow that has no
-          provider behind it. */}
-      <button
-        className={`${BUTTON} cursor-default opacity-60 hover:border-white/14 hover:bg-white/6`}
-        disabled
-        aria-disabled
-      >
-        {t("continueKingschat")}
-        <span className="ml-1 rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-[10.5px] font-semibold tracking-[0.06em] text-white/55 uppercase">
-          {t("comingSoon")}
-        </span>
+      <button className={BUTTON} disabled={kingschatLoading} onClick={kingschatSignIn}>
+        {kingschatLoading ? t("kingschatWaiting") : t("continueKingschat")}
       </button>
     </div>
   );

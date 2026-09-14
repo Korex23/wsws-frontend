@@ -39,6 +39,8 @@
     "@nktkas/hyperliquid": "0.33.3",
     "@polymarket/client": "^0.6.0",
     "@privy-io/node": "^0.26.0",
+    "decane-connect-kit": "^2.18.0",
+    "decane-node": "^1.1.1",
     "@privy-io/react-auth": "^3.35.1",
     "@sentry/nextjs": "^10.74.0",
     "@solana-program/memo": "^0.12.0",
