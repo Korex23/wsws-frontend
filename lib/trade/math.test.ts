@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatSignedPercent,
   fromBaseUnits,
   liquidationPrice,
   openFee,
   positionSize,
+  projectTriggerPnl,
   receiveFromPrices,
   toBaseUnits,
 } from "@/lib/trade/math";
@@ -96,5 +98,54 @@ describe("openFee", () => {
   it("is zero for a non-positive size", () => {
     expect(openFee(0)).toBe(0);
     expect(openFee(-100)).toBe(0);
+  });
+});
+
+describe("projectTriggerPnl", () => {
+  // $100 margin at 10x on a $100 asset => 10 units, $1000 notional.
+  const base = { entryPrice: 100, sizeBaseUnits: 10, marginUsd: 100 } as const;
+
+  it("projects a long take-profit above entry as a leveraged gain", () => {
+    // +10% price move on 10x margin is a +100% return on the $100 posted.
+    const p = projectTriggerPnl({ ...base, side: "buy", triggerPrice: 110 });
+    expect(p?.pnlUsd).toBeCloseTo(100);
+    expect(p?.roePct).toBeCloseTo(100);
+  });
+
+  it("projects a long stop-loss below entry as a loss", () => {
+    const p = projectTriggerPnl({ ...base, side: "buy", triggerPrice: 96 });
+    expect(p?.pnlUsd).toBeCloseTo(-40);
+    expect(p?.roePct).toBeCloseTo(-40);
+  });
+
+  it("flips direction for a short: profit below entry, loss above", () => {
+    const tp = projectTriggerPnl({ ...base, side: "sell", triggerPrice: 90 });
+    expect(tp?.pnlUsd).toBeCloseTo(100);
+    expect(tp?.roePct).toBeCloseTo(100);
+    const sl = projectTriggerPnl({ ...base, side: "sell", triggerPrice: 105 });
+    expect(sl?.pnlUsd).toBeCloseTo(-50);
+    expect(sl?.roePct).toBeCloseTo(-50);
+  });
+
+  it("returns null when any input is missing or non-positive", () => {
+    expect(projectTriggerPnl({ ...base, side: "buy", triggerPrice: 0 })).toBeNull();
+    expect(
+      projectTriggerPnl({ ...base, side: "buy", triggerPrice: 110, sizeBaseUnits: 0 })
+    ).toBeNull();
+    expect(projectTriggerPnl({ ...base, side: "buy", triggerPrice: 110, marginUsd: 0 })).toBeNull();
+  });
+});
+
+describe("formatSignedPercent", () => {
+  it("signs gains and losses and drops decimals on whole/large values", () => {
+    expect(formatSignedPercent(100)).toBe("+100%");
+    expect(formatSignedPercent(25)).toBe("+25%");
+    expect(formatSignedPercent(-40)).toBe("-40%");
+  });
+
+  it("keeps one decimal for small fractional moves", () => {
+    expect(formatSignedPercent(12.5)).toBe("+12.5%");
+    expect(formatSignedPercent(-3.25)).toBe("-3.3%");
+    expect(formatSignedPercent(0)).toBe("0%");
   });
 });

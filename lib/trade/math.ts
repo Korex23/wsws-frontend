@@ -55,6 +55,76 @@ export function openFee(size: number): number {
   return size > 0 ? size * OPEN_FEE_RATE : 0;
 }
 
+// Hyperliquid's taker fee, charged at fill on both open and close.
+export const PERPS_TAKER_FEE_RATE = 0.0008;
+
+export function closeFee(size: number): number {
+  return size > 0 ? size * PERPS_TAKER_FEE_RATE : 0;
+}
+
+// What a take-profit or stop-loss would pay (or cost) if price reaches it.
+// A display-layer projection for the order ticket, so the trader sees the
+// stakes before committing — same number semantics as the rest of this file
+// (the real fill sizes and settles server-side). Direction-aware: a long
+// gains above entry and loses below, a short the reverse. `roePct` is the
+// return on the margin actually posted (leverage-amplified), which is the
+// figure traders watch, not the raw price move.
+export interface TriggerProjection {
+  /** Signed USD PnL on the position: positive is a gain, negative a loss. */
+  pnlUsd: number;
+  /** Signed return on posted margin, as a percent (pnlUsd / margin * 100). */
+  roePct: number;
+}
+
+export function projectTriggerPnl(params: {
+  side: "buy" | "sell";
+  entryPrice: number;
+  triggerPrice: number;
+  sizeBaseUnits: number;
+  marginUsd: number;
+}): TriggerProjection | null {
+  const { side, entryPrice, triggerPrice, sizeBaseUnits, marginUsd } = params;
+  if (!(entryPrice > 0) || !(triggerPrice > 0) || !(sizeBaseUnits > 0) || !(marginUsd > 0)) {
+    return null;
+  }
+  const perUnit = side === "buy" ? triggerPrice - entryPrice : entryPrice - triggerPrice;
+  const pnlUsd = perUnit * sizeBaseUnits;
+  return { pnlUsd, roePct: (pnlUsd / marginUsd) * 100 };
+}
+
+// A signed percent for display: "+25%", "-40%". Whole numbers stay clean; a
+// fractional result keeps one decimal so small moves aren't rounded to "0%".
+export function formatSignedPercent(pct: number): string {
+  if (!Number.isFinite(pct)) return "—";
+  const digits = Math.abs(pct) >= 100 || Number.isInteger(pct) ? 0 : 1;
+  const sign = pct > 0 ? "+" : pct < 0 ? "-" : "";
+  return `${sign}${Math.abs(pct).toFixed(digits)}%`;
+}
+
+// A perps-wallet withdrawal's total cost, shown up front as one number:
+// Hyperliquid's own flat $1 withdraw3 fee PLUS the platform's flat fee
+// (PERPS_WITHDRAWAL_FEE_USDC on the backend, $0.50 by default), collected as a
+// client-signed sendAsset to the treasury alongside the withdrawal. So ~$1.50
+// total, capped at the amount.
+export const WITHDRAWAL_HL_FLAT_FEE_USDC = 1;
+export const WITHDRAWAL_PLATFORM_FEE_USDC = 0.5;
+
+export function estimatedWithdrawalFee(amountUsdc: number): number {
+  if (amountUsdc <= 0) return 0;
+  return Math.min(amountUsdc, WITHDRAWAL_HL_FLAT_FEE_USDC + WITHDRAWAL_PLATFORM_FEE_USDC);
+}
+
+// Large dollar figures (volume, open interest) as "$1.2M" rather than every digit.
+export function formatCompactUsd(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 // Amount of the receive asset you get by paying `amount` of the pay asset,
 // derived purely from live USD prices. Used when no on-chain route is available.
 export function receiveFromPrices(amount: number, payPrice: number, receivePrice: number): number {
