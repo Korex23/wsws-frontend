@@ -68,11 +68,19 @@ const routeUsdc = vi.hoisted(() =>
 );
 vi.mock("@/hooks/use-withdraw", () => ({ useReroutedWithdraw: () => ({ withdraw: routeUsdc }) }));
 
-vi.mock("@privy-io/react-auth", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@privy-io/react-auth")>()),
-  usePrivy: () => ({ user: { id: "u1" } }),
+// The sheet reads the signed-in account through the Decane-backed session seam.
+// Both chains resolve to the same placeholder, as the old chain-agnostic
+// getWalletAddress stub did: the Solana pre-move below needs a Solana wallet.
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
+    ready: true,
+    authenticated: true,
+    evmAddress: "0xwallet",
+    solanaAddress: "0xwallet",
+    profile: { name: "u1", email: "", avatarSeed: "u1" },
+    logout: vi.fn(),
+  }),
 }));
-vi.mock("@/lib/user", () => ({ getWalletAddress: () => "0xwallet" }));
 
 const toastCalls = vi.hoisted(() => ({
   loading: vi.fn(() => "toast-1"),

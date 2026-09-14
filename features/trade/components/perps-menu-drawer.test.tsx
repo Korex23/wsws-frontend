@@ -27,11 +27,20 @@ vi.mock("next-intl", () => ({
     MESSAGES[namespace]?.[key] ?? `${namespace}.${key}`,
 }));
 vi.mock("@privy-io/react-auth", () => ({
-  usePrivy: () => ({ user: null }),
-  useLogout: () => ({ logout: vi.fn() }),
-  useLinkWithPasskey: () => ({ linkWithPasskey: vi.fn() }),
   getAccessToken: vi.fn(),
   getIdentityToken: vi.fn(),
+}));
+// The rail reads the session through the Decane-backed seam; no account is
+// signed in here, matching the `user: null` the Privy stub used to hand back.
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
+    ready: true,
+    authenticated: false,
+    evmAddress: null,
+    solanaAddress: null,
+    profile: { name: "Account", email: "", avatarSeed: "worldstreet" },
+    logout: vi.fn(),
+  }),
 }));
 vi.mock("@/components/broadcast/go-live-control", () => ({
   GoLiveControl: () => <button type="button">Go Live</button>,

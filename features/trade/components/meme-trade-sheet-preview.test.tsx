@@ -54,8 +54,18 @@ vi.mock("@/hooks/use-portfolio", () => ({
 vi.mock("@/hooks/use-withdraw", () => ({ useReroutedWithdraw: () => ({ withdraw: vi.fn() }) }));
 vi.mock("@privy-io/react-auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@privy-io/react-auth")>()),
-  usePrivy: () => ({ user: { id: "did:privy:u1" } }),
   getAccessToken: vi.fn(async () => "token"),
+}));
+// The sheet reads the signed-in account through the Decane-backed session seam.
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
+    ready: true,
+    authenticated: true,
+    evmAddress: WALLET,
+    solanaAddress: null,
+    profile: { name: "u1", email: "", avatarSeed: "did:privy:u1" },
+    logout: vi.fn(),
+  }),
 }));
 vi.mock("@/lib/analytics/mixpanel", () => ({ track: vi.fn() }));
 

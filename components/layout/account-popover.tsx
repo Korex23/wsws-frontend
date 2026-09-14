@@ -8,6 +8,8 @@ import { useSocialAuth, useSocialWallet } from "decane-connect-kit";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { Avatar } from "@/components/ui/avatar";
 import { InviteFriendsModal } from "@/features/referrals";
+import { MoveOldMoneyEntry } from "@/features/migrate";
+import { MIGRATION_ADAPTERS } from "@/components/layout/migration-adapters";
 import { HelpIcon, SignOutIcon } from "@/components/ui/icons";
 import { WalletAddresses } from "@/components/layout/modals/wallet-addresses";
 import { toast } from "@/lib/toast";
@@ -186,6 +188,13 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
                 </span>
                 <span>{t("inviteFriends")}</span>
               </button>
+
+              {/* The always-available door into the migration. Mirrors the
+                  phone Account modal, so a desktop user reaches the sweep from
+                  the same place. Self-contained: renders its own button and
+                  sheet, and shows a badge when the old wallet still holds
+                  funds. */}
+              <MoveOldMoneyEntry adapters={MIGRATION_ADAPTERS} className={itemClass} />
 
               <a
                 href={SUPPORT_FORM_URL}

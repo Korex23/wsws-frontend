@@ -9,18 +9,31 @@ vi.mock("next-intl", () => ({
 const mockLogout = vi.fn();
 const mockLinkWithPasskey = vi.fn();
 
-vi.mock("@privy-io/react-auth", () => ({
-  usePrivy: () => ({
-    user: {
-      id: "did:privy:test",
-      email: { address: "test@example.com" },
-      linkedAccounts: [],
-    },
+// The popover reads the session through the Decane-backed seam and the kit's
+// own hooks (passkey linking), replacing Privy's usePrivy/useLogout/useLinkWithPasskey.
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
+    ready: true,
+    authenticated: true,
+    evmAddress: "0x0000000000000000000000000000000000000001",
+    solanaAddress: null,
+    profile: { name: "Test User", email: "test@example.com", avatarSeed: "did:privy:test" },
+    logout: mockLogout,
   }),
-  useLogout: () => ({ logout: mockLogout }),
-  useLinkWithPasskey: () => ({ linkWithPasskey: mockLinkWithPasskey }),
-  getAccessToken: vi.fn(),
-  getIdentityToken: vi.fn(),
+}));
+
+vi.mock("decane-connect-kit", () => ({
+  useSocialAuth: () => ({ canUsePasskey: false }),
+  useSocialWallet: () => ({ addPasskey: mockLinkWithPasskey }),
+}));
+
+// The migration door needs a query client and the whole venue-adapter graph;
+// neither is what this test is about.
+vi.mock("@/features/migrate", () => ({
+  MoveOldMoneyEntry: () => null,
+}));
+vi.mock("@/components/layout/migration-adapters", () => ({
+  MIGRATION_ADAPTERS: [],
 }));
 
 vi.mock("next/navigation", () => ({
