@@ -122,21 +122,29 @@ export interface SwapRequest {
   slippageBps?: number;
 }
 
-// The service error, keeping the machine code the UI branches on.
+// The service error, keeping the machine code the UI branches on and the
+// request id the contract says to preserve "in client logs and support
+// reports". The message is the service's own wording and is for logs only:
+// lib/errors.ts turns the code into our copy, never the message.
 export class TradeApiError extends Error {
   code: string;
   status: number;
-  constructor(code: string, message: string, status: number) {
+  requestId: string | null;
+  constructor(code: string, message: string, status: number, requestId: string | null = null) {
     super(message);
+    // A stable discriminant for lib/errors.ts, which must not import this
+    // client module to recognise a trade failure.
+    this.name = "TradeApiError";
     this.code = code;
     this.status = status;
+    this.requestId = requestId;
   }
 }
 
 interface Envelope<T> {
   success: boolean;
   data?: T;
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; details?: unknown; requestId?: string };
 }
 
 async function request<T>(
@@ -150,7 +158,8 @@ async function request<T>(
     throw new TradeApiError(
       body?.error?.code ?? "SERVICE_UNAVAILABLE",
       body?.error?.message ?? "Trading is unavailable right now.",
-      res.status
+      res.status,
+      typeof body?.error?.requestId === "string" ? body.error.requestId : null
     );
   }
   return body.data as T;
@@ -303,16 +312,22 @@ export function quoteSwap(input: SwapRequest, idempotencyKey: string): Promise<P
   return post("/swaps/quote", input, idempotencyKey);
 }
 
+// What a Base call broadcast produced: the bundle's transaction hash when the
+// receipt arrived, or the user-operation hash when the bundler accepted the
+// operation but never handed back a receipt. The contract accepts exactly one
+// of the two per callIndex.
+export type SubmissionHash = { transactionHash: string } | { userOperationHash: string };
+
 export function registerSubmission(
   swapId: string,
   callIndex: number,
   walletAddress: string,
-  transactionHash: string,
+  submission: SubmissionHash,
   idempotencyKey: string
 ): Promise<{ swapId: string; status: string; callIndex: number }> {
   return post(
     `/swaps/${swapId}/submissions`,
-    { walletAddress, callIndex, transactionHash },
+    { walletAddress, callIndex, ...submission },
     idempotencyKey
   );
 }

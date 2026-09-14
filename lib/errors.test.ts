@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { apiError } from "@/lib/api/envelope";
-import { friendlyError, isGasFeeError, isAlreadySettledError, supportDetail } from "@/lib/errors";
+import {
+  friendlyError,
+  isGasFeeError,
+  isAlreadySettledError,
+  requestIdOf,
+  supportDetail,
+  tradeErrorKey,
+  type TradeErrorKey,
+} from "@/lib/errors";
 
 describe("friendlyError", () => {
   it("preserves the actionable confirmed-balance message", () => {
@@ -257,5 +265,85 @@ describe("supportDetail", () => {
     expect(detail.endsWith("\u2026")).toBe(true);
     expect(detail).not.toMatch(/\n/);
     expect(supportDetail(new Error("short reason"))).toBe("short reason");
+  });
+});
+
+// The trade service's failures arrive with a machine code and a requestId.
+// The code is what the copy is chosen by, in the reader's language, and the
+// requestId is what support asks for, so it rides along as "Ref:". The
+// service's own message never reaches the screen: it is written for its
+// logs, and one day it will be a stack trace.
+describe("trade service errors", () => {
+  // Shaped like lib/meme/api's TradeApiError without importing the client
+  // module: lib/errors.ts recognises the error by name, not by class.
+  function tradeError(code: string, message: string, status: number, requestId: string | null) {
+    const error = Object.assign(new Error(message), { code, status, requestId });
+    error.name = "TradeApiError";
+    return error;
+  }
+  // Stands in for next-intl's t("tradeErrors"): the key comes back so the
+  // assertion can see which copy was chosen.
+  const translate = (key: TradeErrorKey) => `[${key}]`;
+
+  it.each<[string, TradeErrorKey]>([
+    ["TOKEN_BLOCKED", "tokenBlocked"],
+    ["TOKEN_RISK_BLOCKED", "tokenRiskBlocked"],
+    ["TOKEN_BUY_DISABLED", "tokenBuyDisabled"],
+    ["TOKEN_SELL_DISABLED", "tokenSellDisabled"],
+    ["INSUFFICIENT_BALANCE", "insufficientBalance"],
+    ["NO_SWAP_ROUTE", "noSwapRoute"],
+    ["HIGH_PRICE_IMPACT", "highPriceImpact"],
+    ["INVALID_SLIPPAGE", "invalidSlippage"],
+    ["QUOTE_EXPIRED", "quoteExpired"],
+    ["SWAP_ALREADY_SUBMITTED", "swapAlreadySubmitted"],
+    ["WALLET_OWNERSHIP_MISMATCH", "walletOwnershipMismatch"],
+    ["QUOTE_PROVIDER_ERROR", "quoteProviderError"],
+    ["PROVIDER_ERROR", "providerError"],
+    ["TOKEN_NOT_FOUND", "tokenNotFound"],
+    ["UNAUTHORIZED", "unauthorized"],
+    ["SERVICE_UNAVAILABLE", "serviceUnavailable"],
+    ["BAD_RESPONSE", "badResponse"],
+    ["NOT_CONFIGURED", "notConfigured"],
+    ["FAILED", "failed"],
+    ["REVERTED", "reverted"],
+    ["EXPIRED", "expired"],
+    ["CANCELLED", "cancelled"],
+  ])("maps %s to our own copy", (code, key) => {
+    const message = friendlyError(tradeError(code, "upstream wording", 422, null), "x", translate);
+    expect(message).toBe(`[${key}]`);
+    expect(tradeErrorKey(tradeError(code, "", 422, null))).toBe(key);
+  });
+
+  it("appends the requestId as the support reference", () => {
+    const e = tradeError("NO_SWAP_ROUTE", "no route", 422, "req-abc-1");
+    expect(friendlyError(e, "x", translate)).toBe("[noSwapRoute] Ref: req-abc-1");
+    expect(requestIdOf(e)).toBe("req-abc-1");
+    expect(requestIdOf(new Error("plain"))).toBeNull();
+  });
+
+  it("never prints the service's own message, even when it looks harmless", () => {
+    // A short plain sentence with a 4xx status is exactly what the generic
+    // passthrough would have kept before.
+    const e = tradeError("VALIDATION_ERROR", "amount must be positive", 400, "req-2");
+    const message = friendlyError(e, "fallback", translate);
+    expect(message).not.toContain("amount must be positive");
+    expect(message).toBe("[unknown] Ref: req-2");
+    // And without a translator the fallback stands in for the copy; the
+    // upstream text still does not leak.
+    expect(friendlyError(e, "fallback")).toBe("fallback Ref: req-2");
+  });
+
+  it("leaves errors from other services on the existing rules", () => {
+    expect(
+      friendlyError(apiError("BAD_REQUEST", "withdrawal amount must be greater than zero", 400))
+    ).toBe("withdrawal amount must be greater than zero");
+  });
+
+  it("puts the reference, not the upstream wording, in the fine print", () => {
+    const e = tradeError("NO_SWAP_ROUTE", "internal route table miss", 422, "req-9");
+    expect(supportDetail(e)).toBe("Ref: req-9");
+    expect(supportDetail(tradeError("FAILED", "The trade didn't complete.", 200, null))).toBe(
+      "The trade didn't complete."
+    );
   });
 });

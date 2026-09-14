@@ -9,7 +9,7 @@ import { usePortfolio } from "@/hooks/use-portfolio";
 import { useDepositStatus } from "@/hooks/use-deposit";
 import { useBuyDestinations } from "@/features/trade/hooks/use-buy-catalog";
 import { useBuy } from "@/features/trade/hooks/use-buy";
-import { useMemeTrade } from "@/features/trade/hooks/use-meme-trade";
+import { tradeRef, useMemeTrade } from "@/features/trade/hooks/use-meme-trade";
 import { belowMinimumBuy, isSolanaChainId, minimumBuyUsd } from "@/lib/trade/minimums";
 import { routesForSymbol } from "@/lib/buy";
 import { swapRouteForSymbol } from "@/lib/spot-swap";
@@ -52,6 +52,7 @@ interface SpotBuyState {
 // the sheet uses, so the execution path is unchanged.
 export function useSpotBuy({ symbol, name, amount }: SpotBuyArgs): SpotBuyState {
   const t = useTranslations("buySell");
+  const tErr = useTranslations("tradeErrors");
   const portfolio = usePortfolio();
   const destinations = useBuyDestinations();
 
@@ -164,13 +165,27 @@ export function useSpotBuy({ symbol, name, amount }: SpotBuyArgs): SpotBuyState 
     // its promise only once the whole flow (including confirmation) is done.
     if (swapRoute) {
       try {
-        await memeTrade.trade({
+        const result = await memeTrade.trade({
           chainId: BASE_CHAIN_ID,
           side: "BUY",
           tokenAddress: swapRoute.tokenAddress,
           amount,
           slippageBps: SLIPPAGE_BPS,
         });
+        // Only the service's CONFIRMED is "bought". Delivered-but-unrecorded
+        // and pending say so, with the reference support will ask for.
+        if (result.outcome === "delivered" || result.outcome === "pending") {
+          const ref = tradeRef(result.swapId, result.requestId);
+          toast.success(
+            result.outcome === "delivered"
+              ? t("deliveredToast", { name, ref })
+              : t("pendingToast", { name, ref }),
+            { id: toastRef.current }
+          );
+          toastRef.current = undefined;
+          void portfolio.refetchUntilChanged(settledNetworks);
+          return;
+        }
         track("trade_completed", {
           vertical: "spot",
           asset: symbol,
@@ -181,7 +196,9 @@ export function useSpotBuy({ symbol, name, amount }: SpotBuyArgs): SpotBuyState 
         toastRef.current = undefined;
         void portfolio.refetchUntilChanged(settledNetworks);
       } catch (e) {
-        toast.error(friendlyError(e, t("buyFailedToast", { name })), { id: toastRef.current });
+        toast.error(friendlyError(e, t("buyFailedToast", { name }), tErr), {
+          id: toastRef.current,
+        });
         toastRef.current = undefined;
       }
       return;

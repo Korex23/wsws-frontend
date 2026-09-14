@@ -309,7 +309,11 @@ const lastReportedAt = new Map<string, number>();
 export function reportUpstreamFailure(
   path: string,
   status: number | undefined,
-  cause?: unknown
+  cause?: unknown,
+  // The service's request id when the response carried one (the trade relay
+  // echoes it as x-request-id). The contract asks for it to be preserved in
+  // client logs, and this is the client log.
+  requestId?: string | null
 ): void {
   if (!watchtowerEnabled) return;
 
@@ -338,8 +342,43 @@ export function reportUpstreamFailure(
       scope.setLevel(status === 429 ? "warning" : "error");
       scope.setTag("upstream_route", route);
       scope.setTag("upstream_status", String(status ?? "network"));
+      if (requestId) scope.setTag("request_id", requestId);
       if (cause !== undefined) scope.setExtra("cause", String(cause));
       Sentry.captureMessage(`Upstream ${status ?? "network failure"} ${route}`);
+    });
+  } catch {
+    // Reporting a failure must never become a second failure.
+  }
+}
+
+/**
+ * A memecoin trade that the chain says delivered but the trade service did
+ * not record as CONFIRMED: it recorded FAILED or REVERTED, or refused the
+ * submission with 409. The user is told "delivered, still being recorded";
+ * the trade team needs the swap, the service's request id and the hash to
+ * reconcile it, which is exactly what is tagged here. Not throttled: each one
+ * is a distinct swap and a distinct ledger discrepancy.
+ */
+export function reportTradeRecordingMismatch(mismatch: {
+  swapId: string;
+  requestId: string | null;
+  hash: string | null;
+  recorded: string;
+}): void {
+  if (!watchtowerEnabled) return;
+  try {
+    Sentry.withScope((scope) => {
+      // Grouped by what the service recorded rather than by stack: the point
+      // is one issue per failure mode with every swap listed under it.
+      scope.setFingerprint(["trade_recording_mismatch", mismatch.recorded]);
+      scope.setLevel("error");
+      scope.setTag("swap_id", mismatch.swapId);
+      scope.setTag("request_id", mismatch.requestId ?? "none");
+      scope.setTag("tx_hash", mismatch.hash ?? "none");
+      scope.setTag("recorded", mismatch.recorded);
+      Sentry.captureMessage(
+        `Trade ${mismatch.swapId} delivered on-chain but recorded ${mismatch.recorded}`
+      );
     });
   } catch {
     // Reporting a failure must never become a second failure.

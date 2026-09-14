@@ -31,6 +31,74 @@ export function isConflictError(e: unknown): boolean {
   return gateway.status === 409 || gateway.code === "CONFLICT";
 }
 
+/**
+ * The trade service's failure codes (its frontend contract, "Important
+ * errors", plus the relay's own codes and the swap lifecycle's terminal
+ * states), each mapped to a key in the `tradeErrors` message namespace so the
+ * copy is ours and in the reader's language. The service's `message` is for
+ * its logs and is never shown: an unmapped code gets `unknown`.
+ */
+export const TRADE_ERROR_KEYS = {
+  TOKEN_BLOCKED: "tokenBlocked",
+  TOKEN_RISK_BLOCKED: "tokenRiskBlocked",
+  TOKEN_BUY_DISABLED: "tokenBuyDisabled",
+  TOKEN_SELL_DISABLED: "tokenSellDisabled",
+  INSUFFICIENT_BALANCE: "insufficientBalance",
+  NO_SWAP_ROUTE: "noSwapRoute",
+  HIGH_PRICE_IMPACT: "highPriceImpact",
+  INVALID_SLIPPAGE: "invalidSlippage",
+  QUOTE_EXPIRED: "quoteExpired",
+  SWAP_ALREADY_SUBMITTED: "swapAlreadySubmitted",
+  WALLET_OWNERSHIP_MISMATCH: "walletOwnershipMismatch",
+  QUOTE_PROVIDER_ERROR: "quoteProviderError",
+  PROVIDER_ERROR: "providerError",
+  TOKEN_NOT_FOUND: "tokenNotFound",
+  UNAUTHORIZED: "unauthorized",
+  // The relay's own failures (app/api/trade/[...path]/route.ts).
+  SERVICE_UNAVAILABLE: "serviceUnavailable",
+  BAD_RESPONSE: "badResponse",
+  NOT_CONFIGURED: "notConfigured",
+  // Terminal swap statuses other than CONFIRMED, thrown by use-meme-trade.
+  FAILED: "failed",
+  REVERTED: "reverted",
+  EXPIRED: "expired",
+  CANCELLED: "cancelled",
+} as const;
+
+export type TradeErrorKey = (typeof TRADE_ERROR_KEYS)[keyof typeof TRADE_ERROR_KEYS] | "unknown";
+
+/** next-intl's `t` for the `tradeErrors` namespace, or any stand-in for it. */
+export type TradeErrorTranslator = (key: TradeErrorKey) => string;
+
+// A failure thrown by lib/meme/api's TradeApiError. Recognised by name rather
+// than by class so this pure module never imports the browser client.
+function isTradeError(e: unknown): e is Error & { code: string; requestId?: unknown } {
+  return (
+    e instanceof Error && e.name === "TradeApiError" && typeof gatewayMeta(e).code === "string"
+  );
+}
+
+/** The message key for a trade service failure, or null for any other error. */
+export function tradeErrorKey(e: unknown): TradeErrorKey | null {
+  if (!isTradeError(e)) return null;
+  const known = (TRADE_ERROR_KEYS as Record<string, TradeErrorKey>)[e.code];
+  return known ?? "unknown";
+}
+
+/** The service's request id, which support asks for; null when there is none. */
+export function requestIdOf(e: unknown): string | null {
+  if (!e || typeof e !== "object") return null;
+  const id = (e as { requestId?: unknown }).requestId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+// The support reference, as it is shown beside a message and in fine print.
+// "Ref:" is left untranslated on purpose: it is a token support searches for.
+function withRef(copy: string, e: unknown): string {
+  const id = requestIdOf(e);
+  return id ? `${copy} Ref: ${id}` : copy;
+}
+
 function looksSafeServerMessage(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed || trimmed.length > 160) return false;
@@ -125,8 +193,16 @@ export function isGasFeeError(e: unknown): boolean {
 
 export function friendlyError(
   e: unknown,
-  fallback = "Something went wrong. Please try again."
+  fallback = "Something went wrong. Please try again.",
+  // The `tradeErrors` translator, from the screen that has one. Without it a
+  // trade failure shows the caller's fallback: never the service's wording.
+  translate?: TradeErrorTranslator
 ): string {
+  // Trade service failures are decided by code, before any text rule below
+  // could keep a "safe-looking" upstream sentence.
+  const tradeKey = tradeErrorKey(e);
+  if (tradeKey) return withRef(translate ? translate(tradeKey) : fallback, e);
+
   const raw = text(e).trim();
   const m = raw.toLowerCase();
   if (!m) return fallback;
@@ -261,6 +337,10 @@ export function friendlyError(
  * Never a substitute for friendlyError; always rendered beside it.
  */
 export function supportDetail(e: unknown, max = 160): string {
+  // A trade failure's reference is the detail support can act on; the
+  // service's own sentence is not shown here either.
+  const requestId = tradeErrorKey(e) ? requestIdOf(e) : null;
+  if (requestId) return `Ref: ${requestId}`;
   const raw = text(e).replace(/\s+/g, " ").trim();
   if (raw.length <= max) return raw;
   return `${raw.slice(0, max - 1).trimEnd()}\u2026`;

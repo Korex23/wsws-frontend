@@ -17,9 +17,11 @@ const SOLANA_CHAIN_ID = 101;
 const tradeHook = vi.hoisted(() => ({
   wallet: "0xwallet" as string | null,
   phase: "idle" as TradePhase,
-  error: null as string | null,
+  error: null as unknown,
   received: null as { amount: string; symbol: string } | null,
-  trade: vi.fn(async () => {}),
+  swapId: null as string | null,
+  requestId: null as string | null,
+  trade: vi.fn(async (): Promise<unknown> => undefined),
   reset: vi.fn(),
   linkForPreview: vi.fn(async () => {}),
 }));
@@ -32,12 +34,15 @@ const previewHook = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
-vi.mock("@/features/trade/hooks/use-meme-trade", () => ({
+vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
   useMemeTrade: () => ({
     walletFor: () => tradeHook.wallet,
     phase: tradeHook.phase,
     error: tradeHook.error,
     received: tradeHook.received,
+    swapId: tradeHook.swapId,
+    requestId: tradeHook.requestId,
     trade: tradeHook.trade,
     reset: tradeHook.reset,
     linkForPreview: tradeHook.linkForPreview,
@@ -119,12 +124,15 @@ function swapPreview(overrides: Partial<SwapPreview> = {}): SwapPreview {
 function renderSheet(props: Partial<React.ComponentProps<typeof MemeTradeSheet>> = {}) {
   const onClose = props.onClose ?? vi.fn();
   const token = props.token ?? memeToken({ symbol: "PEPE" });
-  const view = render(
+  const element = () => (
     <NextIntlClientProvider locale="en" messages={messages}>
       <MemeTradeSheet {...props} token={token} onClose={onClose} />
     </NextIntlClientProvider>
   );
-  return { onClose, token, view };
+  const view = render(element());
+  // Re-renders against the hook double's current state.
+  const rerender = () => view.rerender(element());
+  return { onClose, token, view, rerender };
 }
 
 // Types an amount and lets the 600ms debounce through, which is what actually
@@ -155,6 +163,8 @@ beforeEach(() => {
   tradeHook.phase = "idle";
   tradeHook.error = null;
   tradeHook.received = null;
+  tradeHook.swapId = null;
+  tradeHook.requestId = null;
   tradeHook.trade.mockReset();
   tradeHook.trade.mockResolvedValue(undefined);
   previewHook.data = null;
@@ -368,5 +378,105 @@ describe("amounts", () => {
     expect((screen.getByLabelText("You sell") as HTMLInputElement).value).toBe(
       "123.456789012345678901"
     );
+  });
+});
+
+// The trade service's CONFIRMED is the only success. When the swap's own
+// receipt proves delivery but the service has not (or will not) confirm it,
+// the sheet says exactly that, with the reference support will ask for, and
+// never "bought" or "sold". A poll that ran out of time is "pending": closable,
+// and equally careful about what it claims.
+describe("the outcome is the service's word, not the receipt's", () => {
+  async function placeTrade(result: { outcome: string; swapId: string; requestId: string | null }) {
+    previewHook.data = swapPreview();
+    tradeHook.trade.mockResolvedValue(result);
+    const sheet = renderSheet();
+    await typeAmount("5");
+    fireEvent.click(cta());
+    await waitFor(() => expect(tradeHook.trade).toHaveBeenCalled());
+    return sheet;
+  }
+
+  it("says delivered, never bought, when the service has not confirmed", async () => {
+    const { rerender } = await placeTrade({
+      outcome: "delivered",
+      swapId: "swap-1",
+      requestId: "req-1",
+    });
+    await waitFor(() => expect(toastCalls.success).toHaveBeenCalled());
+    const toast = String(toastCalls.success.mock.calls[0][0]);
+    expect(toast).toMatch(/delivered on-chain/i);
+    expect(toast).toContain("swap-1");
+    expect(toast).toContain("req-1");
+    expect(toast).not.toMatch(/bought/i);
+
+    tradeHook.phase = "delivered";
+    tradeHook.received = { amount: "4.0651", symbol: "PEPE" };
+    tradeHook.swapId = "swap-1";
+    tradeHook.requestId = "req-1";
+    rerender();
+    expect(screen.getByTestId("meme-phase-title")).toHaveTextContent("Delivered on-chain");
+    expect(screen.getByRole("dialog")).toHaveTextContent(/still recording this trade/i);
+    expect(screen.getByRole("dialog")).toHaveTextContent("swap-1 · req-1");
+    expect(screen.getByRole("dialog")).not.toHaveTextContent(/trade confirmed/i);
+    expect(screen.getByRole("button", { name: messages.meme.done })).toBeEnabled();
+  });
+
+  it("says confirmed only when the service said CONFIRMED", async () => {
+    const { rerender } = await placeTrade({
+      outcome: "confirmed",
+      swapId: "swap-1",
+      requestId: null,
+    });
+    await waitFor(() =>
+      expect(toastCalls.success).toHaveBeenCalledWith("Bought PEPE", expect.anything())
+    );
+    tradeHook.phase = "confirmed";
+    rerender();
+    expect(screen.getByTestId("meme-phase-title")).toHaveTextContent(messages.meme.confirmedTitle);
+  });
+
+  it("is pending and closable when the poll ran out of time", async () => {
+    const { rerender, onClose } = await placeTrade({
+      outcome: "pending",
+      swapId: "swap-9",
+      requestId: null,
+    });
+    await waitFor(() => expect(toastCalls.success).toHaveBeenCalled());
+    expect(String(toastCalls.success.mock.calls[0][0])).not.toMatch(/bought|sold|confirmed/i);
+
+    tradeHook.phase = "pending";
+    tradeHook.swapId = "swap-9";
+    rerender();
+    expect(screen.getByTestId("meme-phase-title")).toHaveTextContent(messages.meme.pendingTitle);
+    expect(screen.getByRole("dialog")).toHaveTextContent("swap-9");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("does not call an on-chain receipt done while the service is still confirming", () => {
+    tradeHook.phase = "confirming";
+    tradeHook.received = { amount: "4.0651", symbol: "PEPE" };
+    renderSheet();
+    expect(screen.getByTestId("meme-phase-title")).toHaveTextContent("4.0651 PEPE received");
+    expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow", "100");
+    expect(screen.getByRole("dialog")).not.toHaveTextContent(messages.meme.allDone);
+  });
+});
+
+describe("a trade service failure reads as our copy with the reference", () => {
+  it("shows the mapped copy and the requestId, never the upstream wording", () => {
+    tradeHook.phase = "failed";
+    tradeHook.error = Object.assign(new Error("route table miss in 0x"), {
+      name: "TradeApiError",
+      code: "NO_SWAP_ROUTE",
+      status: 422,
+      requestId: "req-x1",
+    });
+    renderSheet();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(messages.tradeErrors.noSwapRoute);
+    expect(alert).toHaveTextContent("Ref: req-x1");
+    expect(alert).not.toHaveTextContent("route table miss");
   });
 });

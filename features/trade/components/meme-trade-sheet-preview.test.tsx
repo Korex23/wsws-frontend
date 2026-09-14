@@ -12,13 +12,17 @@ const useMemePreview = vi.hoisted(() =>
   )
 );
 
-vi.mock("@/features/trade/hooks/use-meme-trade", () => ({
+vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
+  // The sheet also reads pure helpers (tradeRef) off this module.
+  ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
   useMemePreview,
   useMemeTrade: () => ({
     walletFor: () => WALLET,
     phase: state.phase,
     error: null,
     received: null,
+    swapId: null,
+    requestId: null,
     trade: vi.fn(),
     reset: vi.fn(),
     linkForPreview: vi.fn(),

@@ -155,7 +155,15 @@
     "volume24h": "Volumen (24h)",
     "liquidity": "Liquidez",
     "fdv": "FDV",
-    "topUp": "Top Up"
+    "topUp": "Top Up",
+    "stillRecording": "Aún registrando",
+    "deliveredTitle": "Entregado en la cadena",
+    "deliveredBody": "{brand} aún está registrando esta operación (ref. {ref}). Puedes cerrar esto.",
+    "deliveredReceivedBody": "{amount} {symbol} llegaron a tu billetera. {brand} aún está registrando esta operación (ref. {ref}). Puedes cerrar esto.",
+    "pendingTitle": "Enviada, aún por registrar",
+    "pendingBody": "La transacción salió y {brand} aún está registrando esta operación (ref. {ref}). Puedes cerrar esto; seguirá en tus transacciones.",
+    "toastDelivered": "{symbol} entregado en la cadena. Aún registrándose (ref. {ref}).",
+    "toastPending": "Operación de {symbol} enviada. Aún registrándose (ref. {ref})."
   },
   "spot": {
     "balance": "Saldo {amount} {symbol}",
@@ -806,7 +814,12 @@
     "sellToken": "Vender {name}",
     "transactionFee": "Comisión de transacción",
     "shareToSquare": "Share to Market Square",
-    "boughtShareTitle": "Bought {name}"
+    "boughtShareTitle": "Bought {name}",
+    "stageDelivered": "Entregado en la cadena",
+    "stagePending": "Enviada, aún por registrar",
+    "deliveredBody": "{brand} aún está registrando esta operación (ref. {ref}). Puedes cerrar esto.",
+    "deliveredToast": "{name} entregado en la cadena. Aún registrándose (ref. {ref}).",
+    "pendingToast": "Orden de {name} enviada. Aún registrándose (ref. {ref})."
   },
   "rwa": {
     "eyebrow": "Activos del mundo real",
@@ -3061,5 +3074,30 @@
     "depositHelpReply": "Para problemas de depósito: asegúrate de que la transacción esté confirmada en la cadena. Puedes compartir tu **hash de transacción (TXID)** o la red de depósito aquí.",
     "tradeHelpReply": "Para consultas de operaciones: comparte el **símbolo del token**, la **red** y la hora aproximada de la orden.",
     "bugReportReply": "¡Muchas gracias por el informe! Nuestro equipo de frontend está investigando la incidencia. Puedes adjuntar registros adicionales como `bloque de código`."
+  },
+  "tradeErrors": {
+    "tokenBlocked": "Nuestro equipo ha bloqueado este token, así que no se puede operar.",
+    "tokenRiskBlocked": "Este token está bloqueado por motivos de seguridad, así que no se puede operar.",
+    "tokenBuyDisabled": "La compra de este token está pausada por ahora.",
+    "tokenSellDisabled": "La venta de este token está pausada por ahora.",
+    "insufficientBalance": "No tienes suficiente de este activo para eso. Prueba con un importe menor.",
+    "noSwapRoute": "Ahora mismo no hay ruta para operar este token. Inténtalo más tarde o con otro importe.",
+    "highPriceImpact": "Esta operación movería demasiado el precio. Prueba con un importe menor.",
+    "invalidSlippage": "Esa tolerancia de precio no está permitida. Inténtalo de nuevo.",
+    "quoteExpired": "Tu precio caducó. Pide una cotización nueva e inténtalo de nuevo.",
+    "swapAlreadySubmitted": "Esta operación ya se envió. Revisa tus transacciones antes de intentarlo de nuevo.",
+    "walletOwnershipMismatch": "Esta billetera aún no está vinculada a tu cuenta. Inténtalo de nuevo para vincularla.",
+    "quoteProviderError": "Nuestro proveedor de precios no respondió. Inténtalo de nuevo en un momento.",
+    "providerError": "El proveedor de datos de la red no está disponible ahora. Inténtalo de nuevo en un momento.",
+    "tokenNotFound": "No pudimos encontrar este token.",
+    "unauthorized": "Tu sesión caducó. Inicia sesión de nuevo.",
+    "serviceUnavailable": "El servicio de operaciones no responde ahora mismo. Inténtalo de nuevo en un momento.",
+    "badResponse": "El servicio de operaciones envió una respuesta que no pudimos leer. Inténtalo de nuevo en un momento.",
+    "notConfigured": "Las operaciones no están disponibles en este entorno.",
+    "failed": "La operación no se completó.",
+    "reverted": "La red revirtió esta operación. No se cobró nada.",
+    "expired": "La operación caducó antes de enviarse. Inténtalo de nuevo.",
+    "cancelled": "Esta operación se canceló.",
+    "unknown": "No se pudo completar la operación. Inténtalo de nuevo."
   }
 }

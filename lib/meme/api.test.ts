@@ -1,5 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { isValidTradeAmount, newIdempotencyKey, withRiskDefaults } from "@/lib/meme/api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const apiFetchMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/api", () => ({ apiFetch: apiFetchMock }));
+
+import {
+  TradeApiError,
+  fetchSwapStatus,
+  isValidTradeAmount,
+  newIdempotencyKey,
+  registerSubmission,
+  withRiskDefaults,
+} from "@/lib/meme/api";
 import type { MemeToken } from "@/lib/meme/api";
 
 describe("newIdempotencyKey", () => {
@@ -60,5 +71,98 @@ describe("withRiskDefaults", () => {
     const t = withRiskDefaults(trendingRow);
     expect(t.buyEnabled).toBe(true);
     expect(t.sellEnabled).toBe(true);
+  });
+});
+
+// The contract's failure envelope carries a requestId that support asks for.
+// It has to survive the client boundary on the error itself, and the relay's
+// own errors (a 502 it minted) carry one too, so a screenshot always has a
+// reference whichever side failed.
+describe("TradeApiError keeps the contract's requestId", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    apiFetchMock.mockReset();
+  });
+
+  function answer(status: number, body: unknown) {
+    apiFetchMock.mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      })
+    );
+  }
+
+  it("carries the service's requestId, code and status on the thrown error", async () => {
+    answer(422, {
+      success: false,
+      error: {
+        code: "NO_SWAP_ROUTE",
+        message: "no route",
+        details: null,
+        requestId: "req-service-1",
+      },
+    });
+    const thrown = await fetchSwapStatus("swap-1").catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(TradeApiError);
+    const error = thrown as TradeApiError;
+    expect(error.code).toBe("NO_SWAP_ROUTE");
+    expect(error.status).toBe(422);
+    expect(error.requestId).toBe("req-service-1");
+  });
+
+  it("carries the relay's minted requestId on a 502 it produced itself", async () => {
+    answer(502, {
+      success: false,
+      error: {
+        code: "SERVICE_UNAVAILABLE",
+        message: "Trading is unreachable.",
+        requestId: "req-relay-9",
+      },
+    });
+    const thrown = await fetchSwapStatus("swap-1").catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(TradeApiError);
+    expect((thrown as TradeApiError).requestId).toBe("req-relay-9");
+  });
+
+  it("has no requestId when the body carried none, rather than inventing one", async () => {
+    answer(500, "<html>upstream</html>");
+    const thrown = await fetchSwapStatus("swap-1").catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(TradeApiError);
+    expect((thrown as TradeApiError).requestId).toBeNull();
+  });
+});
+
+// Base execution registers exactly one hash per call. The contract accepts
+// either the transaction hash or, when the bundler never produced a receipt,
+// the user-operation hash; the body must carry one and never both.
+describe("registerSubmission", () => {
+  afterEach(() => apiFetchMock.mockReset());
+
+  function sentBody(): Record<string, unknown> {
+    const init = apiFetchMock.mock.calls[0][1] as RequestInit;
+    return JSON.parse(String(init.body)) as Record<string, unknown>;
+  }
+
+  it("registers a transaction hash", async () => {
+    apiFetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: { swapId: "s", status: "SUBMITTED" } }))
+    );
+    await registerSubmission("s", 0, "0xwallet", { transactionHash: "0xtx" }, "key-1");
+    expect(sentBody()).toEqual({
+      walletAddress: "0xwallet",
+      callIndex: 0,
+      transactionHash: "0xtx",
+    });
+  });
+
+  it("registers a user-operation hash when that is all the bundler gave back", async () => {
+    apiFetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: { swapId: "s", status: "SUBMITTED" } }))
+    );
+    await registerSubmission("s", 1, "0xwallet", { userOperationHash: "0xuop" }, "key-2");
+    const body = sentBody();
+    expect(body).toEqual({ walletAddress: "0xwallet", callIndex: 1, userOperationHash: "0xuop" });
+    expect(body).not.toHaveProperty("transactionHash");
   });
 });

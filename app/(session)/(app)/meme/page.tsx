@@ -20,6 +20,7 @@ import { MemeSettlementTracker } from "@/features/trade/components/meme-settleme
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
 import { useMemeCatalog, useMemeSearch } from "@/features/trade/hooks/use-meme-tokens";
 import {
+  memeOutcomeToast,
   useMemePreview,
   useMemeTrade,
   type MemeTradeInput,
@@ -147,7 +148,8 @@ interface MemeBuyTicketProps {
   previewError: unknown;
   onBuy: () => Promise<void>;
   phase: TradePhase;
-  error: string | null;
+  // The trade hook's failure as thrown; the ticket chooses the copy.
+  error: unknown;
   // Opens the deposit flow. A buy the balance cannot cover grows a Top Up
   // button beside a disabled Buy; omit it and the button never appears.
   onAddFunds?: () => void;
@@ -175,6 +177,7 @@ function MemeBuyTicket({
   onAddFunds,
 }: MemeBuyTicketProps) {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   const [submitting, setSubmitting] = useState(false);
 
   const symbol = displaySymbol(token.symbol ?? "");
@@ -328,12 +331,12 @@ function MemeBuyTicket({
       ) : null}
       {quoteFailed ? (
         <p className="text-down text-[12.5px] font-normal">
-          {friendlyError(previewError, t("previewFailed"))}
+          {friendlyError(previewError, t("previewFailed"), tErr)}
         </p>
       ) : null}
       {error ? (
         <p role="alert" className="text-down text-[12.5px] font-normal">
-          {friendlyError(error, t("orderFailed"))}
+          {friendlyError(error, t("orderFailed"), tErr)}
         </p>
       ) : null}
 
@@ -371,6 +374,7 @@ function MemeBuyTicket({
 // the chart frame and the sell ticket are all presentational.
 function MemeDesk() {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   // "Add funds" the buy ticket hands upward opens here, the same deposit sheet
   // the RWA desk and dashboard use. The host is mounted at the foot of the desk.
   const modals = useAppModals();
@@ -521,17 +525,14 @@ function MemeDesk() {
       input.side === "BUY" ? t("buyingToast", { symbol }) : t("sellingToast", { symbol })
     );
     try {
-      await trade(input);
-      toast.success(
-        input.side === "BUY" ? t("toastBought", { symbol }) : t("toastSold", { symbol }),
-        { id: toastId }
-      );
+      const result = await trade(input);
+      toast.success(memeOutcomeToast(t, result, input.side, symbol), { id: toastId });
       setAmount("");
       void portfolio.refetchUntilChanged(tradedNetworks);
     } catch (e) {
-      // The trade hook keeps the message for the ticket's inline error; the
+      // The trade hook keeps the failure for the ticket's inline error; the
       // toast is for the case where the user has already looked away.
-      toast.error(friendlyError(e, t("orderFailed")), { id: toastId });
+      toast.error(friendlyError(e, t("orderFailed"), tErr), { id: toastId });
       void portfolio.refetchFresh(tradedNetworks);
     }
   }

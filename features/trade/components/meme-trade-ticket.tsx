@@ -39,7 +39,8 @@ export interface TradeTicketProps {
   previewError: unknown;
   onSubmit: (input: MemeTradeInput) => Promise<void>;
   phase: TradePhase;
-  error: string | null;
+  // The trade hook's failure as thrown; the ticket chooses the copy.
+  error: unknown;
   // Opens the deposit flow. A buy the balance cannot cover grows a Top Up
   // button beside a disabled Buy; omit it and the button never appears.
   onAddFunds?: () => void;
@@ -70,6 +71,7 @@ export function TradeTicket({
   onAddFunds,
 }: TradeTicketProps) {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
 
@@ -291,12 +293,12 @@ export function TradeTicket({
       ) : null}
       {quoteFailed ? (
         <p className="text-down text-[12.5px] font-normal">
-          {friendlyError(previewError, t("previewFailed"))}
+          {friendlyError(previewError, t("previewFailed"), tErr)}
         </p>
       ) : null}
       {shownError ? (
         <p role="alert" className="text-down text-[12.5px] font-normal">
-          {friendlyError(shownError, t("orderFailed"))}
+          {friendlyError(shownError, t("orderFailed"), tErr)}
         </p>
       ) : null}
 

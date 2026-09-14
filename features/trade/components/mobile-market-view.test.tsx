@@ -52,7 +52,9 @@ vi.mock("@/features/trade/components/perps-section", () => ({
 // wiring. TradeTicket itself has its own suite (meme-trade-ticket.test.tsx),
 // so it is stubbed here too: this suite tests the hosting, not the ticket.
 const memeTrade = vi.hoisted(() => vi.fn());
-vi.mock("@/features/trade/hooks/use-meme-trade", () => ({
+vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
+  // The surfaces also read pure helpers (memeOutcomeToast) off this module.
+  ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
   useMemeTrade: () => ({
     walletFor: () => "0xwallet",
     phase: "idle",

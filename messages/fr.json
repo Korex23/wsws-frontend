@@ -155,7 +155,15 @@
     "volume24h": "Volume (24h)",
     "liquidity": "Liquidité",
     "fdv": "FDV",
-    "topUp": "Top Up"
+    "topUp": "Top Up",
+    "stillRecording": "Enregistrement en cours",
+    "deliveredTitle": "Livré on-chain",
+    "deliveredBody": "{brand} enregistre encore cet échange (réf. {ref}). Vous pouvez fermer.",
+    "deliveredReceivedBody": "{amount} {symbol} sont arrivés dans votre portefeuille. {brand} enregistre encore cet échange (réf. {ref}). Vous pouvez fermer.",
+    "pendingTitle": "Envoyé, enregistrement en cours",
+    "pendingBody": "La transaction est partie et {brand} enregistre encore cet échange (réf. {ref}). Vous pouvez fermer ; il reste dans vos transactions.",
+    "toastDelivered": "{symbol} livré on-chain. Enregistrement en cours (réf. {ref}).",
+    "toastPending": "Échange {symbol} envoyé. Enregistrement en cours (réf. {ref})."
   },
   "spot": {
     "balance": "Solde {amount} {symbol}",
@@ -806,7 +814,12 @@
     "sellToken": "Vendre {name}",
     "transactionFee": "Frais de transaction",
     "shareToSquare": "Share to Market Square",
-    "boughtShareTitle": "Bought {name}"
+    "boughtShareTitle": "Bought {name}",
+    "stageDelivered": "Livré on-chain",
+    "stagePending": "Envoyé, enregistrement en cours",
+    "deliveredBody": "{brand} enregistre encore cet échange (réf. {ref}). Vous pouvez fermer.",
+    "deliveredToast": "{name} livré on-chain. Enregistrement en cours (réf. {ref}).",
+    "pendingToast": "Ordre {name} envoyé. Enregistrement en cours (réf. {ref})."
   },
   "rwa": {
     "eyebrow": "Actifs du monde réel",
@@ -3061,5 +3074,30 @@
     "depositHelpReply": "Pour les dépôts : veuillez vous assurer que votre transaction a bien été confirmée sur la blockchain. Vous pouvez indiquer votre **hash de transaction (TXID)** ou le réseau ici.",
     "tradeHelpReply": "Pour toute question de trading : veuillez préciser le **symbole du jeton**, le **réseau** et l'heure approximative de l'ordre.",
     "bugReportReply": "Merci pour ce signalement détaillé ! Notre équipe d'ingénieurs examine le problème. Vous pouvez coller des logs supplémentaires sous forme de `bloc de code`."
+  },
+  "tradeErrors": {
+    "tokenBlocked": "Ce jeton a été bloqué par notre équipe, il ne peut donc pas être échangé.",
+    "tokenRiskBlocked": "Ce jeton est bloqué pour des raisons de sécurité, il ne peut donc pas être échangé.",
+    "tokenBuyDisabled": "L'achat de ce jeton est suspendu pour le moment.",
+    "tokenSellDisabled": "La vente de ce jeton est suspendue pour le moment.",
+    "insufficientBalance": "Vous n'avez pas assez de cet actif pour cela. Essayez un montant plus petit.",
+    "noSwapRoute": "Aucune route n'est disponible pour échanger ce jeton en ce moment. Réessayez plus tard ou avec un autre montant.",
+    "highPriceImpact": "Cet échange ferait trop bouger le prix. Essayez un montant plus petit.",
+    "invalidSlippage": "Cette tolérance de prix n'est pas autorisée. Réessayez.",
+    "quoteExpired": "Votre prix a expiré. Demandez une nouvelle cotation et réessayez.",
+    "swapAlreadySubmitted": "Cet échange a déjà été envoyé. Vérifiez vos transactions avant de réessayer.",
+    "walletOwnershipMismatch": "Ce portefeuille n'est pas encore lié à votre compte. Réessayez pour le lier.",
+    "quoteProviderError": "Notre fournisseur de prix n'a pas répondu. Réessayez dans un instant.",
+    "providerError": "Le fournisseur de données réseau est indisponible pour le moment. Réessayez dans un instant.",
+    "tokenNotFound": "Nous n'avons pas trouvé ce jeton.",
+    "unauthorized": "Votre session a expiré. Reconnectez-vous.",
+    "serviceUnavailable": "Le service d'échange est injoignable pour le moment. Réessayez dans un instant.",
+    "badResponse": "Le service d'échange a envoyé une réponse que nous n'avons pas pu lire. Réessayez dans un instant.",
+    "notConfigured": "Les échanges ne sont pas disponibles dans cet environnement.",
+    "failed": "L'échange n'a pas abouti.",
+    "reverted": "Le réseau a annulé cet échange. Rien n'a été débité.",
+    "expired": "L'échange a expiré avant d'être envoyé. Réessayez.",
+    "cancelled": "Cet échange a été annulé.",
+    "unknown": "L'échange n'a pas pu aboutir. Réessayez."
   }
 }

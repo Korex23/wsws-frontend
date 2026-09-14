@@ -22,6 +22,7 @@ import { MemeUnavailable } from "@/features/trade/components/meme-unavailable";
 import { useMemeSwaps } from "@/features/trade/hooks/use-meme-swaps";
 import { useMemeCatalog } from "@/features/trade/hooks/use-meme-tokens";
 import {
+  memeOutcomeToast,
   useMemePreview,
   useMemeTrade,
   type MemeTradeInput,
@@ -78,6 +79,7 @@ function usdMetric(value: string | null): MemeMetricValue {
 
 export function MemeBoard() {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
 
   const [picked, setPicked] = useState<MemeToken | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -209,18 +211,15 @@ export function MemeBoard() {
       input.side === "BUY" ? t("buyingToast", { symbol }) : t("sellingToast", { symbol })
     );
     try {
-      await trade(input);
-      toast.success(
-        input.side === "BUY" ? t("toastBought", { symbol }) : t("toastSold", { symbol }),
-        { id: toastId }
-      );
+      const result = await trade(input);
+      toast.success(memeOutcomeToast(t, result, input.side, symbol), { id: toastId });
       setAmount("");
       void portfolio.refetchUntilChanged(tradedNetworks);
       swaps.refetch();
     } catch (e) {
-      // The trade hook keeps the message for the ticket's inline error; the
+      // The trade hook keeps the failure for the ticket's inline error; the
       // toast is for the case where the user has already looked away.
-      toast.error(friendlyError(e, t("orderFailed")), { id: toastId });
+      toast.error(friendlyError(e, t("orderFailed"), tErr), { id: toastId });
       void portfolio.refetchFresh(tradedNetworks);
     }
   }

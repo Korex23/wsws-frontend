@@ -83,7 +83,7 @@ export async function apiFetch(
     // what is worth sending (5xx and network failures, not a 401 on a cold
     // token) and throttles per endpoint, so a hard-polled broken route cannot
     // flood the project.
-    reportUpstreamFailure(path, response.status);
+    reportUpstreamFailure(path, response.status, undefined, response.headers.get("x-request-id"));
   }
   return response;
 }
