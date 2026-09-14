@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { fetchDiscoveryEvent, fetchDiscoveryEvents } from "../api";
 import type {
@@ -52,23 +52,51 @@ export function useDiscoveryEvents(
 
   const pages = query.data?.pages;
   const events = pages ? mergeDiscoveryEventPages(pages) : EMPTY_EVENTS;
+  const fetchNextPage = query.fetchNextPage;
+  const refetch = query.refetch;
+  const lastPage = pages?.at(-1);
+  const unavailable = lastPage?.unavailable === true;
+  const retryAfterMs = lastPage?.retryAfterMs ?? 5_000;
+  const recoveryAttempts = useRef(0);
   const lastPageEmpty = pages?.at(-1)?.events.length === 0;
   const shouldAdvanceEmptyPage =
     lastPageEmpty && query.hasNextPage && !query.isFetchingNextPage && !query.isFetchNextPageError;
 
   useEffect(() => {
-    if (shouldAdvanceEmptyPage) void query.fetchNextPage();
-  }, [query, shouldAdvanceEmptyPage]);
+    if (shouldAdvanceEmptyPage) void fetchNextPage();
+  }, [fetchNextPage, shouldAdvanceEmptyPage]);
+
+  useEffect(() => {
+    recoveryAttempts.current = 0;
+  }, [category, sort]);
+
+  useEffect(() => {
+    if (!unavailable) {
+      recoveryAttempts.current = 0;
+      return;
+    }
+    if (recoveryAttempts.current >= 2) return;
+
+    const timer = window.setTimeout(() => {
+      recoveryAttempts.current += 1;
+      void refetch();
+    }, retryAfterMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [query.dataUpdatedAt, refetch, retryAfterMs, unavailable]);
 
   return {
     events,
     loading: query.isPending || (events.length === 0 && query.isFetchingNextPage),
+    unavailable,
     error: query.isError && events.length === 0,
     loadMoreError: query.isFetchNextPageError,
     loadingMore: query.isFetchingNextPage,
     hasMore: query.hasNextPage && !lastPageEmpty,
-    loadMore: query.fetchNextPage,
-    refetch: query.refetch,
+    loadMore: fetchNextPage,
+    refetch,
   };
 }
 

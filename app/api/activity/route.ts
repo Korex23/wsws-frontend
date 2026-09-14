@@ -45,6 +45,9 @@ export async function GET(req: NextRequest) {
     if (isActivityRateLimited(error)) {
       return NextResponse.json({ error: "Too many requests, try again shortly" }, { status: 429 });
     }
-    return NextResponse.json({ error: "Could not load activity" }, { status: 502 });
+    return NextResponse.json(
+      { items: [], unavailable: ["activity"] },
+      { status: 200, headers: { "cache-control": "no-store" } }
+    );
   }
 }

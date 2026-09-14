@@ -34,7 +34,7 @@ export function resolveLichessPublicAssetPath(path: string, baseUrl?: string): s
       ? `/${normalized.startsWith("chess/lichess/") ? normalized : `chess/lichess/${normalized}`}`
       : `/${normalized}`;
 
-  if (!baseUrl) return localPath;
+  if (!baseUrl || normalized.startsWith("compiled/grammar/")) return localPath;
 
   const objectPath =
     normalized.startsWith("npm/") || normalized.startsWith("chess/lichess/")

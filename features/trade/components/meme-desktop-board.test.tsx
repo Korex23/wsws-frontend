@@ -65,6 +65,38 @@ describe("MemeDesktopBoard rows", () => {
   });
 });
 
+// Slice 4: the route hands the board the Curated / All switch and the
+// catalogue's count and "Load more". The board stays presentational; it only
+// decides where they sit.
+describe("MemeDesktopBoard catalogue controls", () => {
+  it("draws the view switch beside the search", () => {
+    renderBoard({ listControls: <div>switch slot</div> });
+    expect(screen.getByText("switch slot").closest('[data-region="list-controls"]')).not.toBeNull();
+  });
+
+  it("draws the catalogue status in the list's footer, above the pager", () => {
+    renderBoard({
+      listStatus: <div>count slot</div>,
+      page: 1,
+      pageCount: 3,
+      onPageChange: vi.fn(),
+    });
+    const footer = screen.getByText("count slot").closest('[data-region="list-footer"]');
+    expect(footer).not.toBeNull();
+    expect(footer).toContainElement(screen.getByRole("button", { name: /Next/ }));
+  });
+
+  it("keeps the catalogue status when the list fits on one page", () => {
+    renderBoard({
+      listStatus: <div>count slot</div>,
+      page: 1,
+      pageCount: 1,
+      onPageChange: vi.fn(),
+    });
+    expect(screen.getByText("count slot")).toBeInTheDocument();
+  });
+});
+
 describe("MemeDesktopBoard when there is nothing to list", () => {
   it("says the catalogue is empty rather than drawing a bare table", () => {
     renderBoard({ tokens: [], selected: null });

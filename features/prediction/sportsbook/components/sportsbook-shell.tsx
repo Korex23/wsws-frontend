@@ -1,10 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { MarketLogo } from "@/components/ui/market-logo";
-import { PredictionCategoryDrawer } from "@/features/prediction/components/prediction-category-drawer";
 import type { SportsbookEventKind, SportsbookGameState, SportsbookOrder } from "../api";
 import { useSportsbookCapabilities, useSportsbookNavigation } from "../hooks/use-sportsbook";
 import { updateSportsbookSlip, useSportsbookSlip } from "../slip-store";
@@ -63,7 +60,6 @@ export function SportsbookShell({
   const [ticketId, setTicketId] = useState<string | null>(null);
   const [focusSlipKey, setFocusSlipKey] = useState(0);
   const [leagueSearch, setLeagueSearch] = useState("");
-  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const sports = navigation.data?.sports ?? [];
   const activeSport =
     sports.find(({ sport }) => sport.slug === requestedSport)?.sport.slug ??
@@ -93,8 +89,7 @@ export function SportsbookShell({
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#222] text-[#ebebeb]">
-      <div className="pointer-events-none absolute right-0 bottom-0 left-0 h-52 bg-[linear-gradient(165deg,transparent_30%,rgba(44,66,97,.46)_30.2%,rgba(44,66,97,.46)_56%,rgba(17,17,17,.2)_56.2%)]" />
+    <main className="relative min-h-screen overflow-hidden bg-black text-white">
       <div
         className={`relative transition-[padding] duration-300 ease-in-out ${desktopOpen ? "xl:pr-[326px]" : ""}`}
       >
@@ -106,11 +101,9 @@ export function SportsbookShell({
           state={state}
           eventKind={eventKind}
           onLeagueSearch={setLeagueSearch}
-          categoriesOpen={categoriesOpen}
-          onOpenCategories={() => setCategoriesOpen(true)}
         />
 
-        <div className="mx-auto w-full max-w-[1440px] px-0 pb-16 md:px-2">
+        <div className="mx-auto w-full max-w-[1350px] px-0 pb-10">
           {navigation.isLoading || !activeSport ? (
             <SportsbookLoading />
           ) : eventId ? (
@@ -134,21 +127,6 @@ export function SportsbookShell({
             />
           )}
         </div>
-
-        <footer className="mx-auto hidden max-w-[1440px] items-end justify-between px-5 py-8 text-[#7e7e7e] md:flex">
-          <div>
-            <MarketLogo className="h-6 w-auto opacity-90" />
-            <p className="mt-5 text-[10px]">© 2026 Ark · Web3 Sportsbook on Base.</p>
-          </div>
-          <div className="flex gap-4 text-[10px]">
-            <Link href="/terms" className="hover:text-[#ebebeb]">
-              Terms
-            </Link>
-            <Link href="/privacy" className="hover:text-[#ebebeb]">
-              Privacy
-            </Link>
-          </div>
-        </footer>
       </div>
 
       <aside
@@ -159,7 +137,7 @@ export function SportsbookShell({
         <button
           type="button"
           title="Toggle sidebar"
-          aria-label={desktopOpen ? "Collapse bet slip" : "Open bet slip"}
+          aria-label={desktopOpen ? "Collapse ticket" : "Open ticket"}
           aria-expanded={desktopOpen}
           onClick={() => setDesktopOpen((open) => !open)}
           className="absolute top-1/2 left-0 z-10 grid size-10 -translate-x-full -translate-y-1/2 cursor-pointer place-items-center rounded-l-md bg-[#171717] text-[#999] transition-colors hover:text-[#ebebeb]"
@@ -174,7 +152,7 @@ export function SportsbookShell({
         </button>
         <div className="h-full overflow-hidden pt-16">
           <div
-            className={`h-full w-[326px] border-l border-[#242424] transition-opacity duration-300 ${
+            className={`h-full w-[326px] border-l border-white/[0.07] transition-opacity duration-300 ${
               desktopOpen ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
@@ -196,27 +174,17 @@ export function SportsbookShell({
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
-        aria-label="Open bet slip"
-        className="fixed right-4 bottom-[max(68px,env(safe-area-inset-bottom))] z-[55] grid h-12 min-w-14 cursor-pointer place-items-center rounded-xl bg-[#b9fcff] px-3 text-[11px] font-semibold text-[#171717] shadow-[0_12px_35px_rgba(0,0,0,.5)] xl:hidden"
+        aria-label="Open ticket"
+        className="fixed right-4 bottom-[max(20px,env(safe-area-inset-bottom))] z-[55] grid h-12 min-w-14 cursor-pointer place-items-center rounded-xl bg-[#5ba8ff] px-3 text-[11px] font-semibold text-black shadow-[0_12px_35px_rgba(0,0,0,.5)] xl:hidden"
       >
-        Betslip {slip.selections.length ? `(${slip.selections.length})` : ""}
+        Ticket {slip.selections.length ? `(${slip.selections.length})` : ""}
       </button>
-
-      <nav className="fixed right-0 bottom-0 left-0 z-50 flex h-14 items-center justify-around border-t border-[#2e2e2e] bg-[#171717] text-[10px] text-[#7e7e7e] xl:hidden">
-        <Link href="/prediction/markets" className="text-[#b9fcff]">
-          Sports
-        </Link>
-        <button type="button" onClick={() => setMobileOpen(true)} className="cursor-pointer">
-          Betslip
-        </button>
-        <Link href="/prediction/markets?view=tickets">My bets</Link>
-      </nav>
 
       {mobileOpen ? (
         <div className="fixed inset-0 z-[80] flex items-end bg-black/75 xl:hidden">
           <button
             type="button"
-            aria-label="Close bet slip"
+            aria-label="Close ticket"
             onClick={() => setMobileOpen(false)}
             className="absolute inset-0 cursor-default"
           />
@@ -239,11 +207,6 @@ export function SportsbookShell({
       {ticketId ? (
         <TicketModal ticketId={ticketId} onClose={() => setTicketId(null)} onRebet={rebet} />
       ) : null}
-      <PredictionCategoryDrawer
-        open={categoriesOpen}
-        onClose={() => setCategoriesOpen(false)}
-        activeCategory="sports"
-      />
     </main>
   );
 }

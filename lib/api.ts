@@ -101,9 +101,19 @@ export async function apiFetch(
   if (response.ok) recordCircuitSuccess(path);
   else {
     recordCircuitFailure(path, response.status);
-    // One transport, one place to notice an upstream failure. Throttled and
-    // filtered inside reportUpstreamFailure (5xx/network, not cold-token 401s).
-    reportUpstreamFailure(path, response.status);
+    // The reason error reporting sits HERE and not in each caller.
+    //
+    // Every failure in this app is handled: a hook catches it and the screen
+    // shows "Couldn't load" rather than crashing. That is correct behaviour and
+    // it is also why nothing was ever reported. Sentry's global handlers only
+    // see what nobody caught, so an upstream returning 502 to every user in
+    // production raised no alert at all.
+    //
+    // One transport means one place to notice. reportUpstreamFailure decides
+    // what is worth sending (5xx and network failures, not a 401 on a cold
+    // token) and throttles per endpoint, so a hard-polled broken route cannot
+    // flood the project.
+    reportUpstreamFailure(path, response.status, undefined, response.headers.get("x-request-id"));
   }
   return response;
 }

@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { predictionComboSchemaFor } from "@/lib/api/schemas/prediction-combos";
+import {
+  discoveryEventsSchema,
+  predictionComboSchemaFor,
+} from "@/lib/api/schemas/prediction-combos";
 import { checkUpstream } from "@/lib/server/validate-upstream";
 import { verifyRequest } from "@/lib/server/auth";
 import { wsapiService } from "@/lib/wsapi-base";
@@ -43,6 +46,33 @@ function cachedResponse(
   });
 }
 
+function unavailableDiscoveryResponse(req: NextRequest, path: string) {
+  if (path !== "markets/events") return null;
+
+  const data = {
+    category: req.nextUrl.searchParams.get("category") ?? "trending",
+    sort: req.nextUrl.searchParams.get("sort") ?? "volume_24h",
+    events: [],
+    nextCursor: null,
+    unavailable: true,
+    retryAfterMs: 5_000,
+  };
+  const parsed = discoveryEventsSchema.safeParse(data);
+  if (!parsed.success) return null;
+
+  return NextResponse.json(
+    { success: true, data: parsed.data },
+    {
+      status: 200,
+      headers: {
+        "cache-control": "no-store",
+        "retry-after": "5",
+        "x-wsws-prediction-cache": "unavailable",
+      },
+    }
+  );
+}
+
 function isAllowedPath(path: string): boolean {
   return (
     (ALLOWED_PATHS.has(path) ||
@@ -74,7 +104,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   if (joined === "house/tickets") {
     if (!(await verifyRequest(req))) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Sign in to view your bets." } },
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Sign in to view your tickets." },
+        },
         { status: 401 }
       );
     }
@@ -95,7 +128,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
         return NextResponse.json(
           {
             success: false,
-            error: { code: "UPSTREAM_CONTRACT", message: "Ark returned invalid bets." },
+            error: { code: "UPSTREAM_CONTRACT", message: "Ark returned invalid tickets." },
           },
           { status: 502 }
         );
@@ -109,7 +142,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
       return NextResponse.json(
         {
           success: false,
-          error: { code: "SERVICE_UNAVAILABLE", message: "Your bets are unavailable right now." },
+          error: {
+            code: "SERVICE_UNAVAILABLE",
+            message: "Your tickets are unavailable right now.",
+          },
         },
         { status: 502 }
       );
@@ -181,6 +217,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
       signal: AbortSignal.timeout(15_000),
     });
     const body: unknown = await response.json().catch(() => null);
+    if (response.status >= 500) {
+      const stale = readPredictionResponseCache(url, cachePolicy.staleMs);
+      if (stale) return cachedResponse(stale, "stale");
+      const unavailable = unavailableDiscoveryResponse(req, joined);
+      if (unavailable) return unavailable;
+    }
     if (body == null) {
       return NextResponse.json(
         {
@@ -213,9 +255,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
 
     if (response.ok) {
       writePredictionResponseCache(url, body, response.status);
-    } else if (response.status >= 500) {
-      const stale = readPredictionResponseCache(url, cachePolicy.staleMs);
-      if (stale) return cachedResponse(stale, "stale");
     }
 
     return NextResponse.json(body, {
@@ -226,6 +265,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
     console.error("Prediction Combo proxy failed:", joined, error);
     const stale = readPredictionResponseCache(url, cachePolicy.staleMs);
     if (stale) return cachedResponse(stale, "stale");
+    const unavailable = unavailableDiscoveryResponse(req, joined);
+    if (unavailable) return unavailable;
     return NextResponse.json(
       {
         success: false,

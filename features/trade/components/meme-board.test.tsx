@@ -41,14 +41,21 @@ vi.mock("@/features/trade/hooks/use-meme-tokens", () => ({
 }));
 
 const trade = vi.hoisted(() => vi.fn());
-vi.mock("@/features/trade/hooks/use-meme-trade", () => ({
+// Whether each render let a preview go out past the risk consent.
+const previewConsented = vi.hoisted(() => [] as boolean[]);
+vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
+  // The surfaces also read pure helpers (memeOutcomeToast) off this module.
+  ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
   useMemeTrade: () => ({
     walletFor: () => "0xwallet",
     phase: "idle",
     error: null,
     trade,
   }),
-  useMemePreview: () => ({ data: null, isFetching: false, error: null }),
+  useMemePreview: (_input: unknown, consented: boolean) => {
+    previewConsented.push(consented);
+    return { quote: null, expired: false, isFetching: false, error: null, refetch: vi.fn() };
+  },
 }));
 
 vi.mock("@/hooks/use-portfolio", () => ({
@@ -131,6 +138,7 @@ const aaa = memeToken({ symbol: "AAA", priceUsd: "0.00001234", priceChange24hPer
 
 beforeEach(() => {
   vi.clearAllMocks();
+  previewConsented.length = 0;
   catalog.tokens = [aaa];
   catalog.isLoading = false;
   catalog.error = null;
@@ -203,16 +211,30 @@ describe("the screen's two disclosures", () => {
   });
 });
 
+// The contract: null means "not currently available", never zero, and a real
+// zero is a figure. So a missing figure says Unavailable and a published "0"
+// says $0; neither is dressed up as the other.
 describe("figures the service does not publish", () => {
-  it("says Unavailable rather than showing a zero market cap", async () => {
+  it("says Unavailable for a missing figure and $0 for a published zero", async () => {
     catalog.tokens = [
       memeToken({ symbol: "AAA", marketCapUsd: null, volume24hUsd: null, liquidityUsd: "0" }),
     ];
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /Market Metrics/ }));
     const panel = screen.getByRole("group", { name: "Market metrics" });
-    // Market cap, volume, liquidity, age and the trader split: none of them are
-    // published for this coin, and none of them render as a figure.
+    // Market cap, volume, age and the trader split are not published for this
+    // coin; its liquidity is, and it is zero.
+    expect(within(panel).getAllByText("Unavailable").length).toBe(4);
+    expect(within(panel).getByText("$0")).toBeInTheDocument();
+  });
+
+  it("says Unavailable for liquidity the service did not publish", async () => {
+    catalog.tokens = [
+      memeToken({ symbol: "AAA", marketCapUsd: null, volume24hUsd: null, liquidityUsd: null }),
+    ];
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /Market Metrics/ }));
+    const panel = screen.getByRole("group", { name: "Market metrics" });
     expect(within(panel).getAllByText("Unavailable").length).toBe(5);
     expect(within(panel).queryByText("$0")).toBeNull();
   });
@@ -283,5 +305,24 @@ describe("the transactions feed", () => {
     });
     renderBoard();
     expect(await screen.findByText("No transactions in this coin yet.")).toBeInTheDocument();
+  });
+});
+
+// The phone board hosts the same ticket, so it holds the same gate: a
+// LOW_LIQUIDITY coin is confirmed before any preview goes out.
+describe("the low-liquidity consent on the phone board", () => {
+  const LOW = { code: "LOW_LIQUIDITY", message: "Liquidity is below $50,000." };
+
+  it("asks once an amount is entered, and lets the preview through only on acceptance", async () => {
+    const thin = memeToken({ symbol: "THINBOARD", warnings: [LOW] });
+    catalog.tokens = [thin];
+    trending.tokens = [thin];
+    renderBoard();
+    fireEvent.change(await screen.findByLabelText("Quantity"), { target: { value: "5" } });
+    const dialog = await screen.findByRole("alertdialog");
+    expect(previewConsented.every((c) => c === false)).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "I understand, continue" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(previewConsented.at(-1)).toBe(true);
   });
 });

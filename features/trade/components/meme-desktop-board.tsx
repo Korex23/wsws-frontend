@@ -69,6 +69,16 @@ export interface MemeDesktopBoardProps {
   ticket: ReactNode;
   /** The live transactions card, under the ticket. */
   activity?: ReactNode;
+  /**
+   * Controls that change what the list holds, drawn beside the search: the
+   * route's Curated / All switch.
+   */
+  listControls?: ReactNode;
+  /**
+   * The catalogue's status, drawn in the list's footer above the pager: the
+   * route's "500 of 11,502" count and its "Load more".
+   */
+  listStatus?: ReactNode;
   /** The token list's footer action ("Manage tokens" in the design). */
   listFooter?: ReactNode;
   /** 1-based page the caller has sliced `tokens` to. */
@@ -197,6 +207,8 @@ export function MemeDesktopBoard({
   metrics,
   ticket,
   activity,
+  listControls,
+  listStatus,
   listFooter,
   page = 1,
   pageCount = 1,
@@ -251,17 +263,20 @@ export function MemeDesktopBoard({
     // down. The rows block inside the panel is the one box that does clamp its
     // own minimum, because it is the box being measured.
     <div data-region="meme-board" className="flex w-full grow flex-col gap-4">
-      <label className="border-hairline bg-surface flex h-[42px] w-[394px] items-center gap-[6px] rounded-full border px-[9px]">
-        <SearchIcon size={13} />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          aria-label={t("searchAllLabel")}
-          placeholder={tMarkets("searchPlaceholder")}
-          className="min-w-0 flex-1 bg-transparent font-sans text-[13px] font-normal text-white outline-none"
-        />
-      </label>
+      <div className="flex items-center gap-3">
+        <label className="border-hairline bg-surface flex h-[42px] w-[394px] items-center gap-[6px] rounded-full border px-[9px]">
+          <SearchIcon size={13} />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            aria-label={t("searchAllLabel")}
+            placeholder={tMarkets("searchPlaceholder")}
+            className="min-w-0 flex-1 bg-transparent font-sans text-[13px] font-normal text-white outline-none"
+          />
+        </label>
+        {listControls ? <div data-region="list-controls">{listControls}</div> : null}
+      </div>
 
       {/* `items-start` keeps the rail hugging its own content while the list
           alone stretches, so an open chart lengthens the rail and a closed one
@@ -442,15 +457,26 @@ export function MemeDesktopBoard({
             // `mt-auto` is the second guarantee that it sits on the floor of
             // the panel: the rows block above already takes the spare height,
             // and this holds the bar down if a later state ever stops it.
+            //
+            // The catalogue's status rides above the bar, inside the same
+            // footer, so the rows block above measures around both and the
+            // count never pushes a row out of the frame.
             <div data-region="list-footer" className="mt-auto shrink-0">
+              {listStatus ? (
+                <div className="border-rule border-t px-[15px] py-2">{listStatus}</div>
+              ) : null}
               <ListPagination page={page} pages={pageCount} onPage={onPageChange} />
             </div>
-          ) : listFooter ? (
-            <div
-              data-region="list-footer"
-              className="border-rule text-grey-100 mt-auto shrink-0 border-t p-[13px] text-center font-serif text-[12px] font-medium"
-            >
-              {listFooter}
+          ) : listFooter || listStatus ? (
+            <div data-region="list-footer" className="mt-auto shrink-0">
+              {listStatus ? (
+                <div className="border-rule border-t px-[15px] py-2">{listStatus}</div>
+              ) : null}
+              {listFooter ? (
+                <div className="border-rule text-grey-100 border-t p-[13px] text-center font-serif text-[12px] font-medium">
+                  {listFooter}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>

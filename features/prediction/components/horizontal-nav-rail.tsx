@@ -20,12 +20,14 @@ export function HorizontalNavRail({
   itemCount,
   className = "",
   viewportClassName = "",
+  edgeClassName = "from-[#222] via-[#222]/95",
 }: {
   ariaLabel: string;
   children: ReactNode;
   itemCount: number;
   className?: string;
   viewportClassName?: string;
+  edgeClassName?: string;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -79,7 +81,7 @@ export function HorizontalNavRail({
           type="button"
           onClick={() => scroll("left")}
           aria-label={`Scroll ${ariaLabel} left`}
-          className="absolute top-0 bottom-0 left-0 z-20 flex w-11 cursor-pointer items-center justify-start bg-gradient-to-r from-[#222] via-[#222]/95 to-transparent pl-1 text-[#aaa] transition-colors hover:text-white md:w-14"
+          className={`absolute top-0 bottom-0 left-0 z-20 flex w-11 cursor-pointer items-center justify-start bg-gradient-to-r to-transparent pl-1 text-[#aaa] transition-colors hover:text-white md:w-14 ${edgeClassName}`}
         >
           <span className="grid size-8 place-items-center rounded-full border border-[#3a3a3a] bg-[#292929] shadow-lg">
             <Chevron direction="left" />
@@ -92,7 +94,7 @@ export function HorizontalNavRail({
           type="button"
           onClick={() => scroll("right")}
           aria-label={`Scroll ${ariaLabel} right`}
-          className="absolute top-0 right-0 bottom-0 z-20 flex w-11 cursor-pointer items-center justify-end bg-gradient-to-l from-[#222] via-[#222]/95 to-transparent pr-1 text-[#aaa] transition-colors hover:text-white md:w-14"
+          className={`absolute top-0 right-0 bottom-0 z-20 flex w-11 cursor-pointer items-center justify-end bg-gradient-to-l to-transparent pr-1 text-[#aaa] transition-colors hover:text-white md:w-14 ${edgeClassName}`}
         >
           <span className="grid size-8 place-items-center rounded-full border border-[#3a3a3a] bg-[#292929] shadow-lg">
             <Chevron direction="right" />

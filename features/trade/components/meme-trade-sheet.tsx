@@ -9,20 +9,34 @@ import { useTranslations } from "next-intl";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Portal } from "@/components/ui/portal";
 import { ProgressBar } from "@/components/ui/progress-bar";
-import { MemeCoin, PctChange, RiskBadge, priceLabel } from "@/features/trade/components/meme-bits";
+import {
+  LiquidityUnknownNote,
+  MemeCoin,
+  MemeWarningList,
+  PctChange,
+  priceLabel,
+  QuoteExpiredNote,
+  RiskBadge,
+} from "@/features/trade/components/meme-bits";
+import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { useSheetDismiss } from "@/features/trade/components/mobile-trade-sheet";
 import { useMemeToken } from "@/features/trade/hooks/use-meme-tokens";
 import {
+  tradeRef,
   useMemePreview,
   useMemeTrade,
+  usePreviewRelink,
   type TradePhase,
 } from "@/features/trade/hooks/use-meme-trade";
+import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useReroutedWithdraw } from "@/hooks/use-withdraw";
+import { BRAND } from "@/lib/brand";
 import { displaySymbol } from "@/lib/buy";
 import { settlementFor } from "@/lib/deposit";
 import { friendlyError } from "@/lib/errors";
-import { TradeApiError, isValidTradeAmount, visibleWarnings, type MemeToken } from "@/lib/meme/api";
+import { isValidTradeAmount, visibleWarnings, type MemeToken } from "@/lib/meme/api";
+import { platformFeeText } from "@/lib/meme/format";
 import { buyFunding, estimateReceive } from "@/lib/meme/funding";
 import { exceedsHeld, maxSellAmount } from "@/lib/meme/sell-amount";
 import { toast } from "@/lib/toast";
@@ -52,6 +66,10 @@ const PHASE_PCT: Record<TradePhase, number> = {
   signing: 60,
   confirming: 80,
   confirmed: 100,
+  // The chain delivered; the service's ledger is what is still moving.
+  delivered: 100,
+  // Nothing terminal was heard inside the poll ceiling: not done, not failed.
+  pending: 90,
   failed: 0,
 };
 // The USDC pre-move is its own step with its own progress, not part of the
@@ -148,8 +166,9 @@ export function MemeTradeSheet({
   showRisk = true,
 }: MemeTradeSheetProps) {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   // Fresh risk/tradability for the trade surface; the list row may be stale.
-  const { token: fresh } = useMemeToken(listed);
+  const { token: fresh, unavailable: freshUnavailable } = useMemeToken(listed);
   const token = fresh ?? listed;
 
   // Known-safe wrapped spot assets (cbBTC, cbDOGE) show as the coin they
@@ -163,7 +182,18 @@ export function MemeTradeSheet({
   const [side, setSide] = useState<"BUY" | "SELL">(defaultSide);
   const [amount, setAmount] = useState("");
   const [debouncedAmount, setDebouncedAmount] = useState("");
-  const { walletFor, phase, error, received, trade, reset, linkForPreview } = useMemeTrade();
+  const {
+    walletFor,
+    phase,
+    error,
+    received,
+    swapId,
+    requestId,
+    quotedFee,
+    trade,
+    reset,
+    linkForPreview,
+  } = useMemeTrade();
   // The token's chain picks the wallet that pays and holds, and the network
   // the portfolio files its balances under.
   const wallet = walletFor(token.chainId);
@@ -261,66 +291,48 @@ export function MemeTradeSheet({
           chainId: token.chainId,
         }
       : null;
-  const preview = useMemePreview(previewInput);
+  // A LOW_LIQUIDITY token is confirmed before any preview goes out, and so
+  // before any quote: the dialog opens the first time an amount is typed for
+  // it, and Cancel clears the amount. Held whatever showRisk says: the
+  // contract's consent is not a display preference.
+  const consent = useRiskConsent(token, amount);
+  const preview = useMemePreview(previewInput, consent.consented);
 
   // A first-ever preview 403s until the wallet is linked; link once (headless
-  // signature) and refetch. One attempt per sheet — a second mismatch is real.
+  // signature) and refetch. A second mismatch is real.
   const previewError = preview.error;
   const previewRefetch = preview.refetch;
-  useEffect(() => {
-    if (
-      previewError instanceof TradeApiError &&
-      previewError.code === "WALLET_OWNERSHIP_MISMATCH" &&
-      !linkTriedRef.current
-    ) {
-      linkTriedRef.current = true;
-      void linkForPreview(token.chainId)
-        .then(() => previewRefetch())
-        .catch(() => {});
-    }
-  }, [previewError, linkForPreview, previewRefetch, token.chainId]);
+  usePreviewRelink(previewError, token.chainId, linkForPreview, previewRefetch);
 
-  // A quote has a lifetime and the service publishes it. Watch for the moment
-  // it lapses so the figures stop being presented as a price the user can act
-  // on, rather than sitting on screen looking current for as long as the sheet
-  // is open.
-  const quoteExpiresAt = preview.data ? Date.parse(preview.data.expiresAt) : null;
-  // The lapse is recorded by a timer rather than read off the clock in render,
-  // so the sheet re-renders exactly once, at the moment the price stops being
-  // one the user can act on. A quote that arrived already stale gets a
-  // zero-delay timer, which is the same path one second later.
-  const [lapsedAt, setLapsedAt] = useState<number | null>(null);
-  useEffect(() => {
-    if (quoteExpiresAt === null || Number.isNaN(quoteExpiresAt)) return;
-    const id = setTimeout(
-      () => setLapsedAt(quoteExpiresAt),
-      Math.max(0, quoteExpiresAt - Date.now())
-    );
-    return () => clearTimeout(id);
-  }, [quoteExpiresAt]);
-
-  // Tied to the quote it belongs to, so the record of the last lapse can never
-  // condemn the quote that replaced it.
-  const quoteExpired = lapsedAt !== null && lapsedAt === quoteExpiresAt;
+  // useMemePreview watches the quote's expiresAt and hands back no quote once
+  // it lapses, so the figures stop being presented as a price the user can act
+  // on; `expired` says why.
+  const quoteExpired = preview.expired;
   // The quote describes the debounced amount. While the field holds something
   // newer, the numbers on screen belong to a trade the user is no longer
   // asking for, so they are not shown as if they did.
   const quoteMatchesField = amount.trim() === debouncedAmount.trim();
   // The one value the rest of the sheet reads. Null means there is no figure
   // to show and nothing to trade on: nothing here invents one.
-  const quote = preview.data && !quoteExpired && quoteMatchesField ? preview.data : null;
+  const quote = preview.quote && quoteMatchesField ? preview.quote : null;
   const quotePending = preview.isFetching || !quoteMatchesField;
 
-  const tradeBusy = phase !== "idle" && phase !== "failed" && phase !== "confirmed";
+  // The three ways a trade ends without failing. Only the service's CONFIRMED
+  // is "settled"; an on-chain receipt the service has not confirmed is shown
+  // as what it is (delivered, still being recorded), and a poll that ran out
+  // of time claims nothing either way. See TradeOutcome in use-meme-trade.
+  const settled = phase === "confirmed";
+  const deliveredOnly = phase === "delivered";
+  const pending = phase === "pending";
+  const finished = settled || deliveredOnly || pending;
+  const tradeBusy = phase !== "idle" && phase !== "failed" && !finished;
   const busy = tradeBusy || funding === "moving";
-  // The balanceOf delta (received) is on-chain proof of delivery, landing
-  // before the backend's own slower confirmation — treat it as done rather
-  // than making the tracking screen sit on "confirming" for a trade that has
-  // already, verifiably, settled.
-  const settled = phase === "confirmed" || received != null;
   const estimate = needsFunding ? estimateReceive(payValue, token.priceUsd) : null;
   const submitDisabled =
     busy ||
+    // The Solana pre-move queues a purchase that is quoted later, so it waits
+    // on the consent as surely as a preview does.
+    !consent.consented ||
     !amountValid ||
     !sideEnabled ||
     overBalance ||
@@ -338,7 +350,7 @@ export function MemeTradeSheet({
     !belowMin &&
     !needsFunding &&
     !preview.isFetching &&
-    !preview.data
+    !preview.quote
       ? (previewError ?? null)
       : null;
 
@@ -446,7 +458,7 @@ export function MemeTradeSheet({
       // The toast can be gone by the time the user looks up. The sheet is
       // still open, so the reason belongs in it as well.
       setFundError(e);
-      toast.error(friendlyError(e, t("fundFailed")), { id: toastRef.current });
+      toast.error(friendlyError(e, t("fundFailed"), tErr), { id: toastRef.current });
       toastRef.current = undefined;
     }
   }
@@ -486,12 +498,27 @@ export function MemeTradeSheet({
         saleHandoffId = handoff.requestId;
         savePendingRwaSettlement(handoff);
       }
-      await trade({
+      const result = await trade({
         side,
         tokenAddress: token.address,
         amount: debouncedAmount,
         chainId: token.chainId,
       });
+      inFlightRef.current = false;
+      // Only the service's CONFIRMED is "bought" or "sold". Delivered and
+      // pending say so, with the reference, and never claim more.
+      if (result?.outcome === "delivered" || result?.outcome === "pending") {
+        const ref = tradeRef(result.swapId, result.requestId);
+        toast.success(
+          result.outcome === "delivered"
+            ? t("toastDelivered", { symbol: displaySym, ref })
+            : t("toastPending", { symbol: displaySym, ref }),
+          { id: toastRef.current }
+        );
+        toastRef.current = undefined;
+        void portfolio.refetchUntilChanged(tradedNetworks);
+        return;
+      }
       // Settles on the token's own chain, and carries the risk label the
       // screen showed the user before they confirmed.
       track("trade_completed", {
@@ -501,7 +528,6 @@ export function MemeTradeSheet({
         amount_usd: Number(debouncedAmount),
         network: chainSlug(token.chainId) ?? "base",
       });
-      inFlightRef.current = false;
       toast.success(
         buying
           ? t("toastBought", { symbol: displaySym })
@@ -524,7 +550,7 @@ export function MemeTradeSheet({
         asset: token.symbol ?? token.address,
         reason: "order_failed",
       });
-      toast.error(friendlyError(e, t("orderFailed")), { id: toastRef.current });
+      toast.error(friendlyError(e, t("orderFailed"), tErr), { id: toastRef.current });
       toastRef.current = undefined;
     }
   }
@@ -582,30 +608,52 @@ export function MemeTradeSheet({
 
   const moving = funding === "moving";
   const queued = funding === "queued";
-  const tracking = busy || phase === "confirmed" || queued;
+  const tracking = busy || finished || queued;
+  // What support will ask for on a delivered or pending trade.
+  const ref = tradeRef(swapId, requestId);
   const trackTitle = queued
     ? t("queuedTitle")
     : moving
       ? t("fundWorking")
-      : phase === "confirmed"
+      : settled
         ? t("confirmedTitle")
-        : received
-          ? t("receivedTitle", { amount: received.amount, symbol: displaySymbol(received.symbol) })
-          : (phaseLabel[phase] ?? "");
+        : deliveredOnly
+          ? t("deliveredTitle")
+          : pending
+            ? t("pendingTitle")
+            : received
+              ? t("receivedTitle", {
+                  amount: received.amount,
+                  symbol: displaySymbol(received.symbol),
+                })
+              : (phaseLabel[phase] ?? "");
   const trackBody = queued
     ? t("purchaseQueued", { symbol: displaySym })
     : moving
       ? t("workingNote")
-      : phase === "confirmed"
+      : settled
         ? t("confirmedBody")
-        : received
-          ? t("receivedBody")
-          : phase !== "confirming"
-            ? t("workingNote")
-            : confirmingLong
-              ? t("confirmingLong")
-              : t("confirmingNote");
-  const trackPct = queued || settled ? 100 : moving ? FUNDING_PCT : PHASE_PCT[phase];
+        : deliveredOnly
+          ? received
+            ? t("deliveredReceivedBody", {
+                amount: received.amount,
+                symbol: displaySymbol(received.symbol),
+                brand: BRAND,
+                ref,
+              })
+            : t("deliveredBody", { brand: BRAND, ref })
+          : pending
+            ? t("pendingBody", { brand: BRAND, ref })
+            : received
+              ? t("receivedBody")
+              : phase !== "confirming"
+                ? t("workingNote")
+                : confirmingLong
+                  ? t("confirmingLong")
+                  : t("confirmingNote");
+  const trackPct = queued ? 100 : moving ? FUNDING_PCT : PHASE_PCT[phase];
+  // Green marks money that verifiably moved; pending stays neutral.
+  const trackColor = settled || deliveredOnly || queued ? "#7ce7b0" : "#e6e6e6";
   const warnings = showRisk ? visibleWarnings(token.warnings) : [];
   const balanceLabel = buying ? formatAmount(balance) : formatHeld(heldRaw, heldDecimals);
 
@@ -630,7 +678,13 @@ export function MemeTradeSheet({
 
           {tracking ? (
             <Eyebrow>
-              {settled || queued ? t("allDone") : buying ? t("buyingLabel") : t("sellingLabel")}
+              {settled || queued
+                ? t("allDone")
+                : deliveredOnly || pending
+                  ? t("stillRecording")
+                  : buying
+                    ? t("buyingLabel")
+                    : t("sellingLabel")}
             </Eyebrow>
           ) : null}
 
@@ -669,11 +723,18 @@ export function MemeTradeSheet({
                   aria-valuenow={trackPct}
                   aria-label={trackTitle}
                 >
-                  <ProgressBar pct={trackPct} color={settled || queued ? "#7ce7b0" : "#e6e6e6"} />
+                  <ProgressBar pct={trackPct} color={trackColor} />
                 </div>
                 <p className="mt-3 text-[13px] leading-[1.5] font-normal text-white/60">
                   {trackBody}
                 </p>
+                {/* Once a Solana quote is in hand, the fee it states, in USDC. */}
+                {quotedFee ? (
+                  <div className="mt-3 flex justify-between text-[12.5px] font-normal">
+                    <span className="text-white/55">{t("platformFee")}</span>
+                    <span className="tnum text-white">{platformFeeText(quotedFee)}</span>
+                  </div>
+                ) : null}
                 {stuck ? (
                   <p
                     data-testid="meme-stuck"
@@ -694,7 +755,7 @@ export function MemeTradeSheet({
                   onClick={closeSheet}
                   className="ws-chrome text-ink mt-4 min-h-11 w-full cursor-pointer rounded-full p-3.5 font-sans text-[15px] font-semibold hover:opacity-90 md:min-h-auto md:rounded-[14px]"
                 >
-                  {settled || queued ? t("done") : t("closeAndNotify")}
+                  {finished || queued ? t("done") : t("closeAndNotify")}
                 </button>
               ) : null}
             </div>
@@ -809,25 +870,25 @@ export function MemeTradeSheet({
                     {quote ? `${(quote.slippageBps / 100).toFixed(2)}%` : quotePending ? "…" : "—"}
                   </span>
                 </div>
+                {/* The fee the preview returned, never a rate the client assumes. */}
+                <div className="flex justify-between">
+                  <span className="text-white/55">{t("platformFee")}</span>
+                  <span className="tnum text-white">
+                    {quote
+                      ? platformFeeText(quote.platformFeeAmountFormatted)
+                      : quotePending
+                        ? "…"
+                        : "—"}
+                  </span>
+                </div>
               </div>
 
               {quoteExpired && quoteMatchesField ? (
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <span className="text-[12.5px] font-normal text-white/60">
-                    {t("quoteExpired")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void previewRefetch()}
-                    className="min-h-11 cursor-pointer rounded-full border border-white/15 px-3 font-sans text-[12px] font-semibold text-white/80 hover:border-white/35 hover:text-white"
-                  >
-                    {t("retry")}
-                  </button>
-                </div>
+                <QuoteExpiredNote className="mt-2" onRetry={() => void previewRefetch()} />
               ) : null}
               {previewFailed ? (
                 <div className="text-down mt-2 text-[12.5px] font-normal">
-                  {friendlyError(previewFailed, t("previewFailed"))}
+                  {friendlyError(previewFailed, t("previewFailed"), tErr)}
                 </div>
               ) : null}
               {needsFunding && !fundingBlocked ? (
@@ -839,16 +900,16 @@ export function MemeTradeSheet({
                 </div>
               ) : null}
 
-              {warnings.length > 0 ? (
-                <div className="mt-3 flex flex-col gap-1">
-                  {/* Warning codes can repeat or arrive empty, so the key needs
-                      the index. */}
-                  {warnings.slice(0, 3).map((w, i) => (
-                    <div key={`${w.code}-${i}`} className="text-down/90 text-[11.5px] font-normal">
-                      {w.message}
-                    </div>
-                  ))}
-                </div>
+              <MemeWarningList warnings={warnings} limit={3} className="mt-3" />
+              {showRisk && token.liquidityUsd === null ? (
+                <LiquidityUnknownNote className="mt-2" />
+              ) : null}
+              {freshUnavailable ? (
+                // The listed row stays tradable; this only says why its details
+                // are not fresh. A 502 is temporary, a 404 is a confirmed absence.
+                <p role="status" className="mt-2 text-[11.5px] font-normal text-white/55">
+                  {freshUnavailable === "not-found" ? t("detailNotFound") : t("detailUnavailable")}
+                </p>
               ) : null}
               {showRisk ? (
                 <p className="mt-2 text-[11px] font-normal text-white/40">{t("riskDisclaimer")}</p>
@@ -857,8 +918,8 @@ export function MemeTradeSheet({
               {error || fundError ? (
                 <div role="alert" className="text-down mt-2 text-[12.5px] font-normal">
                   {fundError
-                    ? friendlyError(fundError, t("fundFailed"))
-                    : friendlyError(error, t("orderFailed"))}
+                    ? friendlyError(fundError, t("fundFailed"), tErr)
+                    : friendlyError(error, t("orderFailed"), tErr)}
                 </div>
               ) : null}
 
@@ -907,6 +968,12 @@ export function MemeTradeSheet({
           className="fixed inset-0 z-[420] cursor-default bg-black/65 backdrop-blur-sm"
         />
       </AnimatePresence>
+      <MemeRiskConsent
+        open={consent.prompting}
+        token={token}
+        onContinue={consent.accept}
+        onCancel={() => setAmount("")}
+      />
     </Portal>
   );
 }

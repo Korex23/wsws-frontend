@@ -10,7 +10,12 @@ export {
   fetchSportsFilters,
 } from "./client";
 export { buildComboBuyQuoteBody, requestComboBuyQuote } from "./quote-client";
-export { confirmHouseTicket, fetchHouseTickets, prepareHouseTicket } from "./house-client";
+export {
+  confirmHouseTicket,
+  fetchHouseTicketByBookingCode,
+  fetchHouseTickets,
+  prepareHouseTicket,
+} from "./house-client";
 export {
   buildSinglesTicketBody,
   fetchSinglesTicket,

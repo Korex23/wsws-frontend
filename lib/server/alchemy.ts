@@ -299,8 +299,10 @@ function normalize(
     const usdPrice = t.tokenPrices?.find((p) => p.currency === "usd");
     let priceUsd = usdPrice ? parseFloat(usdPrice.value) : 0;
     if (priceUsd === 0 && rwaInfo) priceUsd = rwaInfo.priceUsd;
-    // Memecoins: Alchemy rarely prices them, but the trade catalog does.
-    if (priceUsd === 0 && memeInfo) priceUsd = memeInfo.priceUsd;
+    // Memecoins: Alchemy rarely prices them, but the trade catalog does. When
+    // the catalog cannot either, the price stays unknown (0 here, which the
+    // holdings list reads as unpriced and labels "Valuation unavailable").
+    if (priceUsd === 0 && memeInfo && memeInfo.priceUsd !== null) priceUsd = memeInfo.priceUsd;
     // Alchemy sometimes returns an empty price array for a tracked stablecoin
     // (Polygon USDC has done this). They are dollar-pegged, so value a held
     // balance at $1 rather than $0, which would hide a real holding.

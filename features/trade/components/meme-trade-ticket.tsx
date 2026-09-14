@@ -4,12 +4,13 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { AssetIcon } from "@/components/ui/asset-icon";
 import { groupBaseUnits, parseBaseUnits } from "@/features/trade/components/meme-base-units";
-import { MemeCoin } from "@/features/trade/components/meme-bits";
+import { MemeCoin, MemeRiskSummary, QuoteExpiredNote } from "@/features/trade/components/meme-bits";
 import type { MemeTradeInput, TradePhase } from "@/features/trade/hooks/use-meme-trade";
 import { displaySymbol } from "@/lib/buy";
 import { friendlyError } from "@/lib/errors";
 import { isValidTradeAmount, type MemeToken, type SwapPreview } from "@/lib/meme/api";
 import { SOLANA_CHAIN_ID } from "@/lib/meme/chain";
+import { platformFeeText } from "@/lib/meme/format";
 import { estimateReceive, type BuyFunding } from "@/lib/meme/funding";
 import { exceedsHeld, maxSellAmount } from "@/lib/meme/sell-amount";
 import { belowMinimumBuy, minimumBuyUsd } from "@/lib/trade/minimums";
@@ -34,12 +35,17 @@ export interface TradeTicketProps {
   /** The wallet's holding of the coin, in exact base units. */
   heldRaw: string;
   heldDecimals: number;
+  /** The live quote, or null: useMemePreview already blanks a lapsed one. */
   preview: SwapPreview | null;
   previewLoading: boolean;
   previewError: unknown;
+  /** The quote lapsed at its expiresAt; the ticket says so and offers a fresh one. */
+  quoteExpired?: boolean;
+  onRefreshQuote?: () => void;
   onSubmit: (input: MemeTradeInput) => Promise<void>;
   phase: TradePhase;
-  error: string | null;
+  // The trade hook's failure as thrown; the ticket chooses the copy.
+  error: unknown;
   // Opens the deposit flow. A buy the balance cannot cover grows a Top Up
   // button beside a disabled Buy; omit it and the button never appears.
   onAddFunds?: () => void;
@@ -64,12 +70,15 @@ export function TradeTicket({
   preview,
   previewLoading,
   previewError,
+  quoteExpired = false,
+  onRefreshQuote,
   onSubmit,
   phase,
   error,
   onAddFunds,
 }: TradeTicketProps) {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
 
@@ -284,19 +293,33 @@ export function TradeTicket({
             {preview ? `${(preview.slippageBps / 100).toFixed(2)}%` : "—"}
           </span>
         </div>
+        {/* The fee the preview returned, never a rate the client assumes. */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-grey-400">{t("platformFee")}</span>
+          <span className="tnum text-white">
+            {preview
+              ? platformFeeText(preview.platformFeeAmountFormatted)
+              : previewLoading
+                ? "…"
+                : "—"}
+          </span>
+        </div>
       </div>
+
+      {quoteExpired ? <QuoteExpiredNote onRetry={onRefreshQuote} /> : null}
+      <MemeRiskSummary token={token} />
 
       {buying && funding.needsFunding && !fundingBlocked ? (
         <p className="text-[11.5px] font-normal text-white/45">{t("estimateNote")}</p>
       ) : null}
       {quoteFailed ? (
         <p className="text-down text-[12.5px] font-normal">
-          {friendlyError(previewError, t("previewFailed"))}
+          {friendlyError(previewError, t("previewFailed"), tErr)}
         </p>
       ) : null}
       {shownError ? (
         <p role="alert" className="text-down text-[12.5px] font-normal">
-          {friendlyError(shownError, t("orderFailed"))}
+          {friendlyError(shownError, t("orderFailed"), tErr)}
         </p>
       ) : null}
 

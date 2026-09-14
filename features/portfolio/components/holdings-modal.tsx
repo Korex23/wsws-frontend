@@ -11,7 +11,12 @@ import { WalletIcon } from "@/components/ui/icons";
 import { useMoney } from "@/components/ui/currency-select";
 import { TypeChip } from "@/features/portfolio/components/type-chip";
 import { displayNetworkIconKey, displayNetworkLabel } from "@/features/portfolio/lib/network-label";
-import { isDustHolding, selectHoldings } from "@/features/portfolio/lib/holdings";
+import {
+  isDustHolding,
+  isUnpricedHolding,
+  memeTokenOf,
+  selectHoldings,
+} from "@/features/portfolio/lib/holdings";
 import { usePortfolio, type TokenBalance } from "@/hooks/use-portfolio";
 import { displaySymbol } from "@/lib/buy";
 import { coingeckoId } from "@/lib/coingecko";
@@ -48,31 +53,6 @@ const SKELETON_ROWS = [0, 1, 2, 3, 4];
 // otherwise read as nothing held.
 function hasBalance(token: TokenBalance): boolean {
   return BigInt(token.rawBalance) > 0n;
-}
-
-// A held meme balance as the trade sheet's listing shape. The sheet re-fetches
-// the fresh catalog entry (risk, tradability) by address itself.
-function toMemeToken(token: TokenBalance): MemeToken {
-  return {
-    chainId: 8453,
-    address: token.address as string,
-    name: token.name,
-    symbol: token.symbol,
-    decimals: token.decimals,
-    logoUrl: token.logo,
-    priceUsd: token.priceUsd > 0 ? String(token.priceUsd) : null,
-    liquidityUsd: null,
-    volume24hUsd: null,
-    priceChange24hPercent: null,
-    marketCapUsd: null,
-    fdvUsd: null,
-    pairAddress: null,
-    dexName: null,
-    riskLevel: "UNKNOWN",
-    buyEnabled: true,
-    sellEnabled: true,
-    warnings: [],
-  };
 }
 
 /**
@@ -186,7 +166,10 @@ export function HoldingsModal({
       onClose();
 
       const isRwa = token.kind === "rwa" && token.address !== null;
-      const isMeme = token.meme === true && token.address !== null;
+      // Trade-service memecoins sell through the meme sheet, on their own chain.
+      const meme = memeTokenOf(token);
+      // A real balance nobody could price: its value is unknown, never "$0.00".
+      const unpriced = isUnpricedHolding(token);
       const isPredictionCollateral = isPolymarketCollateral(token.network, token.address);
       const sellable = canSellAsset(token.network, token.address);
 
@@ -219,10 +202,10 @@ export function HoldingsModal({
                 mode: "sell",
               }),
           }
-        : isMeme
+        : meme
           ? {
               cta2: t("sell", { name: token.name }),
-              onCta2: () => onOpenMemeSell(toMemeToken(token)),
+              onCta2: () => onOpenMemeSell(meme),
             }
           : sellable
             ? {
@@ -246,14 +229,17 @@ export function HoldingsModal({
         sym: token.symbol,
         name: token.name,
         sub: `${formatQty(token.balance)} ${token.symbol}`,
-        price: money.format(token.priceUsd),
+        price: unpriced ? t("valuationUnavailable") : money.format(token.priceUsd),
         chg: "",
         bg: tokenBg(token.symbol),
         stats: [
           { k: t("holdings"), v: `${formatQty(token.balance)} ${token.symbol}` },
-          { k: t("marketPrice"), v: money.format(token.priceUsd) },
+          { k: t("marketPrice"), v: unpriced ? "—" : money.format(token.priceUsd) },
           { k: t("network"), v: displayNetworkLabel(token) },
-          { k: t("positionValue"), v: money.format(token.valueUsd) },
+          {
+            k: t("positionValue"),
+            v: unpriced ? t("valuationUnavailable") : money.format(token.valueUsd),
+          },
         ],
         cta: isPredictionCollateral ? t("managePrediction") : t("buyMore", { name: token.name }),
         onCta: buyAction,
@@ -397,7 +383,9 @@ export function HoldingsModal({
                 </span>
               </span>
               <span className="tnum shrink-0 text-right font-sans text-[14.5px] font-medium">
-                {money.format(token.valueUsd)}
+                {isUnpricedHolding(token)
+                  ? t("valuationUnavailable")
+                  : money.format(token.valueUsd)}
               </span>
             </button>
           ))}

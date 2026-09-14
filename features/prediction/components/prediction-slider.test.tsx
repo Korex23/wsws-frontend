@@ -78,7 +78,7 @@ describe("prediction slider", () => {
 
     expect(screen.getByRole("link", { name: mapped.q })).toHaveAttribute(
       "href",
-      "/prediction/markets/481717?category=politics&source=markets"
+      "/prediction/event/481717?source=markets&category=politics"
     );
   });
 

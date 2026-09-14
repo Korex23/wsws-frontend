@@ -106,5 +106,8 @@ export function marketPrediction(
 // `?category=politics` links still resolve, so anything already bookmarked
 // keeps working.
 export function categoryEventHref(eventId: string, category: PredictionCategory): string {
+  if (category !== "sports") {
+    return `/prediction/event/${encodeURIComponent(eventId)}?source=markets&category=${category}`;
+  }
   return `/prediction/markets/${encodeURIComponent(eventId)}?category=${category}&source=markets`;
 }

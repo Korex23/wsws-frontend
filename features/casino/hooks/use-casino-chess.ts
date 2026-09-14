@@ -54,6 +54,7 @@ import {
   applyRematchTakenFrame,
   applyStateFrame,
   applyTakebackOffersFrame,
+  mergeChessCommandAcknowledgement,
   mergeChessMatchSnapshot,
   type ChessChatMessageWire,
   type ChessCommentDeletedFrame,
@@ -81,13 +82,10 @@ import type {
   CreateChessChallengeInput,
 } from "@/features/casino/lib/api/types";
 
-// The socket is the live path; the poll is only a safety net. Before the first
-// live frame (or if the socket falls silent) the match polls fast, because a
-// board two seconds behind is visibly wrong. Once frames are flowing it backs
-// off to a slow reconcile that merely repairs a missed frame — this keeps a
-// spectator from hammering the gateway, which rate-limits per IP.
+// The socket is the live path. Before its first authoritative data frame, the
+// match polls quickly; after that, version replay and socket snapshots repair
+// state and HTTP runs only when the socket closes or explicitly requests resync.
 const MATCH_POLL_MS = 1_000;
-const MATCH_POLL_LIVE_MS = 5_000;
 const MATCH_WAITING_POLL_MS = 1_000;
 const LOBBY_POLL_MS = 10_000;
 // Chat lines and move comments arrive instantly over the live socket, but the
@@ -176,14 +174,22 @@ function requireWallet(address: string | null): string {
 export function chessMatchRefetchMs(
   state: ChessMatchState | undefined,
   socketLive: boolean,
-  computerGame = false
+  computerGame = false,
+  computerTurnPending = false
 ): number | false {
   if (state === "settled" || state === "cancelled") return false;
+  // A live socket gets versioned deltas plus periodic socket snapshots. HTTP
+  // becomes the recovery path only when the gateway reports a gap or closes.
+  if (socketLive) return false;
   if (state === "awaiting_opponent") return MATCH_WAITING_POLL_MS;
-  // Computer moves are returned in the authoritative write response, so a
-  // background repair poll only re-downloads an unchanged match every second.
+  // The human write returns before the backend worker computes its reply. Keep
+  // a short-lived poll while that reply is pending so a missed socket frame
+  // cannot leave the board frozen until a reload.
+  if (computerTurnPending) return MATCH_POLL_MS;
+  // Nothing can change remotely while an untimed computer game is waiting for
+  // the human, so stop polling again as soon as the engine reply is observed.
   if (computerGame) return false;
-  return socketLive ? MATCH_POLL_LIVE_MS : MATCH_POLL_MS;
+  return MATCH_POLL_MS;
 }
 
 interface ChessLobbyOptions {
@@ -317,8 +323,21 @@ export function useChessMatch(matchId: string | null, seatName: string | null = 
     refetchOnMount: "always",
     refetchOnReconnect: "always",
     refetchOnWindowFocus: "always",
-    refetchInterval: (q) =>
-      chessMatchRefetchMs(q.state.data?.state, socketLive, !!q.state.data?.computer),
+    refetchInterval: (q) => {
+      const current = q.state.data;
+      const computerSide =
+        current?.computer?.side === "white"
+          ? "w"
+          : current?.computer?.side === "black"
+            ? "b"
+            : null;
+      return chessMatchRefetchMs(
+        current?.state,
+        socketLive,
+        !!current?.computer,
+        current?.state === "in_progress" && computerSide === current.turn
+      );
+    },
     // A second browser/tab on the same game must keep moving even when it is
     // backgrounded. If the live socket is absent or silent (local backend with
     // no broker fanout, dropped relay, etc.), window-focus refetch is too late:
@@ -356,12 +375,13 @@ export function useChessMatch(matchId: string | null, seatName: string | null = 
     if (!liveTopic || !matchId) return;
     return subscribeChessTopic(liveTopic, (frame) => {
       const { type, data } = frame;
-      if (type === "__open") {
-        // The gateway does not replay state on subscribe, so every open or
-        // reconnect forces one fresh snapshot from REST. Do not mark the relay
-        // live yet: if this topic never starts flowing, the fast poll is the
-        // only thing keeping the opponent's move from appearing five seconds
-        // late.
+      if (type === "__ready") {
+        // Subscription acceptance is not proof that the service-to-gateway
+        // relay is healthy. The retained snapshot or first data frame is.
+        return;
+      }
+      if (type === "__resync") {
+        setLiveMatchId((current) => (current === matchId ? null : current));
         void queryClient.refetchQueries({
           queryKey: CHESS_KEYS.match(matchId),
           type: "active",
@@ -391,9 +411,8 @@ export function useChessMatch(matchId: string | null, seatName: string | null = 
       ) {
         return;
       }
-      // The shared socket already routed this frame here by its topic, so it is
-      // this match's. A frame proves the relay is live: let the match poll drop
-      // to its slow safety-net interval.
+      // The shared socket already routed and revision-checked this frame, so it
+      // is safe to apply directly and leave HTTP polling as a slow safety net.
       setLiveMatchId(matchId);
 
       // Apply the pushed payload straight to the cache so the move renders the
@@ -491,15 +510,7 @@ export function useChessMatch(matchId: string | null, seatName: string | null = 
     (next: ChessMatch) => {
       setOptimistic(null);
       queryClient.setQueryData<ChessMatch>(CHESS_KEYS.match(next.id), (previous) => {
-        if (!previous || previous.id !== next.id) return next;
-        const previousStep = previous.round?.steps.at(-1);
-        const canKeepRound =
-          !next.round &&
-          !!previous.round &&
-          previousStep?.ply === next.moves.length &&
-          previousStep.fen === next.fen;
-        const candidate = canKeepRound ? { ...next, round: previous.round } : next;
-        return mergeChessMatchSnapshot(previous, candidate);
+        return mergeChessCommandAcknowledgement(previous, next);
       });
       if (next.state === "settled" && next.rating?.rated) {
         void queryClient.invalidateQueries({
@@ -558,10 +569,10 @@ export function useChessMatch(matchId: string | null, seatName: string | null = 
       }
     },
     onError: () => setOptimistic(null),
-    onSuccess: (next) => {
-      applyMatch(next);
-      void queryClient.invalidateQueries({ queryKey: CHESS_KEYS.match(next.id) });
-    },
+    // The command acknowledgement already carries committed authoritative
+    // state. Socket events update the opponent/spectators; HTTP is reserved for
+    // reconnect gaps and explicit snapshot repair, not one refetch per move.
+    onSuccess: applyMatch,
   });
 
   const coachedMove = useMutation({

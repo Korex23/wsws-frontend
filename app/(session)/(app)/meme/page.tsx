@@ -15,24 +15,36 @@ import {
   type MemeMetricValue,
 } from "@/features/trade/components/meme-market-metrics";
 import { AppModalHost, useAppModals } from "@/components/layout/modals/app-modals";
+import { MemeRiskSummary, QuoteExpiredNote } from "@/features/trade/components/meme-bits";
+import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { MemeSellPanel } from "@/features/trade/components/meme-sell-panel";
 import { MemeSettlementTracker } from "@/features/trade/components/meme-settlement-tracker";
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
-import { useMemeCatalog, useMemeSearch } from "@/features/trade/hooks/use-meme-tokens";
 import {
+  useMemeCatalog,
+  useMemeSearch,
+  useMemeToken,
+} from "@/features/trade/hooks/use-meme-tokens";
+import {
+  memeOutcomeToast,
   useMemePreview,
   useMemeTrade,
+  usePreviewRelink,
   type MemeTradeInput,
   type TradePhase,
 } from "@/features/trade/hooks/use-meme-trade";
+import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import { useCoingeckoId } from "@/hooks/use-coingecko-id";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useMarketHandoff } from "@/hooks/use-market-handoff";
 import { usePortfolio } from "@/hooks/use-portfolio";
+import { MemeCatalogMore, MemeViewSwitch } from "@/features/trade/components/meme-catalog-controls";
+import { DEFAULT_DISCOVERY_VIEW, type DiscoveryView } from "@/lib/meme/catalog";
 import { scopeOf } from "@/lib/portfolio/fresh-scope";
 import { displaySymbol } from "@/lib/buy";
 import { friendlyError } from "@/lib/errors";
 import { compactUsd, isValidTradeAmount, type MemeToken, type SwapPreview } from "@/lib/meme/api";
+import { chartUp, platformFeeText } from "@/lib/meme/format";
 import { SOLANA_CHAIN_ID, chainSlug, networkOf } from "@/lib/meme/chain";
 import { buyFunding, estimateReceive, type BuyFunding } from "@/lib/meme/funding";
 import { exceedsHeld } from "@/lib/meme/sell-amount";
@@ -49,10 +61,6 @@ import { belowMinimumBuy, minimumBuyUsd } from "@/lib/trade/minimums";
 // chart is disclosed, and whether the market metrics are. So there is one
 // route, one catalogue and one rail, and the state lives here because
 // MemeDesktopBoard is presentational and owns none of it.
-
-// The catalogue arrives in one request and is filtered here, the same way the
-// phone's grid reads it, so both interfaces share one cache entry.
-const CATALOG_LIMIT = 500;
 
 // Matches the trade sheet: long enough that typing an amount does not spend a
 // quote per keystroke, short enough that the ticket settles while you look at
@@ -112,7 +120,8 @@ function MemeDeskChart({ token }: { token: MemeToken }) {
   // CoinGecko's asset platform ids are the same two slugs the trade service
   // uses for these chains.
   const { id, loading } = useCoingeckoId(chainSlug(token.chainId), token.address);
-  const up = Number(token.priceChange24hPercent ?? "0") >= 0;
+  // A change the service did not publish is not a gain: the chart draws neutral.
+  const up = chartUp(token.priceChange24hPercent);
 
   return (
     <div data-region="meme-chart">
@@ -142,12 +151,17 @@ interface MemeBuyTicketProps {
   onAmountChange: (amount: string) => void;
   /** What the buy can draw on, and whether it needs the Solana move first. */
   funding: BuyFunding;
+  /** The live quote, or null: useMemePreview already blanks a lapsed one. */
   preview: SwapPreview | null;
   previewLoading: boolean;
   previewError: unknown;
+  /** The quote lapsed at its expiresAt; the ticket says so and offers a fresh one. */
+  quoteExpired: boolean;
+  onRefreshQuote: () => void;
   onBuy: () => Promise<void>;
   phase: TradePhase;
-  error: string | null;
+  // The trade hook's failure as thrown; the ticket chooses the copy.
+  error: unknown;
   // Opens the deposit flow. A buy the balance cannot cover grows a Top Up
   // button beside a disabled Buy; omit it and the button never appears.
   onAddFunds?: () => void;
@@ -169,12 +183,15 @@ function MemeBuyTicket({
   preview,
   previewLoading,
   previewError,
+  quoteExpired,
+  onRefreshQuote,
   onBuy,
   phase,
   error,
   onAddFunds,
 }: MemeBuyTicketProps) {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   const [submitting, setSubmitting] = useState(false);
 
   const symbol = displaySymbol(token.symbol ?? "");
@@ -321,19 +338,33 @@ function MemeBuyTicket({
             {preview ? `${(preview.slippageBps / 100).toFixed(2)}%` : "—"}
           </span>
         </div>
+        {/* The fee the preview returned, never a rate the client assumes. */}
+        <div className="flex items-center justify-between">
+          <span className="text-grey-400">{t("platformFee")}</span>
+          <span className="tnum text-white">
+            {preview
+              ? platformFeeText(preview.platformFeeAmountFormatted)
+              : previewLoading
+                ? "…"
+                : "—"}
+          </span>
+        </div>
       </div>
+
+      {quoteExpired ? <QuoteExpiredNote onRetry={onRefreshQuote} /> : null}
+      <MemeRiskSummary token={token} />
 
       {funding.needsFunding && !fundingBlocked ? (
         <p className="text-[11.5px] font-normal text-white/45">{t("estimateNote")}</p>
       ) : null}
       {quoteFailed ? (
         <p className="text-down text-[12.5px] font-normal">
-          {friendlyError(previewError, t("previewFailed"))}
+          {friendlyError(previewError, t("previewFailed"), tErr)}
         </p>
       ) : null}
       {error ? (
         <p role="alert" className="text-down text-[12.5px] font-normal">
-          {friendlyError(error, t("orderFailed"))}
+          {friendlyError(error, t("orderFailed"), tErr)}
         </p>
       ) : null}
 
@@ -371,6 +402,7 @@ function MemeBuyTicket({
 // the chart frame and the sell ticket are all presentational.
 function MemeDesk() {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   // "Add funds" the buy ticket hands upward opens here, the same deposit sheet
   // the RWA desk and dashboard use. The host is mounted at the foot of the desk.
   const modals = useAppModals();
@@ -395,25 +427,34 @@ function MemeDesk() {
   // A Solana order is finished in the sheet; see runTrade below.
   const [sheetToken, setSheetToken] = useState<MemeToken | null>(null);
 
-  const catalog = useMemeCatalog(1, CATALOG_LIMIT);
-  const search = useMemeSearch(query);
+  // The catalogue a server page of 500 at a time, judged by the Curated / All
+  // view; the phone's grid reads the same pages, so both share one cache entry.
+  const [view, setView] = useState<DiscoveryView>(DEFAULT_DISCOVERY_VIEW);
+  const catalog = useMemeCatalog({ view });
+  const search = useMemeSearch(query, view);
   const portfolio = usePortfolio();
-  const { walletFor, phase, error, trade } = useMemeTrade();
+  const { walletFor, phase, error, trade, linkForPreview } = useMemeTrade();
 
   const rows = search.active ? search.results : catalog.tokens;
   // The picked coin stays picked while a search narrows the list, but takes
   // the fresher row whenever the catalogue still carries it.
   const sameCoin = (a: MemeToken, b: MemeToken) =>
     a.address === b.address && a.chainId === b.chainId;
-  const selected = picked
-    ? (rows.find((row) => sameCoin(row, picked)) ?? picked)
-    : (rows[0] ?? null);
+  const listed = picked ? (rows.find((row) => sameCoin(row, picked)) ?? picked) : (rows[0] ?? null);
+  // The desk trades on a fresh read of the coin, as the sheet does: a catalogue
+  // row can be minutes old, and its risk block and buy/sell switches are what
+  // the ticket acts on. The listed row stands in until the read lands, and a
+  // read for another coin never stands in for this one.
+  const { token: freshRead } = useMemeToken(listed);
+  const selected = listed && freshRead && sameCoin(freshRead, listed) ? freshRead : listed;
 
-  // A new search is a different list, so the page someone was on says nothing
-  // about where to open it.
-  const [pagedQuery, setPagedQuery] = useState(query);
-  if (query !== pagedQuery) {
-    setPagedQuery(query);
+  // A new search or a new view is a different list, so the page someone was on
+  // says nothing about where to open it. "Load more" appends to the same list,
+  // so it keeps the page.
+  const listKey = `${view}|${query}`;
+  const [pagedList, setPagedList] = useState(listKey);
+  if (listKey !== pagedList) {
+    setPagedList(listKey);
     setRequestedPage(1);
   }
 
@@ -489,7 +530,13 @@ function MemeDesk() {
           chainId: selected.chainId,
         }
       : null;
-  const preview = useMemePreview(previewInput);
+  // A LOW_LIQUIDITY coin is confirmed before any preview goes out, and so before
+  // any quote: the dialog opens the first time an amount is typed for it, and
+  // Cancel clears the amount. A coin without that warning never sees it.
+  const consent = useRiskConsent(selected, amount);
+  const preview = useMemePreview(previewInput, consent.consented);
+  // A never-linked wallet's first preview is refused; link it and ask again.
+  usePreviewRelink(preview.error, selected?.chainId ?? null, linkForPreview, preview.refetch);
 
   function selectToken(token: MemeToken) {
     setPicked(token);
@@ -509,7 +556,8 @@ function MemeDesk() {
   // to the USD balance. Both of those live in MemeTradeSheet, so a Solana order
   // is handed there rather than run here with half the plumbing.
   async function runTrade(input: MemeTradeInput) {
-    if (!selected) return;
+    // No quote for a LOW_LIQUIDITY coin the user has not confirmed.
+    if (!selected || !consent.consented) return;
     if (input.chainId === SOLANA_CHAIN_ID) {
       setSheetToken(selected);
       return;
@@ -521,17 +569,14 @@ function MemeDesk() {
       input.side === "BUY" ? t("buyingToast", { symbol }) : t("sellingToast", { symbol })
     );
     try {
-      await trade(input);
-      toast.success(
-        input.side === "BUY" ? t("toastBought", { symbol }) : t("toastSold", { symbol }),
-        { id: toastId }
-      );
+      const result = await trade(input);
+      toast.success(memeOutcomeToast(t, result, input.side, symbol), { id: toastId });
       setAmount("");
       void portfolio.refetchUntilChanged(tradedNetworks);
     } catch (e) {
-      // The trade hook keeps the message for the ticket's inline error; the
+      // The trade hook keeps the failure for the ticket's inline error; the
       // toast is for the case where the user has already looked away.
-      toast.error(friendlyError(e, t("orderFailed")), { id: toastId });
+      toast.error(friendlyError(e, t("orderFailed"), tErr), { id: toastId });
       void portfolio.refetchFresh(tradedNetworks);
     }
   }
@@ -592,6 +637,22 @@ function MemeDesk() {
         pageCount={pageCount}
         onPageChange={setRequestedPage}
         onPageSizeChange={setListPageSize}
+        listControls={<MemeViewSwitch value={view} onChange={setView} />}
+        listStatus={
+          // The count and "Load more" describe the catalogue; a search replaces
+          // it, so they step aside while one is showing.
+          search.active ? null : (
+            <MemeCatalogMore
+              loaded={catalog.loaded}
+              total={catalog.total}
+              shownCount={catalog.shownCount}
+              hasMore={catalog.hasMore}
+              loadingMore={catalog.isLoadingMore}
+              failed={catalog.loadMoreFailed}
+              onLoadMore={catalog.loadMore}
+            />
+          )
+        }
         pairLabel={selected ? pairLabelFor(selected) : undefined}
         side={side}
         onSideChange={changeSide}
@@ -621,9 +682,11 @@ function MemeDesk() {
                 amount={amount}
                 onAmountChange={setAmount}
                 funding={funding}
-                preview={preview.data ?? null}
+                preview={preview.quote}
                 previewLoading={preview.isFetching}
                 previewError={preview.error}
+                quoteExpired={preview.expired}
+                onRefreshQuote={() => void preview.refetch()}
                 onBuy={() =>
                   // The amount in the field, not the debounced copy the quote
                   // was asked for: the sell ticket sends what it shows, and a
@@ -647,9 +710,11 @@ function MemeDesk() {
                 balanceDecimals={heldDecimals}
                 amount={amount}
                 onAmountChange={setAmount}
-                preview={preview.data ?? null}
+                preview={preview.quote}
                 previewLoading={preview.isFetching}
                 previewError={preview.error}
+                quoteExpired={preview.expired}
+                onRefreshQuote={() => void preview.refetch()}
                 onSell={runTrade}
                 phase={phase}
                 error={error}
@@ -665,6 +730,15 @@ function MemeDesk() {
           defaultSide={side}
           onClose={() => setSheetToken(null)}
           onTopUp={modals.openFunds}
+        />
+      ) : null}
+
+      {selected ? (
+        <MemeRiskConsent
+          open={consent.prompting}
+          token={selected}
+          onContinue={consent.accept}
+          onCancel={() => setAmount("")}
         />
       ) : null}
 

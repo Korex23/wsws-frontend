@@ -184,7 +184,7 @@ export function PredictionBetForm({
 
               <div className="grid grid-cols-2 gap-2 text-[10px]">
                 <div className="rounded-xl border border-white/8 bg-white/3 px-3 py-2.5">
-                  <div className="text-white/40">Available to bet</div>
+                  <div className="text-white/40">Available for tickets</div>
                   <div className="tnum mt-0.5 font-semibold text-white/80">
                     {portfolioLoading ? "Checked on placement" : `${usdcTotal.toFixed(2)} pUSD`}
                   </div>

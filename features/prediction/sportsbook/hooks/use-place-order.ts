@@ -109,7 +109,7 @@ export function usePlaceSportsbookOrder() {
         throw new Error("This sportsbook environment cannot accept USDC.");
       }
       if (prepared.ownerWallet.toLowerCase() !== owner.toLowerCase()) {
-        throw new Error("The connected wallet does not own this bet.");
+        throw new Error("The connected wallet does not own this ticket.");
       }
 
       const token = prepared.approval.token as Address;

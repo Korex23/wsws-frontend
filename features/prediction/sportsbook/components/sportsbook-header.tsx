@@ -1,7 +1,7 @@
+import { PredictionCategoryNav } from "@/features/prediction/components/prediction-category-nav";
 import type { SportNavigation, SportsbookEventKind, SportsbookGameState } from "../api";
 import { LeaguesRail } from "./leagues-rail";
 import { SportsRail } from "./sports-rail";
-import { SportsbookTopNav } from "./sportsbook-top-nav";
 
 interface SportsbookHeaderProps {
   sports: SportNavigation[];
@@ -11,8 +11,6 @@ interface SportsbookHeaderProps {
   state: SportsbookGameState;
   eventKind: SportsbookEventKind;
   onLeagueSearch: (value: string) => void;
-  categoriesOpen: boolean;
-  onOpenCategories: () => void;
 }
 
 function hrefFor(
@@ -37,17 +35,14 @@ export function SportsbookHeader({
   state,
   eventKind,
   onLeagueSearch,
-  categoriesOpen,
-  onOpenCategories,
 }: SportsbookHeaderProps) {
   const active = sports.find(({ sport }) => sport.slug === activeSport);
 
   return (
     <>
-      <SportsbookTopNav categoriesOpen={categoriesOpen} onOpenCategories={onOpenCategories} />
-
+      <PredictionCategoryNav activeCategory="sports" />
       <SportsRail sports={sports} activeSport={activeSport} state={state} eventKind={eventKind} />
-      <div className="mx-auto max-w-[1440px]">
+      <div className="mx-auto max-w-[1350px]">
         <LeaguesRail
           countries={active?.countries ?? []}
           activeSport={activeSport}

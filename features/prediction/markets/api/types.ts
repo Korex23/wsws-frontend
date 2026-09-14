@@ -246,6 +246,8 @@ export interface DiscoveryEventsPage {
   sort: DiscoveryMarketSort;
   events: DiscoveryMarketEvent[];
   nextCursor: string | null;
+  unavailable?: boolean;
+  retryAfterMs?: number;
 }
 
 export interface DiscoveryEventsParams {

@@ -4,18 +4,25 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { SearchIcon } from "@/components/ui/icons";
 import { AssetChart } from "@/components/ui/asset-chart";
-import { MemeCoin, PctChange, RiskBadge, priceLabel } from "@/features/trade/components/meme-bits";
+import {
+  LiquidityUnknownNote,
+  MemeCoin,
+  PctChange,
+  priceLabel,
+  RiskBadge,
+} from "@/features/trade/components/meme-bits";
 import { MobileTradeSheet } from "@/features/trade/components/mobile-trade-sheet";
 import { ListPagination } from "@/components/ui/list-pagination";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
 import {
-  useMemeCatalog,
+  useMemeCatalogPage,
   useMemeSearch,
   useMemeToken,
 } from "@/features/trade/hooks/use-meme-tokens";
 import { useCoingeckoId } from "@/hooks/use-coingecko-id";
 import { visibleWarnings, compactUsd, type MemeToken } from "@/lib/meme/api";
+import { chartUp } from "@/lib/meme/format";
 
 // The desk interface: provider-backed search (name, symbol or contract
 // address), the server-paginated catalog table with liquidity/volume/mcap,
@@ -38,7 +45,7 @@ function CoinPicker({
 }) {
   const t = useTranslations("meme");
   const [page, setPage] = useState(1);
-  const { tokens, pageCount, isLoading } = useMemeCatalog(page, PICKER_PER_PAGE);
+  const { tokens, pageCount, isLoading } = useMemeCatalogPage(page, PICKER_PER_PAGE);
 
   return (
     <div className="ws-card overflow-hidden" data-sensitive="position">
@@ -57,7 +64,7 @@ function CoinPicker({
 export function MemeProView() {
   const t = useTranslations("meme");
   const [page, setPage] = useState(1);
-  const { tokens, pageCount, isLoading } = useMemeCatalog(page, PER_PAGE);
+  const { tokens, pageCount, isLoading } = useMemeCatalogPage(page, PER_PAGE);
   const [search, setSearch] = useState("");
   const searchState = useMemeSearch(search);
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
@@ -88,7 +95,7 @@ export function MemeProView() {
   // switches to one from inside the trade screen.
   const coinRow = (row: MemeToken, onPick: () => void) => (
     <button
-      key={row.address}
+      key={`${row.chainId}:${row.address}`}
       onClick={onPick}
       className="flex w-full cursor-pointer items-center gap-3 border-b border-white/6 px-4 py-3.5 text-left transition-colors last:border-b-0 active:bg-white/4"
     >
@@ -156,7 +163,7 @@ export function MemeProView() {
               const active = row.address === address;
               return (
                 <div
-                  key={row.address}
+                  key={`${row.chainId}:${row.address}`}
                   onClick={() => setSelectedAddress(row.address)}
                   className={`grid cursor-pointer grid-cols-[2fr_1fr_1fr_1fr_1fr_90px] items-center gap-3 border-t border-white/6 px-4 py-3 text-[13px] transition-colors ${
                     active ? "bg-white/6" : "hover:bg-white/4"
@@ -249,6 +256,7 @@ export function MemeProView() {
                   </div>
                 ))}
               </div>
+              {shown.liquidityUsd === null ? <LiquidityUnknownNote className="mt-3" /> : null}
               {visibleWarnings(shown.warnings).length > 0 ? (
                 <div className="mt-3 flex flex-col gap-1">
                   {visibleWarnings(shown.warnings)
@@ -278,7 +286,7 @@ export function MemeProView() {
                   allowCandles
                   defaultType="candles"
                   height={260}
-                  up={Number(shown.priceChange24hPercent ?? 0) >= 0}
+                  up={chartUp(shown.priceChange24hPercent)}
                 />
               ) : (
                 <div className="grid h-[260px] place-items-center text-center text-[13px] font-normal text-white/45">
@@ -367,7 +375,7 @@ export function MemeProView() {
                       allowCandles={false}
                       defaultType="area"
                       height={110}
-                      up={Number(shown.priceChange24hPercent ?? 0) >= 0}
+                      up={chartUp(shown.priceChange24hPercent)}
                     />
                   ) : (
                     <div className="grid h-[110px] place-items-center text-center text-[13px] font-normal text-white/45">
@@ -404,6 +412,7 @@ export function MemeProView() {
             </div>
 
             {/* Warnings */}
+            {shown.liquidityUsd === null ? <LiquidityUnknownNote className="mt-3" /> : null}
             {visibleWarnings(shown.warnings).length > 0 ? (
               <div className="flex flex-col gap-1">
                 {visibleWarnings(shown.warnings)

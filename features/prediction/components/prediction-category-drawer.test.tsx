@@ -10,7 +10,7 @@ describe("PredictionCategoryDrawer", () => {
     render(<PredictionCategoryDrawer open={false} onClose={() => {}} activeCategory="sports" />);
 
     expect(screen.getByRole("dialog", { hidden: true })).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByRole("link", { name: /sports/i, hidden: true })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Sports", hidden: true })).toHaveAttribute(
       "tabindex",
       "-1"
     );
@@ -20,9 +20,9 @@ describe("PredictionCategoryDrawer", () => {
     const onClose = vi.fn();
     render(<PredictionCategoryDrawer open onClose={onClose} activeCategory="sports" />);
 
-    const sports = screen.getByRole("link", { name: /sports/i });
+    const sports = screen.getByRole("link", { name: "Sports" });
     expect(sports).toHaveAttribute("aria-current", "page");
-    const politics = screen.getByRole("link", { name: /politics/i });
+    const politics = screen.getByRole("link", { name: "Politics" });
     expect(politics).toHaveAttribute("href", "/prediction/markets?category=politics");
     expect(screen.getByRole("link", { name: /crypto/i })).toHaveAttribute(
       "href",
@@ -35,7 +35,7 @@ describe("PredictionCategoryDrawer", () => {
 
   it("marks Politics active on its market page", () => {
     render(<PredictionCategoryDrawer open onClose={() => {}} activeCategory="politics" />);
-    expect(screen.getByRole("link", { name: /politics/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Politics" })).toHaveAttribute("aria-current", "page");
   });
 
   it("reports the trigger's open state", () => {

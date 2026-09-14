@@ -2,9 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { usePrices } from "@/hooks/use-prices";
 import type {
   EventsQuery,
   SlipSelection,
@@ -16,7 +14,6 @@ import type {
 } from "../api";
 import { useSportsbookEvents } from "../hooks/use-sportsbook";
 import { useSportsbookBoardRealtime } from "../hooks/use-sportsbook-realtime";
-import { formatTokenVolumeAsUsdc, formatUsdcVolume } from "../market-volume";
 import { toggleSportsbookSelection, useSportsbookSlip } from "../slip-store";
 import { sportsbookHref } from "./sportsbook-header";
 import {
@@ -59,27 +56,6 @@ function eventTime(startsAt: number): { day: string; time: string } {
       hour12: false,
     }).format(date),
   };
-}
-
-interface ReferenceVolumesResponse {
-  currency: "USDC";
-  volumes: Record<string, string>;
-}
-
-async function getReferenceVolumes(
-  events: SportsbookBoardEvent[],
-  params: Pick<EventsQuery, "sport" | "state" | "country" | "league">
-): Promise<ReferenceVolumesResponse> {
-  const query = new URLSearchParams({
-    ids: events.map(({ id }) => id).join(","),
-    sport: params.sport,
-    state: params.state ?? "prematch",
-  });
-  if (params.country) query.set("country", params.country);
-  if (params.league) query.set("league", params.league);
-  const response = await fetch(`/api/sportsbook/reference-volumes?${query}`);
-  if (!response.ok) throw new Error("Reference volumes are unavailable");
-  return response.json() as Promise<ReferenceVolumesResponse>;
 }
 
 function availableMarkets(event: SportsbookBoardEvent): SportsbookMarket[] {
@@ -255,8 +231,8 @@ function OddsButton({
         onClick={() => toggleSportsbookSelection(selectionFor(event, market, outcome))}
         className={`flex h-12 w-full min-w-0 cursor-pointer flex-col items-center justify-center rounded-lg border px-3 text-sm font-semibold transition-colors select-none disabled:cursor-not-allowed disabled:opacity-35 min-[802px]:px-4 ${
           selected
-            ? "border-[#ebebeb] bg-[#ebebeb] text-[#171717]"
-            : "border-[#3b3b3b] bg-[#2e2e2e] text-[#ebebeb] hover:border-[#999] hover:bg-[#3b3b3b] hover:text-[#b9fcff]"
+            ? "border-[#5ba8ff] bg-[#172235] text-[#8dc3ff]"
+            : "border-white/10 bg-white/[0.035] text-white hover:border-white/20 hover:bg-white/[0.07]"
         }`}
       >
         <span
@@ -285,16 +261,10 @@ function ListEvent({
   event,
   selectedMarketKey,
   selectedIds,
-  referenceTurnover,
-  tokenSymbol,
-  ethPriceUsd,
 }: {
   event: SportsbookBoardEvent;
   selectedMarketKey: string;
   selectedIds: Set<string>;
-  referenceTurnover: string | undefined;
-  tokenSymbol: string;
-  ethPriceUsd: number;
 }) {
   const market = marketForEvent(event, selectedMarketKey);
   const outcomes = market?.outcomes.filter((outcome) => !outcome.hidden).slice(0, 4) ?? [];
@@ -305,8 +275,8 @@ function ListEvent({
     outcomes.length === 4 ? "grid-cols-4" : outcomes.length === 3 ? "grid-cols-3" : "grid-cols-2";
 
   return (
-    <article className="group relative flex flex-col bg-[#242424] px-2 py-2 transition-colors hover:bg-[#292929] min-[1280px]:px-4">
-      <div className="grid min-w-0 grid-cols-[46%_54%] items-start min-[1280px]:grid-cols-[1fr_auto_1fr] min-[1280px]:items-center">
+    <article className="group relative flex flex-col border-b border-white/[0.06] bg-black px-3 py-3 transition-colors last:border-b-0 hover:bg-white/[0.025] min-[1280px]:px-5">
+      <div className="grid min-w-0 grid-cols-[46%_54%] items-start min-[1280px]:grid-cols-[minmax(0,1fr)_28rem] min-[1280px]:items-center">
         <Link
           href={eventHref}
           className="flex h-full w-full min-w-0 flex-col justify-self-start overflow-hidden max-[1279px]:max-w-[min(100%,20rem)]"
@@ -341,14 +311,14 @@ function ListEvent({
                     className="flex w-full min-w-0 items-center last:mb-0 max-[1279px]:mb-1 min-[1280px]:ml-2"
                   >
                     <ParticipantLogo name={participant.name} imageUrl={participant.imageUrl} />
-                    <span className="ml-2 min-w-0 flex-1 truncate text-sm leading-5 font-medium text-[#ebebeb] min-[1280px]:text-xl min-[1280px]:leading-[26px]">
+                    <span className="ml-2 min-w-0 flex-1 truncate text-sm leading-5 font-semibold text-white min-[1280px]:text-[16px] min-[1280px]:leading-6">
                       {participant.name}
                     </span>
                   </p>
                 ))}
               </div>
             ) : (
-              <p className="line-clamp-2 text-sm leading-5 font-medium text-[#ebebeb] min-[1280px]:text-xl min-[1280px]:leading-[26px]">
+              <p className="line-clamp-2 text-sm leading-5 font-semibold text-white min-[1280px]:text-[16px] min-[1280px]:leading-6">
                 {event.title}
               </p>
             )}
@@ -372,19 +342,11 @@ function ListEvent({
           ) : (
             <Link
               href={eventHref}
-              className="col-span-full flex h-12 items-center justify-center rounded-lg border border-[#3b3b3b] bg-[#2e2e2e] text-[11px] text-[#999] hover:text-[#ebebeb]"
+              className="col-span-full flex h-12 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] text-[11px] text-[#858b96] hover:border-white/20 hover:text-white"
             >
               View markets
             </Link>
           )}
-        </div>
-
-        <div className="hidden w-[6.5rem] shrink-0 items-center justify-self-end min-[1280px]:flex">
-          <p className="w-full text-center text-[13px] leading-4 text-[#999]">
-            {referenceTurnover
-              ? formatUsdcVolume(referenceTurnover)
-              : formatTokenVolumeAsUsdc(event.turnover, tokenSymbol, ethPriceUsd)}
-          </p>
         </div>
       </div>
     </article>
@@ -404,7 +366,7 @@ function GridEvent({
   const outcomes = market?.outcomes.filter((outcome) => !outcome.hidden).slice(0, 3) ?? [];
   const time = eventTime(event.startsAt);
   return (
-    <article className="rounded-lg border border-[#333] bg-[#242424] p-4">
+    <article className="rounded-lg border border-white/[0.08] bg-black p-4 transition-colors hover:bg-white/[0.025]">
       <div className="flex items-center justify-between text-[10px] text-[#999]">
         <span className="truncate">{event.league.name}</span>
         <span>{event.state === "live" ? "Live" : `${time.time} ${time.day}`}</span>
@@ -447,7 +409,6 @@ export function MarketBrowser({
   search,
 }: MarketBrowserProps) {
   const router = useRouter();
-  const ethPriceUsd = usePrices(["ETH"]).ETH ?? 0;
   const [offset, setOffset] = useState(0);
   const [sort, setSort] = useState<SportsbookSort>("turnover");
   const [view, setView] = useState<SportsbookView>("list");
@@ -472,22 +433,6 @@ export function MarketBrowser({
   );
   const query = useSportsbookEvents(params);
   const fetchedEvents = query.data?.events ?? [];
-  const referenceVolumeQuery = useQuery({
-    queryKey: [
-      "sportsbook",
-      "reference-volumes",
-      params.sport,
-      params.state,
-      params.country ?? "all",
-      params.league ?? "all",
-      fetchedEvents.map(({ id }) => id).join(","),
-    ],
-    queryFn: () => getReferenceVolumes(fetchedEvents, params),
-    enabled: fetchedEvents.length > 0,
-    staleTime: state === "live" ? 10_000 : 30_000,
-    retry: 1,
-  });
-  const referenceVolumes = referenceVolumeQuery.data?.volumes ?? {};
   const searchedEvents = normalizedSearch
     ? fetchedEvents.filter((event) =>
         [event.league.name, event.country.name, ...event.participants.map(({ name }) => name)].some(
@@ -502,12 +447,9 @@ export function MarketBrowser({
   const selectedMarketKey = marketOptions.some(({ key }) => key === selectedMarket)
     ? selectedMarket
     : (marketOptions[0]?.key ?? "");
-  const events = timeFilteredEvents
-    .filter((event) => Boolean(marketForEvent(event, selectedMarketKey)))
-    .toSorted((left, right) => {
-      if (sort !== "turnover" || !referenceVolumeQuery.data) return 0;
-      return Number(referenceVolumes[right.id] ?? -1) - Number(referenceVolumes[left.id] ?? -1);
-    });
+  const events = timeFilteredEvents.filter((event) =>
+    Boolean(marketForEvent(event, selectedMarketKey))
+  );
 
   const primaryConditions = events.flatMap((event) => {
     const market = marketForEvent(event, selectedMarketKey);
@@ -538,7 +480,7 @@ export function MarketBrowser({
   };
 
   return (
-    <section className="bg-[#171717] font-normal">
+    <section className="border-x border-white/[0.06] bg-black font-normal">
       <MarketToolbar
         live={state === "live"}
         onLiveToggle={toggleLive}
@@ -557,8 +499,10 @@ export function MarketBrowser({
       />
 
       {view === "list" ? (
-        <div className="mb-1 hidden grid-cols-[1fr_auto_1fr] items-center px-4 min-[1280px]:grid">
-          <span />
+        <div className="hidden grid-cols-[minmax(0,1fr)_28rem] items-center border-b border-white/[0.06] px-5 py-2 min-[1280px]:grid">
+          <span className="text-[11px] font-semibold tracking-wide text-[#646a75] uppercase">
+            Events
+          </span>
           <div className="justify-self-center">
             <MarketSelector
               options={marketOptions}
@@ -566,37 +510,32 @@ export function MarketBrowser({
               onChange={setSelectedMarket}
             />
           </div>
-          <div className="grid w-[6.5rem] shrink-0 items-center justify-self-end">
-            <span className="text-center text-[13px] leading-4 font-semibold text-[#adadad]">
-              Volume
-            </span>
-          </div>
         </div>
       ) : null}
 
       {query.isLoading ? (
-        <div className="space-y-1 bg-[#111]">
+        <div className="divide-y divide-white/[0.06] bg-black">
           {Array.from({ length: 8 }, (_, index) => (
-            <div key={index} className="h-[94px] animate-pulse bg-[#242424]" />
+            <div key={index} className="h-[94px] animate-pulse bg-white/[0.025]" />
           ))}
         </div>
       ) : query.isError ? (
-        <div className="bg-[#171717] px-5 py-20 text-center">
+        <div className="bg-black px-5 py-20 text-center">
           <p className="text-sm font-medium text-[#999]">Markets could not load.</p>
           <button
             type="button"
             onClick={() => void query.refetch()}
-            className="mt-4 cursor-pointer rounded-lg bg-[#b9fcff] px-5 py-2 text-xs font-semibold text-[#171717]"
+            className="mt-4 cursor-pointer rounded-lg bg-[#5ba8ff] px-5 py-2 text-xs font-semibold text-black"
           >
             Try again
           </button>
         </div>
       ) : events.length === 0 ? (
-        <div className="bg-[#171717] px-5 py-20 text-center text-sm text-[#7e7e7e]">
+        <div className="bg-black px-5 py-20 text-center text-sm text-[#858b96]">
           No matching events are open right now.
         </div>
       ) : view === "grid" ? (
-        <div className="grid gap-2 bg-[#171717] p-2 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-2 bg-black p-3 sm:grid-cols-2 xl:grid-cols-3">
           {events.map((event) => (
             <GridEvent
               key={event.id}
@@ -607,23 +546,20 @@ export function MarketBrowser({
           ))}
         </div>
       ) : (
-        <div className="flex flex-col gap-1 bg-[#171717] p-2">
+        <div className="flex flex-col bg-black">
           {events.map((event) => (
             <ListEvent
               key={event.id}
               event={event}
               selectedMarketKey={selectedMarketKey}
               selectedIds={selectedIds}
-              referenceTurnover={referenceVolumes[event.id]}
-              tokenSymbol={capabilities?.token.symbol ?? "WETH"}
-              ethPriceUsd={ethPriceUsd}
             />
           ))}
         </div>
       )}
 
       {events.length ? (
-        <footer className="flex items-center justify-between bg-[#171717] px-4 py-3">
+        <footer className="flex items-center justify-between border-t border-white/[0.06] bg-black px-4 py-3">
           <span className="text-[10px] text-[#7e7e7e]">
             {normalizedSearch || timeFilter !== "all"
               ? events.length

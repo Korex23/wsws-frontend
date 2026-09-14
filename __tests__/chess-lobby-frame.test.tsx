@@ -55,6 +55,10 @@ vi.mock("@/features/casino/hooks/use-funded-chess-computer", () => ({
   }),
 }));
 
+vi.mock("@/features/casino/hooks/use-casino-wallet", () => ({
+  useCasinoWallet: () => ({ address: "0xtest" }),
+}));
+
 vi.mock("@/features/casino/hooks/use-funded-chess-challenge", () => ({
   friendTimeControl: (value: string) => {
     const [seconds, increment] = value.split("+");

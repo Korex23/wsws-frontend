@@ -1,8 +1,8 @@
 export const PREDICTION_CATEGORIES = [
   {
-    key: "sports",
-    label: "Sports",
-    description: "Matches, leagues and live events",
+    key: "trending",
+    label: "Trending",
+    description: "Markets drawing the most activity now",
   },
   {
     key: "politics",
@@ -10,14 +10,34 @@ export const PREDICTION_CATEGORIES = [
     description: "Elections, policy and world leaders",
   },
   {
+    key: "sports",
+    label: "Sports",
+    description: "Matches, leagues and live events",
+  },
+  {
     key: "crypto",
     label: "Crypto",
     description: "Prices, tokens and regulation",
   },
   {
+    key: "esports",
+    label: "Esports",
+    description: "Competitive gaming and tournaments",
+  },
+  {
+    key: "iran",
+    label: "Iran",
+    description: "Iranian politics, diplomacy and conflict",
+  },
+  {
     key: "finance",
     label: "Finance",
     description: "Markets, rates and companies",
+  },
+  {
+    key: "geopolitics",
+    label: "Geopolitics",
+    description: "International relations and conflict",
   },
   {
     key: "tech",
@@ -34,6 +54,21 @@ export const PREDICTION_CATEGORIES = [
     label: "Economy",
     description: "Growth, inflation and employment",
   },
+  {
+    key: "weather",
+    label: "Weather",
+    description: "Forecasts, climate and extreme weather",
+  },
+  {
+    key: "mentions",
+    label: "Mentions",
+    description: "People and topics in public conversation",
+  },
+  {
+    key: "elections",
+    label: "Elections",
+    description: "Campaigns, polling and election outcomes",
+  },
 ] as const;
 
 export type PredictionCategory = (typeof PREDICTION_CATEGORIES)[number]["key"];
@@ -46,7 +81,9 @@ export function parsePredictionCategory(value: string | null | undefined): Predi
 }
 
 export function predictionCategoryHref(category: PredictionCategory): string {
-  return category === "sports" ? "/prediction/markets" : `/prediction/markets?category=${category}`;
+  return category === "sports"
+    ? "/prediction/markets?sport=football&state=prematch"
+    : `/prediction/markets?category=${category}`;
 }
 
 export function predictionCategoryAvailable(category: PredictionCategory): boolean {

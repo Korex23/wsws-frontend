@@ -17,36 +17,53 @@ const SOLANA_CHAIN_ID = 101;
 const tradeHook = vi.hoisted(() => ({
   wallet: "0xwallet" as string | null,
   phase: "idle" as TradePhase,
-  error: null as string | null,
+  error: null as unknown,
   received: null as { amount: string; symbol: string } | null,
-  trade: vi.fn(async () => {}),
+  swapId: null as string | null,
+  requestId: null as string | null,
+  trade: vi.fn(async (): Promise<unknown> => undefined),
   reset: vi.fn(),
   linkForPreview: vi.fn(async () => {}),
+  quotedFee: null as string | null,
 }));
 
+// useMemePreview's shape since the expiry watch moved into it: the quote (null
+// once lapsed), whether it lapsed, and the query's own state. `consented`
+// records what each render told it about the risk consent.
 const previewHook = vi.hoisted(() => ({
-  data: null as unknown,
+  quote: null as unknown,
+  expired: false,
   isFetching: false,
   error: null as unknown,
-  dataUpdatedAt: 0,
   refetch: vi.fn(),
+  consented: [] as boolean[],
 }));
 
-vi.mock("@/features/trade/hooks/use-meme-trade", () => ({
+vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
   useMemeTrade: () => ({
     walletFor: () => tradeHook.wallet,
     phase: tradeHook.phase,
     error: tradeHook.error,
     received: tradeHook.received,
+    swapId: tradeHook.swapId,
+    requestId: tradeHook.requestId,
     trade: tradeHook.trade,
     reset: tradeHook.reset,
     linkForPreview: tradeHook.linkForPreview,
+    quotedFee: tradeHook.quotedFee,
   }),
-  useMemePreview: () => previewHook,
+  useMemePreview: (_input: unknown, consented: boolean) => {
+    previewHook.consented.push(consented);
+    return previewHook;
+  },
 }));
 
+const tokenHook = vi.hoisted(() => ({
+  unavailable: null as "temporary" | "not-found" | null,
+}));
 vi.mock("@/features/trade/hooks/use-meme-tokens", () => ({
-  useMemeToken: (listed: MemeToken) => ({ token: listed }),
+  useMemeToken: (listed: MemeToken) => ({ token: listed, unavailable: tokenHook.unavailable }),
 }));
 
 const portfolio = vi.hoisted(() => ({
@@ -127,12 +144,15 @@ function swapPreview(overrides: Partial<SwapPreview> = {}): SwapPreview {
 function renderSheet(props: Partial<React.ComponentProps<typeof MemeTradeSheet>> = {}) {
   const onClose = props.onClose ?? vi.fn();
   const token = props.token ?? memeToken({ symbol: "PEPE" });
-  const view = render(
+  const element = () => (
     <NextIntlClientProvider locale="en" messages={messages}>
       <MemeTradeSheet {...props} token={token} onClose={onClose} />
     </NextIntlClientProvider>
   );
-  return { onClose, token, view };
+  const view = render(element());
+  // Re-renders against the hook double's current state.
+  const rerender = () => view.rerender(element());
+  return { onClose, token, view, rerender };
 }
 
 // Types an amount and lets the 600ms debounce through, which is what actually
@@ -159,16 +179,21 @@ function cta() {
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  tokenHook.unavailable = null;
   tradeHook.wallet = "0xwallet";
   tradeHook.phase = "idle";
   tradeHook.error = null;
   tradeHook.received = null;
+  tradeHook.swapId = null;
+  tradeHook.requestId = null;
   tradeHook.trade.mockReset();
   tradeHook.trade.mockResolvedValue(undefined);
-  previewHook.data = null;
+  tradeHook.quotedFee = null;
+  previewHook.quote = null;
+  previewHook.expired = false;
   previewHook.isFetching = false;
   previewHook.error = null;
-  previewHook.dataUpdatedAt = Date.now();
+  previewHook.consented = [];
   routeUsdc.mockReset();
   routeUsdc.mockResolvedValue({ depositRequestId: "req-1", minAmountOut: "1" });
   toastCalls.loading.mockClear();
@@ -265,16 +290,22 @@ describe("the primary action always says why it cannot be used", () => {
 
 describe("a quote is never presented as current when it is not", () => {
   it("blanks the figures once the quote has expired and blocks the trade", async () => {
-    previewHook.data = swapPreview({ expiresAt: new Date(Date.now() - 1_000).toISOString() });
+    // useMemePreview has watched expiresAt pass (pinned in use-meme-trade.test.tsx)
+    // and hands back no quote, marked expired.
+    previewHook.quote = null;
+    previewHook.expired = true;
     renderSheet();
     await typeAmount("5");
     expect(screen.queryByText(/4\.0651/)).toBeNull();
     expect(screen.queryByText(/3\.9832/)).toBeNull();
     expect(cta()).toBeDisabled();
+    expect(cta()).toHaveTextContent(messages.meme.quoteExpired);
+    fireEvent.click(screen.getByRole("button", { name: messages.meme.retry }));
+    expect(previewHook.refetch).toHaveBeenCalled();
   });
 
   it("does not show the previous amount's quote against a freshly typed one", async () => {
-    previewHook.data = swapPreview();
+    previewHook.quote = swapPreview();
     renderSheet();
     await typeAmount("5");
     expect(screen.getByText(/4\.0651/)).toBeInTheDocument();
@@ -376,5 +407,214 @@ describe("amounts", () => {
     expect((screen.getByLabelText("You sell") as HTMLInputElement).value).toBe(
       "123.456789012345678901"
     );
+  });
+});
+
+// The trade service's CONFIRMED is the only success. When the swap's own
+// receipt proves delivery but the service has not (or will not) confirm it,
+// the sheet says exactly that, with the reference support will ask for, and
+// never "bought" or "sold". A poll that ran out of time is "pending": closable,
+// and equally careful about what it claims.
+describe("the outcome is the service's word, not the receipt's", () => {
+  async function placeTrade(result: { outcome: string; swapId: string; requestId: string | null }) {
+    previewHook.quote = swapPreview();
+    tradeHook.trade.mockResolvedValue(result);
+    const sheet = renderSheet();
+    await typeAmount("5");
+    fireEvent.click(cta());
+    await waitFor(() => expect(tradeHook.trade).toHaveBeenCalled());
+    return sheet;
+  }
+
+  it("says delivered, never bought, when the service has not confirmed", async () => {
+    const { rerender } = await placeTrade({
+      outcome: "delivered",
+      swapId: "swap-1",
+      requestId: "req-1",
+    });
+    await waitFor(() => expect(toastCalls.success).toHaveBeenCalled());
+    const toast = String(toastCalls.success.mock.calls[0][0]);
+    expect(toast).toMatch(/delivered on-chain/i);
+    expect(toast).toContain("swap-1");
+    expect(toast).toContain("req-1");
+    expect(toast).not.toMatch(/bought/i);
+
+    tradeHook.phase = "delivered";
+    tradeHook.received = { amount: "4.0651", symbol: "PEPE" };
+    tradeHook.swapId = "swap-1";
+    tradeHook.requestId = "req-1";
+    rerender();
+    expect(screen.getByTestId("meme-phase-title")).toHaveTextContent("Delivered on-chain");
+    expect(screen.getByRole("dialog")).toHaveTextContent(/still recording this trade/i);
+    expect(screen.getByRole("dialog")).toHaveTextContent("swap-1 · req-1");
+    expect(screen.getByRole("dialog")).not.toHaveTextContent(/trade confirmed/i);
+    expect(screen.getByRole("button", { name: messages.meme.done })).toBeEnabled();
+  });
+
+  it("says confirmed only when the service said CONFIRMED", async () => {
+    const { rerender } = await placeTrade({
+      outcome: "confirmed",
+      swapId: "swap-1",
+      requestId: null,
+    });
+    await waitFor(() =>
+      expect(toastCalls.success).toHaveBeenCalledWith("Bought PEPE", expect.anything())
+    );
+    tradeHook.phase = "confirmed";
+    rerender();
+    expect(screen.getByTestId("meme-phase-title")).toHaveTextContent(messages.meme.confirmedTitle);
+  });
+
+  it("is pending and closable when the poll ran out of time", async () => {
+    const { rerender, onClose } = await placeTrade({
+      outcome: "pending",
+      swapId: "swap-9",
+      requestId: null,
+    });
+    await waitFor(() => expect(toastCalls.success).toHaveBeenCalled());
+    expect(String(toastCalls.success.mock.calls[0][0])).not.toMatch(/bought|sold|confirmed/i);
+
+    tradeHook.phase = "pending";
+    tradeHook.swapId = "swap-9";
+    rerender();
+    expect(screen.getByTestId("meme-phase-title")).toHaveTextContent(messages.meme.pendingTitle);
+    expect(screen.getByRole("dialog")).toHaveTextContent("swap-9");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("does not call an on-chain receipt done while the service is still confirming", () => {
+    tradeHook.phase = "confirming";
+    tradeHook.received = { amount: "4.0651", symbol: "PEPE" };
+    renderSheet();
+    expect(screen.getByTestId("meme-phase-title")).toHaveTextContent("4.0651 PEPE received");
+    expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow", "100");
+    expect(screen.getByRole("dialog")).not.toHaveTextContent(messages.meme.allDone);
+  });
+});
+
+describe("a trade service failure reads as our copy with the reference", () => {
+  it("shows the mapped copy and the requestId, never the upstream wording", () => {
+    tradeHook.phase = "failed";
+    tradeHook.error = Object.assign(new Error("route table miss in 0x"), {
+      name: "TradeApiError",
+      code: "NO_SWAP_ROUTE",
+      status: 422,
+      requestId: "req-x1",
+    });
+    renderSheet();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(messages.tradeErrors.noSwapRoute);
+    expect(alert).toHaveTextContent("Ref: req-x1");
+    expect(alert).not.toHaveTextContent("route table miss");
+  });
+});
+
+// The contract: a null liquidityUsd is "unknown liquidity", shown as a neutral
+// warning, with the quote left to decide whether a route exists. It is not
+// low liquidity and it is not zero.
+describe("unknown liquidity", () => {
+  const LINE = "Liquidity unknown — the quote decides whether this trade can execute.";
+
+  it("says liquidity is unknown when the service published none", () => {
+    renderSheet({ token: memeToken({ symbol: "NEW", liquidityUsd: null }) });
+    const line = screen.getByText(LINE);
+    expect(line.className).not.toContain("text-down");
+  });
+
+  it("says nothing about liquidity it knows, zero included", () => {
+    renderSheet({ token: memeToken({ symbol: "KNOWN", liquidityUsd: "0" }) });
+    expect(screen.queryByText(LINE)).toBeNull();
+  });
+});
+
+// A 502 on the detail read is temporary; a 404 is a confirmed absence. The
+// sheet keeps the listed row either way and says which one it is.
+describe("when the fresh token read fails", () => {
+  it("says the token's details are temporarily unavailable on a provider outage", () => {
+    tokenHook.unavailable = "temporary";
+    renderSheet();
+    const line = screen.getByText(
+      "This token's details are temporarily unavailable. Trying again shortly."
+    );
+    expect(line).toHaveAttribute("role", "status");
+  });
+
+  it("says the token was not found when the service confirms it is absent", () => {
+    tokenHook.unavailable = "not-found";
+    renderSheet();
+    expect(screen.getByText("This token wasn't found on its network.")).toBeInTheDocument();
+  });
+
+  it("says neither while the read is healthy", () => {
+    renderSheet();
+    expect(screen.queryByText(/temporarily unavailable/)).toBeNull();
+    expect(screen.queryByText(/wasn't found/)).toBeNull();
+  });
+});
+
+// The platform fee is the service's figure, in USDC: the preview's on the form,
+// and, once a Solana quote is in hand, that quote's own fee while it executes.
+describe("the platform fee", () => {
+  function feeRow() {
+    return screen.getByText("Platform fee").parentElement as HTMLElement;
+  }
+
+  it("shows the preview's formatted fee in USDC", async () => {
+    previewHook.quote = swapPreview({ platformFeeAmountFormatted: "0.05" });
+    renderSheet();
+    await typeAmount("5");
+    expect(feeRow()).toHaveTextContent("0.05 USDC");
+  });
+
+  it("shows the Solana quote's fee while the trade runs", () => {
+    tradeHook.phase = "confirming";
+    tradeHook.quotedFee = "123456789012345.678901";
+    renderSheet();
+    expect(feeRow()).toHaveTextContent("123456789012345.678901 USDC");
+  });
+
+  it("shows no fee row while a trade runs on a quote that stated none", () => {
+    tradeHook.phase = "confirming";
+    renderSheet();
+    expect(screen.queryByText("Platform fee")).toBeNull();
+  });
+});
+
+// LOW_LIQUIDITY is the contract's one consent flow: confirmed before a quote is
+// asked for. The gate is the preview hook's `consented`; the sheet hosts the
+// dialog that opens it.
+describe("the low-liquidity consent", () => {
+  const LOW = { code: "LOW_LIQUIDITY", message: "Liquidity is below $50,000." };
+
+  it("asks before any preview, the first time an amount is entered, and continues on acceptance", async () => {
+    renderSheet({ token: memeToken({ symbol: "THINSHEET", warnings: [LOW] }) });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await typeAmount("5");
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText(LOW.message)).toBeInTheDocument();
+    expect(previewHook.consented.every((c) => c === false)).toBe(true);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "I understand, continue" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(previewHook.consented.at(-1)).toBe(true);
+  });
+
+  it("cancels on Escape without closing the sheet beneath it, and sends nothing", async () => {
+    const { onClose } = renderSheet({ token: memeToken({ symbol: "THINESC", warnings: [LOW] }) });
+    await typeAmount("5");
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("You pay") as HTMLInputElement).value).toBe("");
+    expect(previewHook.consented.at(-1)).toBe(false);
+  });
+
+  it("never asks for a token without the warning", async () => {
+    renderSheet();
+    await typeAmount("5");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(previewHook.consented.every((c) => c === true)).toBe(true);
   });
 });

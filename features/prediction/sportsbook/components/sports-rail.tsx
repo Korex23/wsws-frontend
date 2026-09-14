@@ -79,12 +79,14 @@ export function SportsRail({
       setCanScrollRight(node.scrollLeft + node.clientWidth < node.scrollWidth - 2);
     };
     update();
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(node);
     node.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
     return () => {
-      observer.disconnect();
+      observer?.disconnect();
       node.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
     };
   }, [ordered.length]);
 
@@ -103,50 +105,39 @@ export function SportsRail({
         key={entry.sport.id}
         href={sportHref(entry.sport.slug, state, eventKind)}
         aria-label={`${entry.sport.name}, ${count} events`}
-        className={`group/sport relative flex h-[100px] min-w-[90px] shrink-0 flex-col items-center justify-center rounded-md px-2 py-12 transition-colors md:h-[140px] md:min-w-[120px] ${selected ? "bg-[#171717]" : "hover:bg-[#171717]"}`}
+        aria-current={selected ? "page" : undefined}
+        className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-md px-3 text-[13px] font-semibold whitespace-nowrap transition-colors ${selected ? "bg-[#172235] text-[#5ba8ff]" : "text-[#858b96] hover:bg-white/[0.05] hover:text-white"}`}
       >
+        <SportIcon sport={entry.sport.slug} name={entry.sport.name} className="size-4 shrink-0" />
+        <span>{entry.sport.name}</span>
         <span
-          className={`absolute top-2 left-1/2 flex h-[1.2rem] min-w-[1.2rem] -translate-x-1/2 items-center justify-center text-[10px] md:top-3 ${selected ? "text-white" : "text-[#999]"}`}
+          className={`text-[11px] tabular-nums ${selected ? "text-[#8dc3ff]" : "text-[#5f6570]"}`}
         >
           {count}
-        </span>
-        <SportIcon
-          sport={entry.sport.slug}
-          name={entry.sport.name}
-          className="h-[40px] w-auto transition-all md:h-[60px]"
-        />
-        <span
-          className={`absolute bottom-2 px-1 text-[10px] whitespace-nowrap md:bottom-3.5 md:text-xs ${selected ? "text-white opacity-100" : "text-[#999] opacity-0 group-hover/sport:opacity-100"}`}
-        >
-          {entry.sport.name}
         </span>
       </Link>
     );
   }
 
   return (
-    <div className="mx-auto py-2">
-      <div className="group relative mx-auto flex h-auto max-w-[1440px] items-center overflow-hidden">
+    <div className="w-full border-y border-white/[0.07] bg-black">
+      <div className="group relative mx-auto flex h-12 max-w-[1350px] items-center overflow-hidden px-4 lg:px-6">
         <button
           type="button"
           onClick={() => scroll("left")}
           aria-label="Scroll left"
-          className={`absolute left-0 z-10 flex h-full w-11 shrink-0 cursor-pointer items-center justify-start bg-gradient-to-r from-[#222] via-[#222]/95 to-transparent p-0.5 text-[#aaa] transition-colors hover:text-white md:w-14 ${canScrollLeft ? "visible" : "invisible"}`}
+          className={`absolute top-0 bottom-0 left-0 z-10 w-10 cursor-pointer bg-gradient-to-r from-black via-black to-transparent text-white ${canScrollLeft ? "grid place-items-center" : "hidden"}`}
         >
-          <span className="rounded-md bg-[#2e2e2e] p-1.5 shadow-lg transition-all duration-300 hover:scale-110 hover:bg-[#2e2e2e]">
-            <Chevron direction="left" />
-          </span>
+          <Chevron direction="left" />
         </button>
 
         <div
           ref={scroller}
-          className="flex touch-pan-x [scrollbar-width:none] items-center gap-1 overflow-x-auto overscroll-x-contain scroll-smooth px-0 [&::-webkit-scrollbar]:hidden"
+          className="flex h-full flex-1 touch-pan-x [scrollbar-width:none] items-center gap-1 overflow-x-auto overscroll-x-contain scroll-smooth [&::-webkit-scrollbar]:hidden"
         >
           {regular.map(tile)}
           {regular.length && esports.length ? (
-            <div className="mx-0 flex h-[70px] flex-col items-center justify-center md:h-[140px]">
-              <div className="h-[40px] w-px rounded-full bg-[#7e7e7e] md:h-[80px]" />
-            </div>
+            <span aria-hidden="true" className="mx-2 h-4 w-px shrink-0 bg-white/15" />
           ) : null}
           {esports.map(tile)}
         </div>
@@ -155,11 +146,9 @@ export function SportsRail({
           type="button"
           onClick={() => scroll("right")}
           aria-label="Scroll right"
-          className={`absolute right-0 z-10 flex h-full w-11 shrink-0 cursor-pointer items-center justify-end bg-gradient-to-l from-[#222] via-[#222]/95 to-transparent p-0.5 text-[#aaa] transition-colors hover:text-white md:w-14 ${canScrollRight ? "visible" : "invisible"}`}
+          className={`absolute top-0 right-0 bottom-0 z-10 w-10 cursor-pointer bg-gradient-to-l from-black via-black to-transparent text-white ${canScrollRight ? "grid place-items-center" : "hidden"}`}
         >
-          <span className="rounded-md bg-[#2e2e2e] p-1.5 shadow-lg transition-all duration-300 hover:scale-110 hover:bg-[#2e2e2e]">
-            <Chevron direction="right" />
-          </span>
+          <Chevron direction="right" />
         </button>
       </div>
     </div>

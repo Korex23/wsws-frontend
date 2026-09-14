@@ -49,7 +49,7 @@ describe("usePredictionSpots", () => {
         closesAt: Date.UTC(2026, 8, 16, 0, 0, 0),
         images: ["https://cdn.example/fed.jpg"],
         // Its page in the Explore market, as the desk's own cards link it.
-        href: "/prediction/markets/481717?category=politics&source=markets",
+        href: "/prediction/event/481717?source=markets&category=politics",
       },
     ]);
   });
@@ -112,7 +112,7 @@ describe("usePredictionSpots", () => {
     // destination; a fabricated category would open the wrong screen.
     feed([market({ tagLabels: ["Weather", "Hong Kong"] })]);
     const { result } = renderHook(() => usePredictionSpots());
-    expect(result.current[0].href).toBe("/market?tab=prediction");
+    expect(result.current[0].href).toBe("/prediction");
   });
 
   it("features at most five, in the order the feed ranked them", () => {

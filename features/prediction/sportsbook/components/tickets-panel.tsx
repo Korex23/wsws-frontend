@@ -37,22 +37,18 @@ export function TicketsPanel({ onOpen }: { onOpen: (ticketId: string) => void })
       </div>
     );
   }
-  if (history.isLoading) {
-    return <div className="h-48 animate-pulse bg-[#171717]" />;
-  }
-  if (history.isError) {
-    return (
-      <div className="px-5 py-10 text-center text-[12px] font-medium text-[#f42e52]">
-        Ticket history could not load.
-      </div>
-    );
-  }
   const orders = history.data?.items ?? [];
-  if (orders.length === 0) {
-    return <div className="px-5 py-10 text-center text-[12px] text-[#7e7e7e]">No tickets yet.</div>;
-  }
   return (
-    <div className="max-h-[520px] [scrollbar-width:thin] overflow-y-auto">
+    <div className="min-h-0 flex-1 [scrollbar-width:thin] overflow-y-auto">
+      {history.isLoading ? <div className="h-48 animate-pulse bg-[#171717]" /> : null}
+      {history.isError ? (
+        <div className="px-5 py-10 text-center text-[12px] font-medium text-[#f42e52]">
+          Ticket history could not load.
+        </div>
+      ) : null}
+      {!history.isLoading && !history.isError && orders.length === 0 ? (
+        <div className="px-5 py-10 text-center text-[12px] text-[#7e7e7e]">No tickets yet.</div>
+      ) : null}
       {orders.map((order) => (
         <TicketRow key={order.ticketId} order={order} onOpen={onOpen} ethPriceUsd={ethPriceUsd} />
       ))}

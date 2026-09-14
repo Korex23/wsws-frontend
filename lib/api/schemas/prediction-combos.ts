@@ -293,6 +293,8 @@ export const discoveryEventsSchema = z.object({
   sort: z.enum(["volume_24h", "volume", "liquidity", "newest", "ending_soon"]),
   events: z.array(discoveryEventSchema),
   nextCursor: z.string().nullable(),
+  unavailable: z.boolean().optional(),
+  retryAfterMs: z.number().int().positive().optional(),
 });
 
 const SCHEMAS: Record<string, z.ZodType> = {

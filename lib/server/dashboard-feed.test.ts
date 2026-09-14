@@ -385,6 +385,50 @@ describe("buildDashboardFeed", () => {
     expect(feed.memes?.map((m) => m.symbol)).toEqual(["BASECAT"]);
   });
 
+  // Slice 4 puts a Curated / All switch on the meme lists. The brief is not a
+  // list anyone switches: it stays curated, so a HIGH-risk LOW_LIQUIDITY row
+  // that All would show never reaches the dashboard.
+  it("keeps the memecoin brief curated", async () => {
+    healthyUpstreams();
+    const base = upstream.fetch.getMockImplementation()!;
+    upstream.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.startsWith("https://trade.test/tokens/trending")) {
+        return ok({
+          items: [
+            {
+              chainId: 8453,
+              address: "0xThinRisky",
+              symbol: "THIN",
+              name: "Thin Risky",
+              logoUrl: null,
+              priceUsd: "0.01",
+              priceChange24hPercent: "40",
+              liquidityUsd: "4000",
+              riskLevel: "HIGH",
+              status: "ACTIVE",
+              warnings: [{ code: "LOW_LIQUIDITY", message: "Liquidity is below $50,000." }],
+            },
+            {
+              chainId: 8453,
+              address: "0xMeme",
+              symbol: "MEME",
+              name: "Meme",
+              logoUrl: null,
+              priceUsd: "0.01",
+              priceChange24hPercent: "12.5",
+              riskLevel: "LOW",
+            },
+          ],
+          meta: { page: 1, limit: 8, total: 2 },
+        });
+      }
+      return base(url, init);
+    });
+    const feed = await buildDashboardFeed();
+    expect(feed.memes?.map((m) => m.symbol)).not.toContain("THIN");
+    expect(feed.memes?.map((m) => m.symbol)).toContain("MEME");
+  });
+
   it("prices the perps brief from the app's own feed when only the marks are down", async () => {
     healthyUpstreams();
     const assets = upstream.wsapiPerpRequest.getMockImplementation()!;

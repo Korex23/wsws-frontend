@@ -70,6 +70,30 @@ function extractSpender(e: unknown): string | null {
 const NO_LIQUIDITY_MESSAGE =
   "This market doesn't have matching orders right now. Try again in a moment, a different amount, or another market.";
 
+function orderErrorMessage(e: unknown): string | null {
+  const message = (e instanceof Error ? e.message : String(e)).toLowerCase();
+  if (
+    /allowance is not enough|balance is not enough|insufficient balance|exceeds allowance/.test(
+      message
+    )
+  ) {
+    return "Your prediction balance or trading approval is still updating. Wait a few seconds and try again.";
+  }
+  if (/minimum order|min(?:imum)? size|below minimum/.test(message)) {
+    return "This market requires a larger stake than the current amount.";
+  }
+  if (/invalid signature|signature verification/.test(message)) {
+    return "Polymarket rejected the wallet signature. Reconnect your wallet and try again.";
+  }
+  if (/restricted|not available in your region|geoblock/.test(message)) {
+    return "This market is not available in your region.";
+  }
+  if (/closed|not accepting orders|invalid token|market not found/.test(message)) {
+    return "This market is no longer accepting orders. Choose another market.";
+  }
+  return null;
+}
+
 export interface PlaceBetInput {
   // CLOB token of the outcome being bought (Yes or No token).
   tokenId: string;
@@ -179,7 +203,13 @@ export function useBet() {
           setError(NO_LIQUIDITY_MESSAGE);
           throw e;
         }
-        setError(friendlyError(e, "Couldn't place your bet. Try again."));
+        const orderMessage = orderErrorMessage(e);
+        if (orderMessage) {
+          console.error("[prediction] Polymarket order rejected", e);
+          setError(orderMessage);
+          throw e;
+        }
+        setError(friendlyError(e, "Couldn't submit your ticket. Try again."));
         throw e;
       } finally {
         setPhase("idle");

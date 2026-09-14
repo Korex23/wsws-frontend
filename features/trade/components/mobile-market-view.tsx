@@ -19,7 +19,9 @@ import { MemeCoin, PctChange, priceLabel } from "@/features/trade/components/mem
 import { parseBaseUnits } from "@/features/trade/components/meme-base-units";
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
 import { PerpsSection } from "@/features/trade/components/perps-section";
+import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { TradeTicket, USD_DECIMALS } from "@/features/trade/components/meme-trade-ticket";
+import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import {
   MemeMarketMetrics,
   type MemeMarketMetricsData,
@@ -29,9 +31,11 @@ import { SpotTicket } from "@/features/trade/components/spot-ticket";
 import { ListPagination } from "@/components/ui/list-pagination";
 import { SearchField } from "@/components/ui/search-field";
 import { useSpotMarkets, type SpotMarket } from "@/features/trade/hooks/use-spot-markets";
-import { useTrendingMemes } from "@/features/trade/hooks/use-meme-tokens";
+import { useMemeCatalog, useMemeSearch } from "@/features/trade/hooks/use-meme-tokens";
+import { MemeCatalogMore, MemeViewSwitch } from "@/features/trade/components/meme-catalog-controls";
 import { useFitRows } from "@/hooks/use-fit-rows";
 import {
+  memeOutcomeToast,
   useMemePreview,
   useMemeTrade,
   type MemeTradeInput,
@@ -44,6 +48,7 @@ import { displaySymbol } from "@/lib/buy";
 import { friendlyError } from "@/lib/errors";
 import { compactUsd, isValidTradeAmount, type MemeToken } from "@/lib/meme/api";
 import { SOLANA_CHAIN_ID, networkOf } from "@/lib/meme/chain";
+import { DEFAULT_DISCOVERY_VIEW, catalogKey, type DiscoveryView } from "@/lib/meme/catalog";
 import { scopeOf } from "@/lib/portfolio/fresh-scope";
 import { buyFunding } from "@/lib/meme/funding";
 import { exceedsHeld } from "@/lib/meme/sell-amount";
@@ -62,11 +67,6 @@ interface MobileMarketViewProps {
    */
   onOpenDetail?: (detail: DetailPayload) => void;
   onOpenBuy?: (buy: BuyPayload) => void;
-  /**
-   * The Prediction tab's content, supplied by the route. Prediction is its own
-   * feature, and features never import each other, so the route composes it.
-   */
-  predictionSlot: ReactNode;
   /**
    * The Real assets tab's content, supplied by the route for the same reason:
    * real assets is its own feature. It carries its own search field, so this
@@ -87,9 +87,9 @@ interface MobileMarketViewProps {
 // opens the spot ticket for it (Figma 1:7825) in the list's place, the way the
 // Memecoins tab opens its trade sheet. The list is kept, not replaced.
 
-// All five categories render inline on this page: nothing here navigates, so
-// the strip is a tab control rather than a set of links. The order is the
-// rail's: Spot, Leverage, Memecoins, Real assets, Prediction.
+// Trading categories render inline on this page. Prediction keeps its seat in
+// the strip but opens its own full product route, where its navigation, market
+// detail and bet slip remain identical on desktop and mobile.
 //
 // Every tab carries its own search field, at the top of its own list. Spot and
 // Memecoins are the two this view filters itself; Real assets and Prediction
@@ -124,8 +124,8 @@ function changeLabel(chg: number): string {
 }
 
 // A coin-feed USD field as a market-metric value, the same mapping meme-board
-// makes: compactUsd's em dash (a zero or a missing figure) becomes the null the
-// metrics panel draws as "Unavailable" rather than as "$0".
+// makes: compactUsd's em dash (a figure it cannot read) becomes the null the
+// metrics panel draws as "Unavailable"; a published zero stays "$0".
 function usdMetric(value: string | null): MemeMetricValue {
   if (value === null) return { display: null };
   const shown = compactUsd(value);
@@ -271,12 +271,13 @@ function MarketTabs({
   );
 }
 
-export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: MobileMarketViewProps) {
+export function MobileMarketView({ rwaSlot, onAddFunds }: MobileMarketViewProps) {
   const router = useRouter();
   const t = useTranslations("markets");
   const tCommon = useTranslations("common");
   const tSpot = useTranslations("spot");
   const tMeme = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   const { markets, loading, error } = useSpotMarkets();
   // A query per list. They were one field and one term until each tab grew
   // its own field; keeping them apart is what lets a tab hold what was typed
@@ -299,8 +300,12 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
   const isMobile = useIsMobile();
   const desktopRoute = DESKTOP_ROUTE[activeTab];
   useEffect(() => {
+    if (activeTab === "prediction") {
+      router.replace("/prediction");
+      return;
+    }
     if (!isMobile && desktopRoute) router.replace(desktopRoute);
-  }, [isMobile, desktopRoute, router]);
+  }, [isMobile, activeTab, desktopRoute, router]);
 
   // A market's own ticket opens in the list's place. The market is held by
   // symbol rather than by object, so a price tick that rebuilds the catalogue
@@ -331,17 +336,29 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
     }
   }, [ticketMarket]);
 
-  const { tokens: memes, isLoading: memeLoading, error: memeError } = useTrendingMemes();
+  // The Memecoins tab lists the catalogue, a server page of 500 at a time
+  // behind the same Curated / All switch as the desk and the grid
+  // (ADR-2026-09-14-memecoins-trade-contract, slice 4). Trending is discovery
+  // only and stays on the dashboard's cards. A search of two characters or
+  // more replaces the list with the service's results, in the same view.
+  const [memeView, setMemeView] = useState<DiscoveryView>(DEFAULT_DISCOVERY_VIEW);
+  const memeCatalog = useMemeCatalog({ view: memeView });
+  const memeSearch = useMemeSearch(memeQuery, memeView);
+  const memes = memeSearch.active ? memeSearch.results : memeCatalog.tokens;
+  const memeLoading = memeSearch.active ? memeSearch.searching : memeCatalog.isLoading;
+  const memeError = memeSearch.active ? memeSearch.error : memeCatalog.error;
 
   // A memecoin's own ticket opens in the list's place, the same hide-not-
-  // unmount and scroll-restore pattern the Spot tab uses above. Held by
-  // address rather than by object for the same reason ticketSymbol is: a
-  // trending-list refresh must not leave the ticket pointed at a stale copy.
-  const [memeTicketAddress, setMemeTicketAddress] = useState<string | null>(null);
-  const ticketMeme = useMemo(
-    () => (memeTicketAddress ? (memes.find((m) => m.address === memeTicketAddress) ?? null) : null),
-    [memes, memeTicketAddress]
-  );
+  // unmount and scroll-restore pattern the Spot tab uses above. The ticket
+  // takes the fresher row whenever the list still carries the coin, matched by
+  // chainId:address (the same address on two chains is two coins), so a
+  // catalogue refresh does not leave it pointed at a stale copy.
+  const [memeTicketToken, setMemeTicketToken] = useState<MemeToken | null>(null);
+  const ticketMeme = useMemo(() => {
+    if (!memeTicketToken) return null;
+    const key = catalogKey(memeTicketToken);
+    return memes.find((m) => catalogKey(m) === key) ?? memeTicketToken;
+  }, [memes, memeTicketToken]);
   // The market-metrics disclosure on the meme ticket. Closed by default, like
   // the desk board and the meme page: the comp draws it open, but the ticket
   // leads with the trade, and the reader opens the figures if they want them.
@@ -363,10 +380,10 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
 
   const openMemeTicket = useCallback((token: MemeToken) => {
     memeListScrollTop.current = memeListRef.current?.scrollTop ?? 0;
-    setMemeTicketAddress(token.address);
+    setMemeTicketToken(token);
   }, []);
 
-  const closeMemeTicket = useCallback(() => setMemeTicketAddress(null), []);
+  const closeMemeTicket = useCallback(() => setMemeTicketToken(null), []);
 
   useLayoutEffect(() => {
     if (ticketMeme === null && memeListRef.current) {
@@ -389,11 +406,18 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
 
   // A category change puts both tickets away. The queries stay: each belongs to
   // one list, and the reader gets that list back as they left it.
-  const selectTab = useCallback((id: TabId) => {
-    setActiveTab(id);
-    setTicketSymbol(null);
-    setMemeTicketAddress(null);
-  }, []);
+  const selectTab = useCallback(
+    (id: TabId) => {
+      if (id === "prediction") {
+        router.push("/prediction");
+        return;
+      }
+      setActiveTab(id);
+      setTicketSymbol(null);
+      setMemeTicketToken(null);
+    },
+    [router]
+  );
 
   // The ticket's own trade state: which side, how much, and the trade
   // machine's phase/error. Mirrors the wiring meme-board.tsx does for the
@@ -480,7 +504,10 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
           chainId: ticketMeme.chainId,
         }
       : null;
-  const memePreview = useMemePreview(memePreviewInput);
+  // A LOW_LIQUIDITY coin is confirmed before any preview goes out: the dialog
+  // opens the first time an amount is typed for it, and Cancel clears it.
+  const memeConsent = useRiskConsent(ticketMeme, memeAmount);
+  const memePreview = useMemePreview(memePreviewInput, memeConsent.consented);
 
   // Base executes here in full. A Solana order does not: buying one may need
   // the USDC moved to the Solana wallet first, and selling one has to record
@@ -491,7 +518,8 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
   // The tap-to-screen fix stands either way: the sheet only ever appears from
   // a submit, never from the row tap that used to open it directly.
   async function submitMemeTrade(input: MemeTradeInput) {
-    if (!ticketMeme) return;
+    // No quote for a LOW_LIQUIDITY coin the user has not confirmed.
+    if (!ticketMeme || !memeConsent.consented) return;
     if (input.chainId === SOLANA_CHAIN_ID) {
       setMemeSheetToken(ticketMeme);
       return;
@@ -504,15 +532,12 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
       input.side === "BUY" ? tMeme("buyingToast", { symbol }) : tMeme("sellingToast", { symbol })
     );
     try {
-      await runMemeTrade(input);
-      toast.success(
-        input.side === "BUY" ? tMeme("toastBought", { symbol }) : tMeme("toastSold", { symbol }),
-        { id: toastId }
-      );
+      const result = await runMemeTrade(input);
+      toast.success(memeOutcomeToast(tMeme, result, input.side, symbol), { id: toastId });
       setMemeAmount("");
       void memePortfolio.refetchUntilChanged(tradedNetworks);
     } catch (e) {
-      toast.error(friendlyError(e, tMeme("orderFailed")), { id: toastId });
+      toast.error(friendlyError(e, tMeme("orderFailed"), tErr), { id: toastId });
       void memePortfolio.refetchFresh(tradedNetworks);
     }
   }
@@ -522,16 +547,13 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
     return q ? markets.filter((m) => `${m.symbol} ${m.name}`.toLowerCase().includes(q)) : markets;
   }, [markets, spotQuery]);
 
-  const memeRows = useMemo(() => {
-    const q = memeQuery.trim().toLowerCase();
-    return q
-      ? memes.filter((m) => `${m.symbol ?? ""} ${m.name ?? ""}`.toLowerCase().includes(q))
-      : memes;
-  }, [memes, memeQuery]);
+  // The service searches the whole catalogue, not the rows loaded so far, so
+  // the list is either the catalogue or the search results, never a filter.
+  const memeRows = memes;
 
   // While a tab is handing off to its desktop screen, render nothing rather than
   // flash this phone column at desktop width until the target route paints.
-  if (!isMobile && desktopRoute) return null;
+  if (activeTab === "prediction" || (!isMobile && desktopRoute)) return null;
 
   // A phone design: full-bleed on a phone, but capped to a phone-width column on
   // desktop (centered, framed) instead of stretching edge to edge.
@@ -558,7 +580,7 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
               closeTicket();
               return;
             }
-            if (memeTicketAddress !== null) {
+            if (memeTicketToken !== null) {
               closeMemeTicket();
               return;
             }
@@ -686,13 +708,21 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
                       funding={memeFunding}
                       heldRaw={memeHeldRaw}
                       heldDecimals={memeHeldDecimals}
-                      preview={memePreview.data ?? null}
+                      preview={memePreview.quote}
                       previewLoading={memePreview.isFetching}
                       previewError={memePreview.error}
+                      quoteExpired={memePreview.expired}
+                      onRefreshQuote={() => void memePreview.refetch()}
                       onSubmit={submitMemeTrade}
                       phase={memePhase}
                       error={memeTradeError}
                       onAddFunds={onAddFunds}
+                    />
+                    <MemeRiskConsent
+                      open={memeConsent.prompting}
+                      token={ticketMeme}
+                      onContinue={memeConsent.accept}
+                      onCancel={() => setMemeAmount("")}
                     />
                   </div>
                 </div>
@@ -711,9 +741,12 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
                   <SearchField
                     value={memeQuery}
                     onChange={setMemeQuery}
-                    label={tMeme("searchTrendingLabel")}
-                    placeholder={tMeme("searchTrendingLabel")}
+                    label={tMeme("searchAllLabel")}
+                    placeholder={tMeme("searchAllLabel")}
                   />
+                </div>
+                <div className="px-1 pb-2">
+                  <MemeViewSwitch value={memeView} onChange={setMemeView} />
                 </div>
                 {memeLoading && memeRows.length === 0 ? (
                   [0, 1, 2, 3, 4, 5].map((i) => (
@@ -729,7 +762,7 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
                     pageSize={memePageSize}
                     renderRow={(token) => (
                       <button
-                        key={token.address}
+                        key={catalogKey(token)}
                         type="button"
                         onClick={() => openMemeTicket(token)}
                         className="flex h-[60px] w-full items-center gap-3 border-b border-white/6 px-1 text-left transition-colors active:bg-white/5"
@@ -757,6 +790,20 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
                     )}
                   />
                 )}
+                {/* The count and "Load more" describe the catalogue; a search
+                    replaces it, so they step aside while one is showing. */}
+                {!memeSearch.active && !memeLoading ? (
+                  <MemeCatalogMore
+                    className="px-1 pt-3"
+                    loaded={memeCatalog.loaded}
+                    total={memeCatalog.total}
+                    shownCount={memeCatalog.shownCount}
+                    hasMore={memeCatalog.hasMore}
+                    loadingMore={memeCatalog.isLoadingMore}
+                    failed={memeCatalog.loadMoreFailed}
+                    onLoadMore={memeCatalog.loadMore}
+                  />
+                ) : null}
                 {!memeLoading && (memeError || memeRows.length === 0) ? (
                   <p className="mt-8 text-center text-[13px] font-normal text-white/45">
                     {memeError ? tMeme("unavailable") : tMeme("noResults")}
@@ -764,22 +811,6 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
                 ) : null}
               </div>
             </>
-          ) : activeTab === "prediction" ? (
-            // The prediction slot is the phone market list
-            // (features/prediction/components/prediction-market-list.tsx). It is
-            // mounted only while this tab is selected, so its feed is not
-            // fetched for someone who never opens it.
-            //
-            // Geometry from the comp (Figma 1:16194): the card stack sits 24px
-            // under the strip and in 16px gutters, four narrower than this
-            // page's own 20px, which is the same bleed the spot and memecoin
-            // lists take.
-            <div
-              data-testid="prediction-panel-scroll"
-              className="-mx-1 mt-2 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto [&::-webkit-scrollbar]:hidden"
-            >
-              {predictionSlot}
-            </div>
           ) : (
             <>
               {ticketMarket ? (

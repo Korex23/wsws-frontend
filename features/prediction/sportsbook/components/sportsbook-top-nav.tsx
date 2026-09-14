@@ -121,7 +121,7 @@ export function SportsbookTopNav({
               href="/prediction/markets?view=tickets"
               className="flex items-center gap-2 rounded-lg border border-[#b9fcff] bg-[#b9fcff] px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:bg-[#b9fcff]/90"
             >
-              My bets
+              My tickets
             </Link>
           ) : (
             <button
