@@ -14,6 +14,8 @@ interface CategoryEventRowProps {
   accessAllowed: boolean;
   onBuy: (prediction: CategoryPrediction, side: "yes" | "no") => void;
   selectedSide?: (conditionId: string) => "yes" | "no" | undefined;
+  showVolume?: boolean;
+  surface?: "default" | "black";
 }
 
 export function CategoryEventRow({
@@ -23,6 +25,8 @@ export function CategoryEventRow({
   accessAllowed,
   onBuy,
   selectedSide = () => undefined,
+  showVolume = true,
+  surface = "default",
 }: CategoryEventRowProps) {
   const predictions = event.markets.flatMap((market) => {
     const prediction = marketPrediction(event, market, category);
@@ -40,6 +44,8 @@ export function CategoryEventRow({
         accessAllowed={accessAllowed}
         onBuy={(side) => onBuy(prediction, side)}
         selectedSide={selectedSide(prediction.conditionId)}
+        showVolume={showVolume}
+        surface={surface}
       />
     ) : null;
   }
@@ -55,6 +61,8 @@ export function CategoryEventRow({
       accessAllowed={accessAllowed}
       onBuy={(side) => onBuy(preview, side)}
       selectedSide={selectedSide(preview.conditionId)}
+      showVolume={showVolume}
+      surface={surface}
     />
   );
 }

@@ -86,7 +86,7 @@ export function CategoryTopNav({
               href="/prediction"
               className="rounded-lg bg-[#b9fcff] px-4 py-2 text-sm font-medium text-[#171717] hover:bg-[#b9fcff]/90"
             >
-              My bets
+              My tickets
             </Link>
           ) : (
             <button
@@ -111,6 +111,8 @@ export function CategoryMarketRow({
   eventTitle,
   marketCount,
   selectedSide,
+  showVolume = true,
+  surface = "default",
 }: {
   prediction: CategoryPrediction;
   accessAllowed: boolean;
@@ -119,6 +121,8 @@ export function CategoryMarketRow({
   eventTitle?: string;
   marketCount?: number;
   selectedSide?: "yes" | "no";
+  showVolume?: boolean;
+  surface?: "default" | "black";
 }) {
   const details = (
     <>
@@ -139,8 +143,18 @@ export function CategoryMarketRow({
   );
 
   return (
-    <article className="bg-[#242424] px-3 py-3 transition-colors hover:bg-[#292929] md:px-4">
-      <div className="grid min-w-0 items-center gap-3 min-[800px]:grid-cols-[minmax(0,1fr)_280px_100px] min-[1280px]:grid-cols-[1fr_28rem_1fr]">
+    <article
+      className={`border-b border-white/[0.06] px-3 py-3 transition-colors last:border-b-0 md:px-4 ${
+        surface === "black" ? "bg-black hover:bg-[#080808]" : "bg-[#242424] hover:bg-[#292929]"
+      }`}
+    >
+      <div
+        className={`grid min-w-0 items-center gap-3 ${
+          showVolume
+            ? "min-[800px]:grid-cols-[minmax(0,1fr)_280px_100px] min-[1280px]:grid-cols-[1fr_28rem_1fr]"
+            : "min-[800px]:grid-cols-[minmax(0,1fr)_280px] min-[1280px]:grid-cols-[minmax(0,1fr)_28rem]"
+        }`}
+      >
         {href ? (
           <Link
             href={href}
@@ -185,12 +199,16 @@ export function CategoryMarketRow({
             <span className="font-bold text-white">{prediction.noDecimalOdds.toFixed(2)}</span>
           </button>
         </div>
-        <div className="hidden w-[6.5rem] justify-self-end text-center text-xs text-[#999] min-[800px]:block">
-          {usdcVolume(prediction.vol)}
-        </div>
-        <div className="text-right text-[10px] text-[#777] min-[800px]:hidden">
-          Volume {usdcVolume(prediction.vol)}
-        </div>
+        {showVolume ? (
+          <>
+            <div className="hidden w-[6.5rem] justify-self-end text-center text-xs text-[#999] min-[800px]:block">
+              {usdcVolume(prediction.vol)}
+            </div>
+            <div className="text-right text-[10px] text-[#777] min-[800px]:hidden">
+              Volume {usdcVolume(prediction.vol)}
+            </div>
+          </>
+        ) : null}
       </div>
     </article>
   );

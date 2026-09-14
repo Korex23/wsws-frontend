@@ -52,9 +52,8 @@ function toSpot(prediction: Prediction): PredictionSpot | null {
     images: prediction.image ? [prediction.image] : [],
     // The market's own page in the Explore market, the same destination the
     // prediction desk's cards use. A market the feed gives no category for
-    // has no page there, so it opens the desk: /market?tab=prediction is the
-    // prediction tab on a phone and hands off to /prediction from md up.
-    href: predictionDetailHref(prediction) ?? "/market?tab=prediction",
+    // opens the shared responsive desk.
+    href: predictionDetailHref(prediction) ?? "/prediction",
   };
 }
 

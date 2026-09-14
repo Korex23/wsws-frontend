@@ -155,7 +155,7 @@ function ToolbarMenu<T extends string>({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={`flex h-8 cursor-pointer items-center justify-between gap-2 rounded-lg border border-[#2e2e2e] bg-[#242424] px-2 py-2 text-[#ebebeb] transition-colors duration-200 hover:bg-[#2e2e2e] hover:text-white ${desktopWidth ? "min-[802px]:min-w-[140px]" : ""}`}
+        className={`flex h-8 cursor-pointer items-center justify-between gap-2 rounded-md border border-white/10 bg-black px-2 py-2 text-[#d7d9de] transition-colors duration-150 hover:border-white/20 hover:bg-white/[0.05] hover:text-white ${desktopWidth ? "min-[802px]:min-w-[140px]" : ""}`}
       >
         <span className="flex items-center gap-2">
           {icon}
@@ -171,7 +171,7 @@ function ToolbarMenu<T extends string>({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-2 min-w-[140px] origin-top-right overflow-hidden rounded-lg border border-[#2e2e2e] bg-[#242424] shadow-lg"
+          className="absolute right-0 z-50 mt-2 min-w-[140px] origin-top-right overflow-hidden rounded-lg border border-white/10 bg-[#090909] shadow-[0_14px_40px_rgba(0,0,0,.75)]"
         >
           {options.map((option) => (
             <button
@@ -183,7 +183,7 @@ function ToolbarMenu<T extends string>({
                 onChange(option.value);
                 setOpen(false);
               }}
-              className={`flex w-full cursor-pointer items-center gap-2 px-2 py-2 text-left text-sm whitespace-nowrap transition-colors ${option.value === value ? "bg-[#2e2e2e] text-white" : "text-[#ebebeb] hover:bg-[#2e2e2e] hover:text-white"}`}
+              className={`flex w-full cursor-pointer items-center gap-2 px-2 py-2 text-left text-sm whitespace-nowrap transition-colors ${option.value === value ? "bg-[#172235] text-[#5ba8ff]" : "text-[#a8adb7] hover:bg-white/[0.05] hover:text-white"}`}
             >
               {option.icon}
               <span>{option.label}</span>
@@ -251,7 +251,7 @@ export function MarketSelector({
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpen((current) => !current)}
-        className="flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-[#2a2a2a] bg-white/[0.03] px-2 py-2 text-[#ebebeb] transition-[background,border-color,color] duration-200 ease-in-out hover:border-[#3a3a3a] hover:bg-white/[0.06] hover:text-white disabled:cursor-default"
+        className="flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-white/10 bg-black px-2 py-2 text-[#d7d9de] transition-[background,border-color,color] duration-150 hover:border-white/20 hover:bg-white/[0.05] hover:text-white disabled:cursor-default"
       >
         <span className="min-w-0 flex-1 truncate text-left text-sm font-medium">
           {selected?.label ?? "Full Time Result"}
@@ -260,8 +260,8 @@ export function MarketSelector({
       </button>
 
       {open ? (
-        <div className="absolute right-0 left-0 z-[110] mt-2 overflow-hidden rounded-lg border border-[#2e2e2e] bg-[#171717] shadow-[0_4px_10px_rgba(0,0,0,0.9)] min-[1280px]:right-auto min-[1280px]:left-1/2 min-[1280px]:w-[28rem] min-[1280px]:-translate-x-1/2">
-          <label className="flex items-center gap-2 border-b border-[#1f1f1f] bg-[#171717] p-2 text-[#999]">
+        <div className="absolute right-0 left-0 z-[110] mt-2 overflow-hidden rounded-lg border border-white/10 bg-[#090909] shadow-[0_14px_40px_rgba(0,0,0,.75)] min-[1280px]:right-auto min-[1280px]:left-1/2 min-[1280px]:w-[28rem] min-[1280px]:-translate-x-1/2">
+          <label className="flex items-center gap-2 border-b border-white/[0.07] bg-[#090909] p-2 text-[#858b96]">
             <SearchIcon />
             <input
               ref={inputRef}
@@ -269,13 +269,13 @@ export function MarketSelector({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search markets..."
-              className="h-8 min-w-0 flex-1 rounded-lg border border-[#2e2e2e] bg-[#242424] px-2 text-sm text-[#ebebeb] outline-none placeholder:text-[#7e7e7e] focus:border-[#3a3a3a]"
+              className="h-8 min-w-0 flex-1 rounded-md border border-white/10 bg-black px-2 text-sm text-white outline-none placeholder:text-[#646a75] focus:border-[#5ba8ff]/60"
             />
           </label>
           <div
             role="listbox"
             aria-label="Markets"
-            className="max-h-[280px] overflow-y-auto bg-[#171717]"
+            className="max-h-[280px] overflow-y-auto bg-[#090909]"
           >
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-4 text-center text-sm text-[#999]">No markets found</div>
@@ -291,7 +291,7 @@ export function MarketSelector({
                     setOpen(false);
                     setSearch("");
                   }}
-                  className={`flex w-full cursor-pointer items-center px-3 py-2.5 text-left text-sm transition-colors duration-200 ${option.key === selectedKey ? "bg-[#242424] text-white" : "text-[#ebebeb] hover:bg-[#242424] hover:text-white"}`}
+                  className={`flex w-full cursor-pointer items-center px-3 py-2.5 text-left text-sm transition-colors duration-150 ${option.key === selectedKey ? "bg-[#172235] text-[#5ba8ff]" : "text-[#a8adb7] hover:bg-white/[0.05] hover:text-white"}`}
                 >
                   <span className="truncate">{option.label}</span>
                 </button>
@@ -341,7 +341,7 @@ function LiveButton({ live, onClick }: { live: boolean; onClick: () => void }) {
       title="Live selector"
       aria-pressed={live}
       onClick={onClick}
-      className={`flex h-8 w-fit cursor-pointer items-center gap-2 rounded-lg border bg-[#242424] px-2 py-2 transition-colors duration-200 hover:bg-[#2e2e2e] ${live ? "border-[#f42e52] text-[#f42e52]" : "border-[#2e2e2e] text-[#ebebeb] hover:text-white"}`}
+      className={`flex h-8 w-fit cursor-pointer items-center gap-2 rounded-md border bg-black px-2 py-2 transition-colors duration-150 ${live ? "border-[#f42e52]/70 bg-[#2b1017] text-[#f42e52]" : "border-white/10 text-[#d7d9de] hover:border-white/20 hover:bg-white/[0.05] hover:text-white"}`}
     >
       <span className={live ? "text-[#f42e52]" : "text-[#999]"}>
         <LiveIcon />
@@ -365,7 +365,7 @@ export function MarketToolbar({
   onMarketChange,
 }: MarketToolbarProps) {
   return (
-    <div className="relative z-20 overflow-visible border-b border-[#1f1f1f] px-2 py-2">
+    <div className="relative z-20 overflow-visible border-b border-white/[0.07] bg-black px-3 py-2">
       <div className="flex w-full flex-col gap-2">
         <div className="hidden w-full items-center justify-between min-[802px]:flex">
           <LiveButton live={live} onClick={onLiveToggle} />
@@ -386,12 +386,12 @@ export function MarketToolbar({
               onChange={onSortChange}
               desktopWidth
             />
-            <div className="flex h-8 items-center overflow-hidden rounded-lg border border-[#2e2e2e] bg-[#242424]">
+            <div className="flex h-8 items-center overflow-hidden rounded-md border border-white/10 bg-black">
               <button
                 type="button"
                 title="Grid view"
                 onClick={() => onViewChange("grid")}
-                className={`flex h-full cursor-pointer items-center justify-center px-2 ${view === "grid" ? "bg-[#2e2e2e] text-white" : "text-[#7e7e7e] hover:bg-[#3b3b3b] hover:text-white"}`}
+                className={`flex h-full cursor-pointer items-center justify-center px-2 ${view === "grid" ? "bg-[#172235] text-[#5ba8ff]" : "text-[#646a75] hover:bg-white/[0.05] hover:text-white"}`}
               >
                 <GridIcon />
               </button>
@@ -399,7 +399,7 @@ export function MarketToolbar({
                 type="button"
                 title="List view"
                 onClick={() => onViewChange("list")}
-                className={`flex h-full cursor-pointer items-center justify-center px-2 ${view === "list" ? "bg-[#2e2e2e] text-white" : "text-[#7e7e7e] hover:bg-[#3b3b3b] hover:text-white"}`}
+                className={`flex h-full cursor-pointer items-center justify-center px-2 ${view === "list" ? "bg-[#172235] text-[#5ba8ff]" : "text-[#646a75] hover:bg-white/[0.05] hover:text-white"}`}
               >
                 <ListIcon />
               </button>

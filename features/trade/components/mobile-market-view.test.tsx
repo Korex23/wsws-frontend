@@ -213,7 +213,6 @@ function renderView() {
       <MobileMarketView
         onOpenDetail={onOpenDetail}
         onOpenBuy={onOpenBuy}
-        predictionSlot={<div data-testid="prediction-panel" />}
         rwaSlot={<div data-testid="rwa-panel" />}
       />
     </NextIntlClientProvider>
@@ -275,6 +274,7 @@ beforeEach(() => {
   memeViews.search = [];
   router.push.mockClear();
   router.back.mockClear();
+  router.replace.mockClear();
   memeTrade.mockClear();
   memeTicketProps.last = null;
   memeSheetProps.last = null;
@@ -346,9 +346,9 @@ describe("MobileMarketView chrome", () => {
     const panel = screen.getByRole("tabpanel");
     expect(panel).toHaveAccessibleName("Spot");
 
-    fireEvent.click(tabs()[PREDICTION]);
-    expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Prediction");
-    expect(screen.getByTestId("prediction-panel")).toBeInTheDocument();
+    fireEvent.click(tabs()[PERPS]);
+    expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Leverage");
+    expect(screen.getByTestId("perps-desk")).toBeInTheDocument();
   });
 
   it("moves selection with arrow keys and Home/End, not with Tab", () => {
@@ -357,14 +357,16 @@ describe("MobileMarketView chrome", () => {
     expect(tabs()[PERPS]).toHaveAttribute("aria-selected", "true");
 
     fireEvent.keyDown(tabs()[PERPS], { key: "End" });
-    expect(tabs()[PREDICTION]).toHaveAttribute("aria-selected", "true");
+    expect(router.push).toHaveBeenCalledWith("/prediction");
+    expect(tabs()[PERPS]).toHaveAttribute("aria-selected", "true");
 
-    fireEvent.keyDown(tabs()[PREDICTION], { key: "Home" });
+    fireEvent.keyDown(tabs()[PERPS], { key: "Home" });
     expect(tabs()[SPOT]).toHaveAttribute("aria-selected", "true");
 
-    // Wraps backwards from the first tab to the last.
+    // Wrapping backwards from the first tab opens Prediction's own route.
     fireEvent.keyDown(tabs()[SPOT], { key: "ArrowLeft" });
-    expect(tabs()[PREDICTION]).toHaveAttribute("aria-selected", "true");
+    expect(router.push).toHaveBeenLastCalledWith("/prediction");
+    expect(tabs()[SPOT]).toHaveAttribute("aria-selected", "true");
   });
 
   // Gap 5: the strip scrolls, so a selected tab off-screen must be brought in.
@@ -545,35 +547,24 @@ describe("MobileMarketView chrome", () => {
   });
 });
 
-// The Prediction tab hosts the phone market list
-// (features/prediction/components/prediction-market-list.tsx). Prediction is its
-// own feature and features never import each other, so the route composes it
-// into the slot and this view only has to host it correctly.
-describe("MobileMarketView, hosting the prediction list", () => {
-  it("mounts the prediction slot only while its own tab is selected", () => {
+// Prediction has one responsive product shell. The Market strip remains an
+// entry point, but no longer mounts the retired phone-only market cards.
+describe("MobileMarketView, routing to Prediction", () => {
+  it("opens the standalone prediction route from the Prediction tab", () => {
     renderView();
-    expect(screen.queryByTestId("prediction-panel")).not.toBeInTheDocument();
-
     fireEvent.click(tabs()[PREDICTION]);
-    expect(screen.getByTestId("prediction-panel")).toBeInTheDocument();
-
-    // Leaving the tab takes it back down, so a reader who never opens
-    // Prediction never pays for its feed.
-    fireEvent.click(tabs()[SPOT]);
-    expect(screen.queryByTestId("prediction-panel")).not.toBeInTheDocument();
+    expect(router.push).toHaveBeenCalledWith("/prediction");
   });
 
-  // The list is a tall stack of cards inside a fixed, non-scrolling page shell.
-  // Without a scroll container of its own everything past the first two cards is
-  // unreachable.
-  it("gives the prediction list a scroll container of its own", () => {
-    renderView();
-    fireEvent.click(tabs()[PREDICTION]);
-
-    const panel = screen.getByTestId("prediction-panel-scroll");
-    expect(panel).toContainElement(screen.getByTestId("prediction-panel"));
-    expect(panel.className).toMatch(/overflow-y-auto/);
-    expect(panel.className).toMatch(/min-h-0/);
+  it("repairs a legacy prediction query URL without rendering the old cards", () => {
+    search.query = "tab=prediction";
+    try {
+      renderView();
+      expect(router.replace).toHaveBeenCalledWith("/prediction");
+      expect(screen.queryByRole("tabpanel")).not.toBeInTheDocument();
+    } finally {
+      search.query = "";
+    }
   });
 });
 

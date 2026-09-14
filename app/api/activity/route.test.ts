@@ -42,14 +42,16 @@ describe("GET /api/activity", () => {
     expect(res.status).toBe(429);
   });
 
-  it("answers 502 when the sweep failed for any other reason", async () => {
+  it("returns an uncached partial snapshot when the sweep failed for any other reason", async () => {
     const { ActivityUnavailableError } = await import("@/lib/server/activity");
     fetchActivity.mockRejectedValue(new ActivityUnavailableError([new Error("socket hang up")]));
 
     const { GET } = await import("./route");
     const res = await GET(request(`?evm=${WALLET}`));
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    await expect(res.json()).resolves.toEqual({ items: [], unavailable: ["activity"] });
   });
 
   it("passes the unavailable sources through and refuses to cache an incomplete read", async () => {

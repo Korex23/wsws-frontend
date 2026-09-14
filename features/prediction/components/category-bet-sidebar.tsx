@@ -5,13 +5,27 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useSendToken } from "@/hooks/use-withdraw";
-import type { HouseSelection } from "../house-slip-store";
+import {
+  lowOddsSelectionCount,
+  MAX_LOW_ODDS_SELECTIONS,
+  type HouseSelection,
+} from "../house-slip-store";
 import {
   confirmHouseTicket,
+  fetchHouseTicketByBookingCode,
   fetchHouseTickets,
   prepareHouseTicket,
   type HouseTicket,
 } from "../markets/api";
+import { POLYMARKET_BET_CODE_LENGTH } from "../ticket-code";
+import {
+  HouseTicketModal,
+  houseTicketStatusLabel,
+  houseTicketSummary,
+  houseTicketTone,
+  type HouseTicketTone,
+} from "./house-ticket-modal";
+import { TicketCodeLookup } from "./ticket-code-lookup";
 
 const BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const MIN_STAKE_E6 = 100_000n;
@@ -51,6 +65,29 @@ function formatE6(value: string | bigint): string {
   const fraction = (atomic % 1_000_000n).toString().padStart(6, "0").replace(/0+$/u, "");
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
+
+const TICKET_ROW_TONE: Record<HouseTicketTone, { icon: string; summary: string; mark: string }> = {
+  active: {
+    icon: "border-[#47758f] bg-[#23465a] text-[#9ddfff]",
+    summary: "text-[#8ebed3]",
+    mark: "•",
+  },
+  lost: {
+    icon: "border-[#8d3e48] bg-[#51262c] text-[#ff9da8]",
+    summary: "text-[#ef7e8b]",
+    mark: "x",
+  },
+  won: {
+    icon: "border-[#3d7b5f] bg-[#24503c] text-[#80dbae]",
+    summary: "text-[#80dbae]",
+    mark: "✓",
+  },
+  void: {
+    icon: "border-[#5b5b5b] bg-[#333] text-[#bbb]",
+    summary: "text-[#999]",
+    mark: "-",
+  },
+};
 
 function combinedOdds(selections: HouseSelection[]) {
   return selections.reduce((total, selection) => {
@@ -97,7 +134,7 @@ function EmptySlip() {
       <div className="mx-auto grid size-12 place-items-center rounded-full border border-[#333] bg-[#242424] text-[#777]">
         +
       </div>
-      <p className="mt-4 text-[13px] font-semibold text-[#ebebeb]">Betslip is empty</p>
+      <p className="mt-4 text-[13px] font-semibold text-[#ebebeb]">Ticket is empty</p>
       <p className="mx-auto mt-1.5 max-w-[230px] text-[10px] leading-4 text-[#777]">
         Select Yes or No on at least three markets to build an accumulator.
       </p>
@@ -105,13 +142,9 @@ function EmptySlip() {
   );
 }
 
-function ticketStatus(ticket: HouseTicket) {
-  if (ticket.status === "payout_pending") return "Won - payout pending";
-  return ticket.status[0].toUpperCase() + ticket.status.slice(1);
-}
-
 function MyHouseBets({ enabled }: { enabled: boolean }) {
   const { authenticated, login } = usePrivy();
+  const [selectedTicket, setSelectedTicket] = useState<HouseTicket | null>(null);
   const query = useQuery({
     queryKey: ["house-prediction-tickets"],
     queryFn: fetchHouseTickets,
@@ -136,82 +169,80 @@ function MyHouseBets({ enabled }: { enabled: boolean }) {
     );
   }
   if (query.isPending) {
-    return <p className="px-5 py-12 text-center text-xs text-[#888]">Loading your bets...</p>;
+    return (
+      <>
+        <p className="px-5 py-12 text-center text-xs text-[#888]">Loading your tickets...</p>
+        <HouseTicketModal ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
+      </>
+    );
   }
   if (query.isError) {
     return (
-      <div className="px-5 py-12 text-center">
-        <p className="text-xs text-[#ef9ca5]">Your bets could not be loaded.</p>
-        <button
-          type="button"
-          onClick={() => void query.refetch()}
-          className="mt-3 cursor-pointer text-xs font-semibold text-[#b9fcff]"
-        >
-          Try again
-        </button>
-      </div>
+      <>
+        <div className="px-5 py-12 text-center">
+          <p className="text-xs text-[#ef9ca5]">Your tickets could not be loaded.</p>
+          <button
+            type="button"
+            onClick={() => void query.refetch()}
+            className="mt-3 cursor-pointer text-xs font-semibold text-[#b9fcff]"
+          >
+            Try again
+          </button>
+        </div>
+        <HouseTicketModal ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
+      </>
     );
   }
   if (!query.data.tickets.length) {
-    return <p className="px-5 py-12 text-center text-xs text-[#888]">No house bets yet.</p>;
+    return (
+      <>
+        <p className="px-5 py-12 text-center text-xs text-[#888]">No tickets yet.</p>
+        <HouseTicketModal ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
+      </>
+    );
   }
 
   return (
-    <div className="space-y-3 p-3">
-      {query.data.tickets.map((ticket) => (
-        <article key={ticket.id} className="rounded-xl border border-[#303030] bg-[#191919] p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] text-[#777]">Ticket {ticket.bookingCode}</p>
-              <p className="mt-0.5 text-xs font-semibold text-white">{ticket.legs.length} picks</p>
-            </div>
-            <span
-              className={`rounded-full px-2 py-1 text-[9px] font-semibold ${
-                ticket.status === "lost"
-                  ? "bg-[#43272b] text-[#ef9ca5]"
-                  : ticket.status === "paid" || ticket.status === "payout_pending"
-                    ? "bg-[#1c3d30] text-[#80dbae]"
-                    : "bg-[#292929] text-[#bbb]"
-              }`}
+    <>
+      <div className="divide-y divide-[#2b2b2b] border-y border-[#2b2b2b]">
+        {query.data.tickets.map((ticket) => {
+          const tone = TICKET_ROW_TONE[houseTicketTone(ticket)];
+          return (
+            <button
+              key={ticket.id}
+              type="button"
+              onClick={() => setSelectedTicket(ticket)}
+              aria-label={`Open ticket ${ticket.bookingCode}`}
+              className="flex min-h-[96px] w-full cursor-pointer items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#1b1b1b]"
             >
-              {ticketStatus(ticket)}
-            </span>
-          </div>
-          <div className="mt-3 space-y-2 border-t border-[#2b2b2b] pt-3">
-            {ticket.legs.map((leg) => (
-              <div
-                key={leg.conditionId}
-                className="flex items-start justify-between gap-3 text-[10px]"
+              <span
+                className={`grid size-8 shrink-0 place-items-center rounded-full border text-xs font-bold ${tone.icon}`}
               >
-                <div className="min-w-0">
-                  <p className="line-clamp-2 text-[#ccc]">{leg.marketLabel}</p>
-                  <p className="mt-0.5 font-semibold text-[#888]">
-                    {leg.outcome === "yes" ? "Yes" : "No"} @ {formatE6(leg.decimalOddsE6)}
-                  </p>
-                </div>
-                <span
-                  className={
-                    leg.status === "won"
-                      ? "text-[#80dbae]"
-                      : leg.status === "lost"
-                        ? "text-[#ef9ca5]"
-                        : "text-[#888]"
-                  }
-                >
-                  {leg.status}
+                {tone.mark}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-bold text-white">
+                  {ticket.legs.length} selection combo
                 </span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex justify-between border-t border-[#2b2b2b] pt-3 text-[10px]">
-            <span className="text-[#888]">Stake {formatE6(ticket.stakeE6)} USDC</span>
-            <span className="font-semibold text-white">
-              Return {formatE6(ticket.potentialPayoutE6)} USDC
-            </span>
-          </div>
-        </article>
-      ))}
-    </div>
+                <span className="mt-0.5 block truncate text-[9px] font-bold tracking-[0.08em] text-[#777] uppercase">
+                  {ticket.bookingCode} · {houseTicketStatusLabel(ticket)}
+                </span>
+                <span className={`mt-2 line-clamp-2 block text-[10px] leading-4 ${tone.summary}`}>
+                  {houseTicketSummary(ticket)}
+                </span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span className="block text-[14px] font-bold text-white tabular-nums">
+                  {formatE6(ticket.stakeE6)}
+                </span>
+                <span className="mt-0.5 block text-[9px] font-semibold text-[#777]">USDC</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <HouseTicketModal ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
+    </>
   );
 }
 
@@ -236,12 +267,14 @@ function AccumulatorSlip({
   const [pending, setPending] = useState<PendingConfirmation | null>(readPending);
   const stakeE6 = parseUsdc(stake);
   const odds = combinedOdds(selections);
+  const lowOddsCount = lowOddsSelectionCount(selections);
   const estimatedWin = stakeE6
     ? Math.min((Number(stakeE6) / 1_000_000) * odds, MAX_PAYOUT_USDC)
     : 0;
   const valid =
     selections.length >= MIN_LEGS &&
     selections.length <= MAX_LEGS &&
+    lowOddsCount <= MAX_LOW_ODDS_SELECTIONS &&
     stakeE6 != null &&
     stakeE6 >= MIN_STAKE_E6;
 
@@ -371,6 +404,10 @@ function AccumulatorSlip({
             Add {MIN_LEGS - selections.length} more{" "}
             {MIN_LEGS - selections.length === 1 ? "market" : "markets"}.
           </p>
+        ) : lowOddsCount > MAX_LOW_ODDS_SELECTIONS ? (
+          <p className="mt-3 text-[10px] text-[#ef9ca5]">
+            Maximum 3 selections with odds between 1.01 and 1.08.
+          </p>
         ) : stakeE6 == null || stakeE6 < MIN_STAKE_E6 ? (
           <p className="mt-3 text-[10px] text-[#ef9ca5]">Minimum stake is 0.10 USDC.</p>
         ) : null}
@@ -404,6 +441,7 @@ function BetPanel({
 }) {
   const [tab, setTab] = useState<"slip" | "bets">("slip");
   const [busy, setBusy] = useState(false);
+  const [lookedUpTicket, setLookedUpTicket] = useState<HouseTicket | null>(null);
   return (
     <section
       className={`flex min-h-0 flex-col overflow-hidden bg-[#111] ${onClose ? "h-[min(86dvh,720px)] rounded-t-xl border border-[#333]" : "h-full"}`}
@@ -416,7 +454,7 @@ function BetPanel({
             onClick={() => setTab("slip")}
             className={`cursor-pointer rounded-lg text-xs ${tab === "slip" ? "bg-[#242424] text-white" : "text-[#999]"}`}
           >
-            Betslip ({selections.length})
+            Ticket ({selections.length})
           </button>
           <button
             type="button"
@@ -424,7 +462,7 @@ function BetPanel({
             onClick={() => setTab("bets")}
             className={`cursor-pointer rounded-lg text-xs ${tab === "bets" ? "bg-[#242424] text-white" : "text-[#999]"}`}
           >
-            My bets
+            My tickets
           </button>
         </div>
         {onClose ? (
@@ -432,13 +470,20 @@ function BetPanel({
             type="button"
             disabled={busy}
             onClick={onClose}
-            aria-label="Close bet slip"
+            aria-label="Close ticket"
             className="ml-2 grid size-9 cursor-pointer place-items-center rounded-full bg-[#242424] text-[#999]"
           >
             x
           </button>
         ) : null}
       </header>
+      {tab === "slip" && selections.length === 0 ? (
+        <TicketCodeLookup
+          codeLength={POLYMARKET_BET_CODE_LENGTH}
+          provider="Polymarket"
+          onLookup={async (code) => setLookedUpTicket(await fetchHouseTicketByBookingCode(code))}
+        />
+      ) : null}
       {tab === "bets" ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <MyHouseBets enabled />
@@ -454,6 +499,7 @@ function BetPanel({
           onBusyChange={setBusy}
         />
       )}
+      <HouseTicketModal ticket={lookedUpTicket} onClose={() => setLookedUpTicket(null)} />
     </section>
   );
 }
@@ -477,7 +523,7 @@ export function CategoryBetSidebar({
       >
         <button
           type="button"
-          aria-label={desktopOpen ? "Collapse bet slip" : "Open bet slip"}
+          aria-label={desktopOpen ? "Collapse ticket" : "Open ticket"}
           aria-expanded={desktopOpen}
           onClick={() => onDesktopOpenChange(!desktopOpen)}
           className="absolute top-1/2 left-0 grid size-10 -translate-x-full -translate-y-1/2 cursor-pointer place-items-center rounded-l-md bg-[#171717] text-[#999]"
@@ -493,16 +539,16 @@ export function CategoryBetSidebar({
       <button
         type="button"
         onClick={() => onMobileOpenChange(true)}
-        aria-label="Open bet slip"
+        aria-label="Open ticket"
         className="fixed right-4 bottom-[max(24px,env(safe-area-inset-bottom))] z-[105] h-12 rounded-xl bg-[#b9fcff] px-4 text-xs font-semibold text-[#171717] xl:hidden"
       >
-        Betslip {selections.length ? `(${selections.length})` : ""}
+        Ticket {selections.length ? `(${selections.length})` : ""}
       </button>
       {mobileOpen ? (
         <div className="fixed inset-0 z-[120] flex items-end bg-black/75 xl:hidden">
           <button
             type="button"
-            aria-label="Close bet slip"
+            aria-label="Close ticket"
             onClick={() => onMobileOpenChange(false)}
             className="absolute inset-0"
           />

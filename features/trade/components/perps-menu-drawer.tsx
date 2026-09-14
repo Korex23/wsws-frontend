@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { Sidebar } from "@/components/layout/sidebar";
 import { buildNav } from "@/components/layout/nav-items";
 import { useAppNavigate } from "@/hooks/use-app-navigate";
-import { loadInterest } from "@/lib/preferences";
+import { useInterest } from "@/hooks/use-interest";
 import { sectionForPathname } from "@/lib/sections";
 
 interface PerpsMenuDrawerProps {
@@ -54,7 +54,8 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
 export function PerpsMenuDrawer({ open, onOpenChange }: PerpsMenuDrawerProps) {
   const tSections = useTranslations("sections");
   const tTopbar = useTranslations("topbar");
-  const nav = useMemo(() => buildNav(loadInterest(), tSections), [tSections]);
+  const interest = useInterest();
+  const nav = useMemo(() => buildNav(interest, tSections), [interest, tSections]);
   const pathname = usePathname();
   // A route fact, the same one the shell derives for every other page, so the
   // rail opens with Perpetuals lit rather than a hardcoded guess.

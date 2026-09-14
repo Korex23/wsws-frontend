@@ -1,6 +1,7 @@
 "use client";
 
 import { createServiceClient } from "@/lib/api/service";
+import { AZURO_BET_CODE_LENGTH, isHexBetCode, normalizeHexBetCodeInput } from "../../ticket-code";
 import type {
   BetCalculation,
   PreparedRedemption,
@@ -116,8 +117,13 @@ export function prepareOrder(input: {
 export const submitOrder = (ticketId: string, signature: string) =>
   api.post<SportsbookOrder>(`/orders/${ticketId}/submit`, { signature });
 export const getOrder = (ticketId: string) => api.authedGet<SportsbookOrder>(`/orders/${ticketId}`);
-export const getOrderByBookingCode = (bookingCode: string) =>
-  api.authedGet<SportsbookOrder>(`/orders/booking/${bookingCode}`);
+export function getOrderByBookingCode(bookingCode: string): Promise<SportsbookOrder> {
+  const normalized = normalizeHexBetCodeInput(bookingCode, AZURO_BET_CODE_LENGTH);
+  if (!isHexBetCode(normalized, AZURO_BET_CODE_LENGTH)) {
+    return Promise.reject(new Error("Enter a valid 8-character hexadecimal ticket code."));
+  }
+  return api.authedGet<SportsbookOrder>(`/orders/booking/${encodeURIComponent(normalized)}`);
+}
 export const getOrderHistory = (params?: {
   status?: SportsbookOrderStatus;
   cursor?: string;

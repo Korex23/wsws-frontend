@@ -51,7 +51,7 @@ describe("gammaTagCategory", () => {
 describe("predictionDetailHref", () => {
   it("points a mapped market at the category event route", () => {
     expect(predictionDetailHref(market())).toBe(
-      "/prediction/markets/481717?category=politics&source=markets"
+      "/prediction/event/481717?source=markets&category=politics"
     );
   });
 
@@ -59,7 +59,7 @@ describe("predictionDetailHref", () => {
     // `tag` is display text picked for length. The route gets the category the
     // full tag list resolves to, so a card labelled "Bitcoin" opens crypto.
     expect(predictionDetailHref(market({ tag: "Bitcoin", tagLabels: ["Crypto", "Bitcoin"] }))).toBe(
-      "/prediction/markets/481717?category=crypto&source=markets"
+      "/prediction/event/481717?source=markets&category=crypto"
     );
   });
 
@@ -242,7 +242,7 @@ const DESK_FEED: ReadonlyArray<{ eventId: string; q: string; tagLabels: string[]
 // than the sportsbook. An href that fails this is a 404 or the wrong screen,
 // and dropping the marker on a sports link is exactly the wrong screen.
 const ROUTE_CONTRACT =
-  /^\/prediction\/markets\/\d+\?category=(sports|politics|crypto|finance|tech|culture|economy)&source=markets$/u;
+  /^(?:\/prediction\/event\/\d+\?source=markets&category=(?:politics|crypto|finance|tech|culture|economy)|\/prediction\/markets\/\d+\?category=sports&source=markets)$/u;
 
 const feedMarket = (fixture: (typeof DESK_FEED)[number]): Prediction => ({
   tag: fixture.tagLabels[0],

@@ -8,6 +8,7 @@ import {
   type SportsbookEventKind,
   type SportsbookGameState,
 } from "@/features/prediction/sportsbook";
+import type { DiscoveryMarketSort } from "@/features/prediction/markets/api";
 
 const CategoryMarketsShell = dynamic(() =>
   import("@/features/prediction/components/politics-markets-shell").then(
@@ -34,9 +35,17 @@ export default async function PredictionMarketsPage({
   const eventKind: SportsbookEventKind =
     requestedKind === "virtual" || requestedKind === "esports" ? requestedKind : "sports";
   const category = parsePredictionCategory(value("category"));
+  const requestedSort = value("sort");
+  const sort: DiscoveryMarketSort =
+    requestedSort === "volume" ||
+    requestedSort === "liquidity" ||
+    requestedSort === "newest" ||
+    requestedSort === "ending_soon"
+      ? requestedSort
+      : "volume_24h";
 
   if (isPredictionMarketCategory(category)) {
-    return <CategoryMarketsShell key={category} category={category} />;
+    return <CategoryMarketsShell key={`${category}:${sort}`} category={category} sort={sort} />;
   }
 
   return (

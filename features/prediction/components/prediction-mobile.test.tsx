@@ -136,7 +136,7 @@ describe("PredictionMobile", () => {
     // No page of its own on this build: the card opens the prediction desk.
     expect(screen.getByRole("link", { name: rates.q })).toHaveAttribute(
       "href",
-      "/prediction/markets/481717?category=politics&source=markets"
+      "/prediction/event/481717?source=markets&category=politics"
     );
 
     const artwork = document.querySelector(`img[src="${rates.image}"]`);
@@ -203,7 +203,7 @@ describe("PredictionMobile", () => {
     // Exact, because the promo card beside it is labelled "… — Predict Now".
     expect(screen.getByRole("link", { name: "Predict Now" })).toHaveAttribute(
       "href",
-      "/prediction/markets/481717?category=politics&source=markets"
+      "/prediction/event/481717?source=markets&category=politics"
     );
   });
 

@@ -263,7 +263,7 @@ function PredictionMarketCard({ market, onHold }: PredictionMarketCardProps) {
           follows the first pill, including its fallback, so the card and the
           pill can never lead to two different places. */}
       <Link
-        href={market ? market.href : "/market?tab=prediction"}
+        href={market ? market.href : "/prediction"}
         aria-label={question}
         className="absolute inset-0 rounded-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[#0b0a0a]"
       />
@@ -357,7 +357,7 @@ function PredictionMarketCard({ market, onHold }: PredictionMarketCardProps) {
         {/* One pill, and it leads to the market on show. The desk itself is
             where the row's heading goes. */}
         <DiscoveryCta
-          href={market ? market.href : "/market?tab=prediction"}
+          href={market ? market.href : "/prediction"}
           label={t("predictNow")}
           tone="light"
           size={15}
@@ -438,7 +438,7 @@ function TitleFightCard() {
             368.83px across it. Centring there lets a longer label grow both
             ways instead of off the card. */}
         <DiscoveryCta
-          href="/market?tab=prediction"
+          href="/prediction"
           label={t("predictNow")}
           tone="dark"
           size={12}
@@ -515,17 +515,13 @@ export function PredictionStartsRow({ markets = [] }: { markets?: readonly Predi
       title={t.rich("predictionTitle", {
         accent: (chunks) => <span className="text-[#ffd62f]">{chunks}</span>,
       })}
-      href="/market?tab=prediction"
+      href="/prediction"
     >
       <Carousel label={t("predictionCarousel")} gapPx={28} trimPx={50}>
         <PredictionMarketCard market={featured} onHold={hold} />
         <TitleFightCard />
         <PredictionMarketCard market={featured} onHold={hold} />
-        <SeeMoreCard
-          headline={t("predictionSeeMore")}
-          href="/market?tab=prediction"
-          className={CARD_BOX}
-        />
+        <SeeMoreCard headline={t("predictionSeeMore")} href="/prediction" className={CARD_BOX} />
       </Carousel>
     </DiscoveryRow>
   );

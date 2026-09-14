@@ -475,6 +475,38 @@ describe("Alchemy sponsorship across the key pool", () => {
     expect(policyOf(1)).toEqual({ key: "k1", policyId: "p1" });
   });
 
+  it("moves to the next pair when fetching the first pair throws", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockResolvedValueOnce(new Response(JSON.stringify(ok(1)), { status: 200 }))
+    );
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { forwardAlchemyBundlerRequest } = await import("./alchemy-bundler");
+
+    const response = await forwardAlchemyBundlerRequest(
+      makeReq({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_sendUserOperation",
+        params: [{}, "0x"],
+      }),
+      "base-mainnet"
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).result.paymaster).toBe("0xpm");
+    expect(policyOf(0)).toEqual({ key: "k0", policyId: "p0" });
+    expect(policyOf(1)).toEqual({ key: "k1", policyId: "p1" });
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringMatching(/pair 0 could not be reached/),
+      expect.stringContaining("fetch failed")
+    );
+    logged.mockRestore();
+  });
+
   it("moves on when the app does not know the policy or refuses the key", async () => {
     const notFound = {
       jsonrpc: "2.0",

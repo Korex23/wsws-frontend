@@ -118,7 +118,11 @@ export async function dextopusGet<T>(
   fallback: string,
   purpose: DextopusPurpose = "deposit"
 ): Promise<T> {
-  const res = await apiFetch(`/api/dextopus/${purposedPath(path, purpose)}`);
+  const res = await apiFetch(
+    `/api/dextopus/${purposedPath(path, purpose)}`,
+    {},
+    { requireAuth: true }
+  );
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new DextopusError(errorMessage(data, fallback), res.status);
   return data as T;
@@ -141,11 +145,15 @@ async function dextopusPost<T>(
   fallback: string,
   purpose: DextopusPurpose = "deposit"
 ): Promise<T> {
-  const res = await apiFetch(`/api/dextopus/${purposedPath(path, purpose)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await apiFetch(
+    `/api/dextopus/${purposedPath(path, purpose)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { requireAuth: true }
+  );
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new DextopusError(errorMessage(data, fallback), res.status);
   return data as T;

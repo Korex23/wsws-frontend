@@ -4,7 +4,7 @@ const TERMINAL_STATUS_DETAIL: Partial<Record<SportsbookOrderStatus, string>> = {
   rejected: "Order rejected before placement",
   failed: "Order submission failed",
   canceled: "Order canceled",
-  lost: "Bet settled without a payout",
+  lost: "Ticket settled without a payout",
   partially_void: "Settlement completed with voided selections",
   cashed_out: "Cashout confirmed",
 };

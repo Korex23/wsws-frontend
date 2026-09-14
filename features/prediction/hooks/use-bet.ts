@@ -214,7 +214,7 @@ export function useBet() {
           setError(orderMessage);
           throw e;
         }
-        setError(friendlyError(e, "Couldn't place your bet. Try again."));
+        setError(friendlyError(e, "Couldn't submit your ticket. Try again."));
         throw e;
       } finally {
         setPhase("idle");

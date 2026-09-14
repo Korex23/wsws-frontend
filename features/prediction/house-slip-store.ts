@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { toast } from "sonner";
 import { isHouseEligibleOdds, type CategoryPrediction } from "./category-market-presenter";
 
 export interface HouseSelection {
@@ -9,6 +10,9 @@ export interface HouseSelection {
 }
 
 const STORAGE_KEY = "prediction-house-accumulator-v1";
+export const MAX_LOW_ODDS_SELECTIONS = 3;
+export const LOW_ODDS_LIMIT_MESSAGE =
+  "You can only add up to 3 selections with odds between 1.01 and 1.08.";
 const EMPTY: HouseSelection[] = [];
 let snapshot: HouseSelection[] = EMPTY;
 let hydrated = false;
@@ -65,6 +69,34 @@ function getServerSnapshot() {
   return EMPTY;
 }
 
+export function houseSelectionOdds(selection: HouseSelection): number {
+  return selection.side === "yes"
+    ? selection.prediction.yesDecimalOdds
+    : selection.prediction.noDecimalOdds;
+}
+
+export function isLowOddsSelection(selection: HouseSelection): boolean {
+  const oddsInCents = Math.round(houseSelectionOdds(selection) * 100);
+  return oddsInCents >= 101 && oddsInCents <= 108;
+}
+
+export function lowOddsSelectionCount(selections: HouseSelection[]): number {
+  return selections.filter(isLowOddsSelection).length;
+}
+
+export function canAddHouseSelection(
+  selections: HouseSelection[],
+  candidate: HouseSelection
+): boolean {
+  const selectionsWithoutCandidateMarket = selections.filter(
+    (selection) => selection.prediction.conditionId !== candidate.prediction.conditionId
+  );
+  return (
+    !isLowOddsSelection(candidate) ||
+    lowOddsSelectionCount(selectionsWithoutCandidateMarket) < MAX_LOW_ODDS_SELECTIONS
+  );
+}
+
 export function useHouseSlip() {
   const selections = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
@@ -86,7 +118,12 @@ export function useHouseSlip() {
         (selection) => selection.prediction.conditionId !== prediction.conditionId
       );
       if (next.length >= 20) return;
-      emit([...next, { prediction, side }]);
+      const candidate = { prediction, side };
+      if (!canAddHouseSelection(selections, candidate)) {
+        toast.error(LOW_ODDS_LIMIT_MESSAGE);
+        return;
+      }
+      emit([...next, candidate]);
     },
     remove(conditionId: string) {
       emit(selections.filter((selection) => selection.prediction.conditionId !== conditionId));

@@ -2,8 +2,11 @@
 
 import { useEffect, useId, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePrices } from "@/hooks/use-prices";
-import type { SportsbookCapabilities } from "../api";
+import { TicketCodeLookup } from "../../components/ticket-code-lookup";
+import { AZURO_BET_CODE_LENGTH } from "../../ticket-code";
+import { getOrderByBookingCode, sportsbookKeys, type SportsbookCapabilities } from "../api";
 import { usePlaceSportsbookOrder } from "../hooks/use-place-order";
 import { useBetCalculation, useSportsbookMarkets } from "../hooks/use-sportsbook";
 import {
@@ -51,6 +54,7 @@ export function BetSlipPanel({
   const [reviewedFingerprint, setReviewedFingerprint] = useState<string | null>(null);
   const inputId = useId();
   const { authenticated, login } = usePrivy();
+  const queryClient = useQueryClient();
   const ethPriceUsd = usePrices(["ETH"]).ETH ?? 0;
   const slip = useSportsbookSlip();
   const placement = usePlaceSportsbookOrder();
@@ -98,22 +102,22 @@ export function BetSlipPanel({
     placement.reset();
   }, [placement, reconciliation]);
   const action = !authenticated
-    ? "Sign in to place a bet"
+    ? "Sign in to submit a ticket"
     : placement.phase === "quoting"
       ? "Getting USDC rate..."
       : placement.phase === "preparing"
         ? "Checking odds..."
         : placement.phase === "funding"
-          ? "Funding bet with USDC..."
+          ? "Funding ticket with USDC..."
           : placement.phase === "signing"
-            ? "Confirm bet in wallet..."
+            ? "Confirm ticket in wallet..."
             : placement.phase === "submitting"
               ? "Creating ticket..."
               : comboNeedsReview
                 ? `Review ${slip.selections.length}-leg combo`
                 : slip.selections.length > 1
                   ? `Confirm ${slip.selections.length}-leg combo`
-                  : "Place bet";
+                  : "Submit ticket";
 
   async function place() {
     if (!authenticated) {
@@ -150,21 +154,21 @@ export function BetSlipPanel({
             onClick={() => setTab("slip")}
             className={`cursor-pointer rounded-lg text-[12px] font-medium ${tab === "slip" ? "bg-[#242424] text-[#ebebeb]" : "text-[#999]"}`}
           >
-            Betslip ({slip.selections.length})
+            Ticket ({slip.selections.length})
           </button>
           <button
             type="button"
             onClick={() => setTab("tickets")}
             className={`cursor-pointer rounded-lg text-[12px] font-medium ${tab === "tickets" ? "bg-[#242424] text-[#ebebeb]" : "text-[#999]"}`}
           >
-            My bets
+            My tickets
           </button>
         </div>
         {onClose ? (
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close bet slip"
+            aria-label="Close ticket"
             className="ml-2 grid size-9 cursor-pointer place-items-center rounded-full bg-[#242424] text-[#999]"
           >
             ×
@@ -172,6 +176,17 @@ export function BetSlipPanel({
         ) : null}
       </header>
 
+      {tab === "slip" && slip.selections.length === 0 ? (
+        <TicketCodeLookup
+          codeLength={AZURO_BET_CODE_LENGTH}
+          provider="Azuro"
+          onLookup={async (code) => {
+            const order = await getOrderByBookingCode(code);
+            queryClient.setQueryData(sportsbookKeys.order(order.ticketId), order);
+            onTicket(order.ticketId);
+          }}
+        />
+      ) : null}
       {tab === "tickets" ? (
         <TicketsPanel onOpen={onTicket} />
       ) : slip.selections.length === 0 ? (
@@ -179,7 +194,7 @@ export function BetSlipPanel({
           <div className="mx-auto grid size-12 place-items-center rounded-full border border-[#333] bg-[#242424] text-[#7e7e7e]">
             ＋
           </div>
-          <p className="mt-4 text-[13px] font-semibold text-[#ebebeb]">Betslip is empty</p>
+          <p className="mt-4 text-[13px] font-semibold text-[#ebebeb]">Ticket is empty</p>
           <p className="mx-auto mt-1.5 max-w-[230px] text-[10px] leading-4 text-[#7e7e7e]">
             Pick any odds on the board to add a selection.
           </p>
@@ -189,7 +204,9 @@ export function BetSlipPanel({
           <div className="max-h-[390px] min-h-0 [scrollbar-width:thin] overflow-y-auto">
             <div className="flex items-center justify-between px-4 pt-3 text-[10px] text-[#999]">
               <span className="rounded-md bg-[#3b3b3b] px-2 py-1">
-                {slip.selections.length > 1 ? `${slip.selections.length}-leg combo` : "Single bet"}
+                {slip.selections.length > 1
+                  ? `${slip.selections.length}-leg combo`
+                  : "Single selection"}
               </span>
               <button
                 type="button"
@@ -294,12 +311,12 @@ export function BetSlipPanel({
               ) : null}
               {unavailableSelections.size > 0 ? (
                 <p className="text-[10px] font-medium text-[#f42e52]">
-                  Remove unavailable selections before placing this bet.
+                  Remove unavailable selections before submitting this ticket.
                 </p>
               ) : null}
               {tokenPriceUsd === null ? (
                 <p className="text-[10px] font-medium text-[#999]">
-                  The final USDC conversion rate will be quoted when you place the bet.
+                  The final USDC conversion rate will be quoted when you submit the ticket.
                 </p>
               ) : null}
               {placement.error ? (
@@ -327,7 +344,7 @@ export function BetSlipPanel({
                 className="h-12 w-full cursor-pointer rounded-2xl bg-[#b9fcff] text-[13px] font-semibold text-[#171717] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {capabilities?.features.orderPlacement === false
-                  ? "Betting is temporarily unavailable"
+                  ? "Tickets are temporarily unavailable"
                   : action}{" "}
                 →
               </button>

@@ -175,7 +175,7 @@ describe("prediction starts row", () => {
 
     const sample = enMessages.discovery.predictionOneTitle;
     for (const link of screen.getAllByRole("link", { name: sample })) {
-      expect(link).toHaveAttribute("href", "/market?tab=prediction");
+      expect(link).toHaveAttribute("href", "/prediction");
     }
   });
 

@@ -68,11 +68,6 @@ interface MobileMarketViewProps {
   onOpenDetail?: (detail: DetailPayload) => void;
   onOpenBuy?: (buy: BuyPayload) => void;
   /**
-   * The Prediction tab's content, supplied by the route. Prediction is its own
-   * feature, and features never import each other, so the route composes it.
-   */
-  predictionSlot: ReactNode;
-  /**
    * The Real assets tab's content, supplied by the route for the same reason:
    * real assets is its own feature. It carries its own search field, so this
    * view hands it no query.
@@ -92,9 +87,9 @@ interface MobileMarketViewProps {
 // opens the spot ticket for it (Figma 1:7825) in the list's place, the way the
 // Memecoins tab opens its trade sheet. The list is kept, not replaced.
 
-// All five categories render inline on this page: nothing here navigates, so
-// the strip is a tab control rather than a set of links. The order is the
-// rail's: Spot, Leverage, Memecoins, Real assets, Prediction.
+// Trading categories render inline on this page. Prediction keeps its seat in
+// the strip but opens its own full product route, where its navigation, market
+// detail and bet slip remain identical on desktop and mobile.
 //
 // Every tab carries its own search field, at the top of its own list. Spot and
 // Memecoins are the two this view filters itself; Real assets and Prediction
@@ -276,7 +271,7 @@ function MarketTabs({
   );
 }
 
-export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: MobileMarketViewProps) {
+export function MobileMarketView({ rwaSlot, onAddFunds }: MobileMarketViewProps) {
   const router = useRouter();
   const t = useTranslations("markets");
   const tCommon = useTranslations("common");
@@ -305,8 +300,12 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
   const isMobile = useIsMobile();
   const desktopRoute = DESKTOP_ROUTE[activeTab];
   useEffect(() => {
+    if (activeTab === "prediction") {
+      router.replace("/prediction");
+      return;
+    }
     if (!isMobile && desktopRoute) router.replace(desktopRoute);
-  }, [isMobile, desktopRoute, router]);
+  }, [isMobile, activeTab, desktopRoute, router]);
 
   // A market's own ticket opens in the list's place. The market is held by
   // symbol rather than by object, so a price tick that rebuilds the catalogue
@@ -407,11 +406,18 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
 
   // A category change puts both tickets away. The queries stay: each belongs to
   // one list, and the reader gets that list back as they left it.
-  const selectTab = useCallback((id: TabId) => {
-    setActiveTab(id);
-    setTicketSymbol(null);
-    setMemeTicketToken(null);
-  }, []);
+  const selectTab = useCallback(
+    (id: TabId) => {
+      if (id === "prediction") {
+        router.push("/prediction");
+        return;
+      }
+      setActiveTab(id);
+      setTicketSymbol(null);
+      setMemeTicketToken(null);
+    },
+    [router]
+  );
 
   // The ticket's own trade state: which side, how much, and the trade
   // machine's phase/error. Mirrors the wiring meme-board.tsx does for the
@@ -547,7 +553,7 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
 
   // While a tab is handing off to its desktop screen, render nothing rather than
   // flash this phone column at desktop width until the target route paints.
-  if (!isMobile && desktopRoute) return null;
+  if (activeTab === "prediction" || (!isMobile && desktopRoute)) return null;
 
   // A phone design: full-bleed on a phone, but capped to a phone-width column on
   // desktop (centered, framed) instead of stretching edge to edge.
@@ -805,22 +811,6 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
                 ) : null}
               </div>
             </>
-          ) : activeTab === "prediction" ? (
-            // The prediction slot is the phone market list
-            // (features/prediction/components/prediction-market-list.tsx). It is
-            // mounted only while this tab is selected, so its feed is not
-            // fetched for someone who never opens it.
-            //
-            // Geometry from the comp (Figma 1:16194): the card stack sits 24px
-            // under the strip and in 16px gutters, four narrower than this
-            // page's own 20px, which is the same bleed the spot and memecoin
-            // lists take.
-            <div
-              data-testid="prediction-panel-scroll"
-              className="-mx-1 mt-2 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto [&::-webkit-scrollbar]:hidden"
-            >
-              {predictionSlot}
-            </div>
           ) : (
             <>
               {ticketMarket ? (

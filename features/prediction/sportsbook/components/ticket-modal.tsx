@@ -189,7 +189,7 @@ export function TicketModal({
                 onClick={() => onRebet(order)}
                 className="mt-4 h-12 w-full cursor-pointer rounded-xl bg-[#b9fcff] text-[14px] font-semibold text-[#171717] transition-colors hover:bg-white"
               >
-                Rebet selections
+                Reuse selections
               </button>
             ) : null}
             {redeemable ? (
