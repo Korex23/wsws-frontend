@@ -41,7 +41,9 @@ vi.mock("@/features/trade/hooks/use-meme-tokens", () => ({
 }));
 
 const trade = vi.hoisted(() => vi.fn());
-vi.mock("@/features/trade/hooks/use-meme-trade", () => ({
+vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
+  // The surfaces also read pure helpers (memeOutcomeToast) off this module.
+  ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
   useMemeTrade: () => ({
     walletFor: () => "0xwallet",
     phase: "idle",

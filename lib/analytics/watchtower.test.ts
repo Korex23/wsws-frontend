@@ -464,3 +464,65 @@ describe("reportUpstreamFailure", () => {
     vi.stubGlobal("navigator", original);
   });
 });
+
+// The trade contract says to preserve the service's requestId in client logs
+// and support reports. Watchtower is the client log, so a failure that carried
+// one is tagged with it, and the recording mismatch (delivered on-chain, but
+// the service recorded FAILED or refused the registration) goes there too,
+// with everything the trade team needs to find the swap.
+describe("trade request ids reach Watchtower", () => {
+  const DSN = "https://wt_abc123@watchtower-logger.vercel.app/0";
+
+  async function load() {
+    vi.resetModules();
+    sentryMock.captureMessage.mockClear();
+    sentryMock.scope.setFingerprint.mockClear();
+    sentryMock.scope.setLevel.mockClear();
+    sentryMock.scope.setTag.mockClear();
+    vi.stubEnv("NEXT_PUBLIC_WATCHTOWER_DSN", DSN);
+    vi.stubEnv("NEXT_PUBLIC_VERCEL_ENV", "production");
+    const mod = await import("@/lib/analytics/watchtower");
+    mod.resetUpstreamReportThrottle();
+    return { ...mod, captureMessage: sentryMock.captureMessage, scope: sentryMock.scope };
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("tags an upstream failure with the requestId the relay echoed", async () => {
+    const { reportUpstreamFailure, scope } = await load();
+    reportUpstreamFailure("/api/trade/swaps/quote", 502, undefined, "req-77");
+    expect(scope.setTag).toHaveBeenCalledWith("request_id", "req-77");
+  });
+
+  it("reports a recording mismatch with the swap, request and hash", async () => {
+    const { reportTradeRecordingMismatch, captureMessage, scope } = await load();
+    reportTradeRecordingMismatch({
+      swapId: "swap-1",
+      requestId: "req-1",
+      hash: "0xswap",
+      recorded: "FAILED",
+    });
+    expect(captureMessage).toHaveBeenCalledOnce();
+    expect(captureMessage.mock.calls[0][0]).toContain("swap-1");
+    expect(scope.setTag).toHaveBeenCalledWith("swap_id", "swap-1");
+    expect(scope.setTag).toHaveBeenCalledWith("request_id", "req-1");
+    expect(scope.setTag).toHaveBeenCalledWith("tx_hash", "0xswap");
+    expect(scope.setTag).toHaveBeenCalledWith("recorded", "FAILED");
+    expect(scope.setFingerprint).toHaveBeenCalledWith(["trade_recording_mismatch", "FAILED"]);
+  });
+
+  it("still reports a mismatch when the service gave no requestId, tagged as such", async () => {
+    const { reportTradeRecordingMismatch, captureMessage, scope } = await load();
+    reportTradeRecordingMismatch({
+      swapId: "swap-2",
+      requestId: null,
+      hash: "0xswap",
+      recorded: "SWAP_ALREADY_SUBMITTED",
+    });
+    expect(captureMessage).toHaveBeenCalledOnce();
+    expect(scope.setTag).toHaveBeenCalledWith("request_id", "none");
+  });
+});

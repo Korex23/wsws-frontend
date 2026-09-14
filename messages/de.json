@@ -155,7 +155,15 @@
     "volume24h": "Volumen (24h)",
     "liquidity": "Liquidität",
     "fdv": "FDV",
-    "topUp": "Top Up"
+    "topUp": "Top Up",
+    "stillRecording": "Wird noch erfasst",
+    "deliveredTitle": "On-chain geliefert",
+    "deliveredBody": "{brand} erfasst diesen Handel noch (Ref. {ref}). Du kannst das hier schließen.",
+    "deliveredReceivedBody": "{amount} {symbol} sind in deiner Wallet angekommen. {brand} erfasst diesen Handel noch (Ref. {ref}). Du kannst das hier schließen.",
+    "pendingTitle": "Gesendet, wird noch erfasst",
+    "pendingBody": "Die Transaktion ist raus und {brand} erfasst diesen Handel noch (Ref. {ref}). Du kannst das hier schließen; er bleibt in deinen Transaktionen.",
+    "toastDelivered": "{symbol} on-chain geliefert. Wird noch erfasst (Ref. {ref}).",
+    "toastPending": "{symbol}-Handel gesendet. Wird noch erfasst (Ref. {ref})."
   },
   "spot": {
     "balance": "Guthaben {amount} {symbol}",
@@ -806,7 +814,12 @@
     "sellToken": "{name} verkaufen",
     "transactionFee": "Transaktionsgebühr",
     "shareToSquare": "Share to Market Square",
-    "boughtShareTitle": "Bought {name}"
+    "boughtShareTitle": "Bought {name}",
+    "stageDelivered": "On-chain geliefert",
+    "stagePending": "Gesendet, wird noch erfasst",
+    "deliveredBody": "{brand} erfasst diesen Handel noch (Ref. {ref}). Sie können dies schließen.",
+    "deliveredToast": "{name} on-chain geliefert. Wird noch erfasst (Ref. {ref}).",
+    "pendingToast": "{name}-Auftrag gesendet. Wird noch erfasst (Ref. {ref})."
   },
   "rwa": {
     "eyebrow": "Reale Vermögenswerte",
@@ -3062,5 +3075,30 @@
     "depositHelpReply": "Bei Einzahlungsproblemen: Bitte stellen Sie sicher, dass Ihre Transaktion auf der Blockchain bestätigt wurde. Sie können Ihren **Transaktions-Hash (TXID)** oder das Netzwerk hier teilen.",
     "tradeHelpReply": "Bei Handelsfragen: Bitte teilen Sie das **Tokensymbol**, das **Netzwerk** und den ungefähren Zeitpunkt der Order mit.",
     "bugReportReply": "Vielen Dank für den Hinweis und die Details! Unser Frontend-Team untersucht das Problem bereits. Zusätzliche Logs können Sie gerne als `Codeblock` einfügen."
+  },
+  "tradeErrors": {
+    "tokenBlocked": "Dieser Token wurde von unserem Team gesperrt und kann nicht gehandelt werden.",
+    "tokenRiskBlocked": "Dieser Token ist aus Sicherheitsgründen gesperrt und kann nicht gehandelt werden.",
+    "tokenBuyDisabled": "Der Kauf dieses Tokens ist derzeit pausiert.",
+    "tokenSellDisabled": "Der Verkauf dieses Tokens ist derzeit pausiert.",
+    "insufficientBalance": "Dafür hast du nicht genug von diesem Asset. Versuche einen kleineren Betrag.",
+    "noSwapRoute": "Für diesen Token gibt es gerade keine Handelsroute. Versuche es später oder mit einem anderen Betrag.",
+    "highPriceImpact": "Dieser Handel würde den Preis zu stark bewegen. Versuche einen kleineren Betrag.",
+    "invalidSlippage": "Diese Preistoleranz ist nicht zulässig. Versuche es erneut.",
+    "quoteExpired": "Dein Preis ist abgelaufen. Hole ein neues Angebot und versuche es erneut.",
+    "swapAlreadySubmitted": "Dieser Handel wurde bereits gesendet. Prüfe deine Transaktionen, bevor du es erneut versuchst.",
+    "walletOwnershipMismatch": "Diese Wallet ist noch nicht mit deinem Konto verknüpft. Versuche es erneut, um sie zu verknüpfen.",
+    "quoteProviderError": "Unser Preisanbieter hat nicht geantwortet. Bitte versuche es gleich noch einmal.",
+    "providerError": "Der Netzwerkdatenanbieter ist gerade nicht erreichbar. Bitte versuche es gleich noch einmal.",
+    "tokenNotFound": "Wir konnten diesen Token nicht finden.",
+    "unauthorized": "Deine Sitzung ist abgelaufen. Melde dich erneut an.",
+    "serviceUnavailable": "Der Handel ist gerade nicht erreichbar. Bitte versuche es gleich noch einmal.",
+    "badResponse": "Der Handel hat eine Antwort geschickt, die wir nicht lesen konnten. Bitte versuche es gleich noch einmal.",
+    "notConfigured": "Der Handel ist in dieser Umgebung nicht verfügbar.",
+    "failed": "Der Handel wurde nicht abgeschlossen.",
+    "reverted": "Das Netzwerk hat diesen Handel zurückgesetzt. Es wurde nichts berechnet.",
+    "expired": "Der Handel ist abgelaufen, bevor er gesendet wurde. Versuche es erneut.",
+    "cancelled": "Dieser Handel wurde abgebrochen.",
+    "unknown": "Der Handel konnte nicht abgeschlossen werden. Bitte versuche es erneut."
   }
 }

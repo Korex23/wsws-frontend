@@ -47,7 +47,7 @@ export interface MemeSellPanelProps {
   onSell: (input: MemeTradeInput) => Promise<void>;
   /** The trade hook's phase and error, when the caller wires them through. */
   phase?: TradePhase;
-  error?: string | null;
+  error?: unknown;
 }
 
 // A base-unit string is an integer. Anything else is an upstream defect, and
@@ -87,6 +87,7 @@ export function MemeSellPanel({
   error = null,
 }: MemeSellPanelProps) {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
 
@@ -259,12 +260,12 @@ export function MemeSellPanel({
 
       {quoteFailed ? (
         <p className="text-down text-[12.5px] font-normal">
-          {friendlyError(previewError, t("previewFailed"))}
+          {friendlyError(previewError, t("previewFailed"), tErr)}
         </p>
       ) : null}
       {shownError ? (
         <p role="alert" className="text-down text-[12.5px] font-normal">
-          {friendlyError(shownError, t("orderFailed"))}
+          {friendlyError(shownError, t("orderFailed"), tErr)}
         </p>
       ) : null}
 

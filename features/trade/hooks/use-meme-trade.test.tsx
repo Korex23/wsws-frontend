@@ -46,7 +46,14 @@ vi.mock("@/hooks/use-sponsored-solana", () => ({ useSponsoredSolanaSend: () => v
 vi.mock("@/hooks/use-base-block", () => ({
   readBaseTokenBalance: chain.readBaseTokenBalance,
 }));
-vi.mock("@/lib/analytics/mixpanel", () => ({ track: vi.fn() }));
+const analytics = vi.hoisted(() => ({
+  track: vi.fn(),
+  reportTradeRecordingMismatch: vi.fn(),
+}));
+vi.mock("@/lib/analytics/mixpanel", () => ({ track: analytics.track }));
+vi.mock("@/lib/analytics/watchtower", () => ({
+  reportTradeRecordingMismatch: analytics.reportTradeRecordingMismatch,
+}));
 vi.mock("@/hooks/use-portfolio", () => ({
   usePortfolio: () => ({ applyReceipt: chain.applyReceipt }),
 }));
@@ -55,8 +62,9 @@ vi.mock("@/lib/meme/api", async (importOriginal) => {
   return { ...actual, ...api };
 });
 
-import { useMemeTrade } from "@/features/trade/hooks/use-meme-trade";
+import { useMemeTrade, tradeRef, type TradeResult } from "@/features/trade/hooks/use-meme-trade";
 import { TradeApiError } from "@/lib/meme/api";
+import { SubmittedEvmOperationError } from "@/lib/trade/sponsor";
 
 const WALLET = "0xabc0000000000000000000000000000000000001";
 const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
@@ -82,10 +90,12 @@ const quote = {
   calls: [{ type: "SWAP", to: "0xdef1", data: "0x00", value: "0" }],
 };
 
-// A sale that verifiably executed on-chain (the wallet received USDC) must
-// read as done, whatever the trade service's own verification records: its
-// check compares a sponsored user operation's bundle transaction with the
-// prepared call and fails, which is its bug, not the user's trade.
+// A sale that verifiably executed on-chain (the wallet received USDC) while
+// the trade service records FAILED. Two rules meet here: the maintainers'
+// "never tell someone their money did not move when it did", and the
+// contract's "never say successful before CONFIRMED". So the phase is
+// `delivered`, not `confirmed`, and not `failed`: the receipt is shown, the
+// service's word is withheld, and the mismatch is reported for the trade team.
 describe("useMemeTrade on Base when the service records a delivered trade as failed", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -107,9 +117,9 @@ describe("useMemeTrade on Base when the service records a delivered trade as fai
     vi.clearAllMocks();
   });
 
-  it("settles on the on-chain proof instead of throwing", async () => {
+  it("ends in `delivered`, never `confirmed`, on the on-chain proof", async () => {
     const { result } = renderHook(() => useMemeTrade());
-    let outcome: Promise<void>;
+    let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
         side: "SELL",
@@ -119,10 +129,15 @@ describe("useMemeTrade on Base when the service records a delivered trade as fai
       });
       await vi.runAllTimersAsync();
     });
-    await expect(outcome!).resolves.toBeUndefined();
-    expect(result.current.phase).toBe("confirmed");
+    await expect(outcome!).resolves.toEqual({
+      outcome: "delivered",
+      swapId: "swap-1",
+      requestId: null,
+    });
+    expect(result.current.phase).toBe("delivered");
     expect(result.current.received).toEqual({ amount: "1.96", symbol: "USDC" });
     expect(result.current.error).toBeNull();
+    expect(result.current.swapId).toBe("swap-1");
     // The proof is the receipt the send already holds; no balance is read.
     expect(chain.readBaseTokenBalance).not.toHaveBeenCalled();
     // And the same receipt moves the cached portfolio before any re-read.
@@ -131,6 +146,47 @@ describe("useMemeTrade on Base when the service records a delivered trade as fai
       WALLET,
       delivered(USDC, 1_960_000n).logs
     );
+  });
+
+  it("reports the mismatch to Watchtower and analytics with the swap and the hash", async () => {
+    const { result } = renderHook(() => useMemeTrade());
+    await act(async () => {
+      void result.current.trade({
+        side: "SELL",
+        tokenAddress: "0xc0ffee",
+        amount: "1",
+        chainId: 8453,
+      });
+      await vi.runAllTimersAsync();
+    });
+    expect(analytics.reportTradeRecordingMismatch).toHaveBeenCalledWith({
+      swapId: "swap-1",
+      requestId: null,
+      hash: "0xswap",
+      recorded: "FAILED",
+    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      "trade_recording_mismatch",
+      expect.objectContaining({ swap_id: "swap-1", recorded: "FAILED", hash: "0xswap" })
+    );
+  });
+
+  it("is `confirmed` only when the service says CONFIRMED", async () => {
+    api.fetchSwapStatus.mockResolvedValue({ swapId: "swap-1", status: "CONFIRMED", updatedAt: "" });
+    const { result } = renderHook(() => useMemeTrade());
+    let outcome: Promise<TradeResult>;
+    await act(async () => {
+      outcome = result.current.trade({
+        side: "SELL",
+        tokenAddress: "0xc0ffee",
+        amount: "1",
+        chainId: 8453,
+      });
+      await vi.runAllTimersAsync();
+    });
+    await expect(outcome!).resolves.toMatchObject({ outcome: "confirmed", swapId: "swap-1" });
+    expect(result.current.phase).toBe("confirmed");
+    expect(analytics.reportTradeRecordingMismatch).not.toHaveBeenCalled();
   });
 });
 
@@ -160,7 +216,12 @@ describe("useMemeTrade on Base when the service refuses the second registration"
     api.registerSubmission
       .mockResolvedValueOnce({ swapId: "swap-1", status: "SUBMITTED", callIndex: 0 })
       .mockRejectedValueOnce(
-        new TradeApiError("SWAP_ALREADY_SUBMITTED", "Swap cannot accept another submission.", 409)
+        new TradeApiError(
+          "SWAP_ALREADY_SUBMITTED",
+          "Swap cannot accept another submission.",
+          409,
+          "req-409"
+        )
       );
     chain.evmSend
       .mockResolvedValueOnce({ hash: "0xapprove", logs: [] })
@@ -172,9 +233,9 @@ describe("useMemeTrade on Base when the service refuses the second registration"
     vi.clearAllMocks();
   });
 
-  it("finishes the trade on the on-chain proof and points at the swap hash", async () => {
+  it("ends in `delivered` on the on-chain proof, keeping the 409's requestId for the screen", async () => {
     const { result } = renderHook(() => useMemeTrade());
-    let outcome: Promise<void>;
+    let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
         side: "BUY",
@@ -184,12 +245,25 @@ describe("useMemeTrade on Base when the service refuses the second registration"
       });
       await vi.runAllTimersAsync();
     });
-    await expect(outcome!).resolves.toBeUndefined();
-    expect(result.current.phase).toBe("confirmed");
+    await expect(outcome!).resolves.toEqual({
+      outcome: "delivered",
+      swapId: "swap-1",
+      requestId: "req-409",
+    });
+    expect(result.current.phase).toBe("delivered");
     expect(result.current.error).toBeNull();
     expect(result.current.settled).toEqual({ txHash: "0xswap", chainId: 8453 });
+    expect(result.current.requestId).toBe("req-409");
     // Both calls were sent; the refused registration did not stop the swap.
     expect(chain.evmSend).toHaveBeenCalledTimes(2);
+    // Polling would only repeat the verdict the 409 already gave.
+    expect(api.fetchSwapStatus).not.toHaveBeenCalled();
+    expect(analytics.reportTradeRecordingMismatch).toHaveBeenCalledWith({
+      swapId: "swap-1",
+      requestId: "req-409",
+      hash: "0xswap",
+      recorded: "SWAP_ALREADY_SUBMITTED",
+    });
   });
 
   it("still fails when nothing was delivered", async () => {
@@ -207,6 +281,10 @@ describe("useMemeTrade on Base when the service refuses the second registration"
     });
     await expect(outcome!).resolves.toBeInstanceOf(TradeApiError);
     expect(result.current.phase).toBe("failed");
+    // The error itself is kept, code and requestId included, so the screen
+    // can choose its own copy and show the reference; not a flattened string.
+    expect(result.current.error).toBeInstanceOf(TradeApiError);
+    expect((result.current.error as TradeApiError).requestId).toBe("req-409");
   });
 });
 
@@ -237,7 +315,7 @@ describe("useMemeTrade status polling", () => {
 
   it("asks at 2, 5, 10 and 18 seconds rather than every 4", async () => {
     const { result } = renderHook(() => useMemeTrade());
-    let outcome: Promise<void>;
+    let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
         side: "SELL",
@@ -264,7 +342,211 @@ describe("useMemeTrade status polling", () => {
     await act(() => vi.advanceTimersByTimeAsync(8_000));
     expect(api.fetchSwapStatus).toHaveBeenCalledTimes(5);
 
-    await expect(outcome!).resolves.toBeUndefined();
+    await expect(outcome!).resolves.toMatchObject({ outcome: "confirmed", swapId: "swap-1" });
     expect(result.current.phase).toBe("confirmed");
+  });
+
+  // The contract says to poll until a terminal state, and the service can
+  // sit on CONFIRMING for as long as its verifier takes. A poll with no end
+  // holds the sheet shut forever; past the ceiling the trade is `pending`:
+  // the sheet may close, the swap stays in the transactions list, and the
+  // service's status is still the only thing that will call it confirmed.
+  it("gives up as `pending` after ten minutes without a terminal state", async () => {
+    api.fetchSwapStatus.mockReset();
+    api.fetchSwapStatus.mockResolvedValue({
+      swapId: "swap-1",
+      status: "CONFIRMING",
+      updatedAt: "",
+    });
+    const { result } = renderHook(() => useMemeTrade());
+    let outcome: Promise<TradeResult>;
+    await act(async () => {
+      outcome = result.current.trade({
+        side: "SELL",
+        tokenAddress: "0xc0ffee",
+        amount: "1",
+        chainId: 8453,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // Nine minutes in: still asking, still honest about it.
+    await act(() => vi.advanceTimersByTimeAsync(9 * 60_000));
+    expect(result.current.phase).toBe("confirming");
+    // The poll that crosses the ten-minute mark (the cadence lands at 602 s)
+    // is the last one.
+    await act(() => vi.advanceTimersByTimeAsync(70_000));
+    await expect(outcome!).resolves.toEqual({
+      outcome: "pending",
+      swapId: "swap-1",
+      requestId: null,
+    });
+    expect(result.current.phase).toBe("pending");
+    expect(result.current.error).toBeNull();
+    expect(result.current.swapId).toBe("swap-1");
+    const polls = api.fetchSwapStatus.mock.calls.length;
+    // And it really stopped: no poll lands after the ceiling.
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(api.fetchSwapStatus).toHaveBeenCalledTimes(polls);
+  });
+});
+
+// The bundler accepted the user operation but never produced a receipt
+// (lib/trade/sponsor throws SubmittedEvmOperationError with the operation's
+// hash). The contract accepts `{ userOperationHash }` for exactly this case,
+// so the call is registered with it and the status poll decides the outcome,
+// instead of the trade reading "failed" with nothing registered.
+describe("useMemeTrade on Base when only a user-operation hash comes back", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "wsws.meme-linked.v1",
+      JSON.stringify([`did:privy:u1:${WALLET.toLowerCase()}`])
+    );
+    api.quoteSwap.mockResolvedValue(quote);
+    api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
+    chain.evmSend.mockRejectedValue(new SubmittedEvmOperationError("0xuop"));
+    api.fetchSwapStatus
+      .mockResolvedValueOnce({ swapId: "swap-1", status: "CONFIRMING", updatedAt: "" })
+      .mockResolvedValue({ swapId: "swap-1", status: "CONFIRMED", updatedAt: "" });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("registers the user-operation hash and continues to the poll", async () => {
+    const { result } = renderHook(() => useMemeTrade());
+    let outcome: Promise<TradeResult>;
+    await act(async () => {
+      outcome = result.current.trade({
+        side: "BUY",
+        tokenAddress: "0xc0ffee",
+        amount: "1",
+        chainId: 8453,
+      });
+      await vi.runAllTimersAsync();
+    });
+    await expect(outcome!).resolves.toMatchObject({ outcome: "confirmed", swapId: "swap-1" });
+    expect(api.registerSubmission).toHaveBeenCalledTimes(1);
+    const [swapId, callIndex, wallet, submission] = api.registerSubmission.mock.calls[0];
+    expect(swapId).toBe("swap-1");
+    expect(callIndex).toBe(0);
+    expect(wallet).toBe(WALLET);
+    expect(submission).toEqual({ userOperationHash: "0xuop" });
+    expect(submission).not.toHaveProperty("transactionHash");
+    expect(api.fetchSwapStatus).toHaveBeenCalled();
+    expect(result.current.phase).toBe("confirmed");
+    // A user-operation hash is not a transaction hash; nothing to share yet.
+    expect(result.current.settled).toBeNull();
+  });
+});
+
+// Quote failures and the Idempotency-Key. The contract: a new UUID per user
+// action; reuse the same key ONLY when retrying the exact same request, which
+// is what it asks for on QUOTE_PROVIDER_ERROR ("retry carefully with the same
+// idempotency key").
+describe("tradeRef", () => {
+  it("joins the swap and request ids, and never renders an empty reference", () => {
+    expect(tradeRef("swap-1", "req-1")).toBe("swap-1 · req-1");
+    expect(tradeRef("swap-1", null)).toBe("swap-1");
+    expect(tradeRef(null, null)).toBe("—");
+  });
+});
+
+describe("useMemeTrade quote retries", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "wsws.meme-linked.v1",
+      JSON.stringify([`did:privy:u1:${WALLET.toLowerCase()}`])
+    );
+    api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
+    chain.evmSend.mockResolvedValue({ hash: "0xhash", logs: [] });
+    api.fetchSwapStatus.mockResolvedValue({ swapId: "swap-1", status: "CONFIRMED", updatedAt: "" });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  const keyOf = (call: unknown[]) => call[1] as string;
+
+  it("retries QUOTE_PROVIDER_ERROR once, 1.5 s later, with the same key", async () => {
+    api.quoteSwap
+      .mockRejectedValueOnce(new TradeApiError("QUOTE_PROVIDER_ERROR", "0x down", 502, "req-q1"))
+      .mockResolvedValueOnce(quote);
+    const { result } = renderHook(() => useMemeTrade());
+    let outcome: Promise<TradeResult>;
+    await act(async () => {
+      outcome = result.current.trade({
+        side: "SELL",
+        tokenAddress: "0xc0ffee",
+        amount: "1",
+        chainId: 8453,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(api.quoteSwap).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1_499));
+    expect(api.quoteSwap).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(api.quoteSwap).toHaveBeenCalledTimes(2);
+    expect(keyOf(api.quoteSwap.mock.calls[0])).toBe(keyOf(api.quoteSwap.mock.calls[1]));
+    await act(() => vi.runAllTimersAsync());
+    await expect(outcome!).resolves.toMatchObject({ outcome: "confirmed", swapId: "swap-1" });
+  });
+
+  it("gives up after the second provider failure", async () => {
+    api.quoteSwap.mockRejectedValue(
+      new TradeApiError("QUOTE_PROVIDER_ERROR", "0x down", 502, "req-q2")
+    );
+    const { result } = renderHook(() => useMemeTrade());
+    let outcome: Promise<unknown>;
+    await act(async () => {
+      outcome = result.current
+        .trade({ side: "SELL", tokenAddress: "0xc0ffee", amount: "1", chainId: 8453 })
+        .catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+    });
+    await expect(outcome!).resolves.toBeInstanceOf(TradeApiError);
+    expect(api.quoteSwap).toHaveBeenCalledTimes(2);
+    expect(result.current.phase).toBe("failed");
+  });
+
+  it("does not retry any other quote failure", async () => {
+    api.quoteSwap.mockRejectedValue(new TradeApiError("NO_SWAP_ROUTE", "no route", 422, "req-q3"));
+    const { result } = renderHook(() => useMemeTrade());
+    let outcome: Promise<unknown>;
+    await act(async () => {
+      outcome = result.current
+        .trade({ side: "SELL", tokenAddress: "0xc0ffee", amount: "1", chainId: 8453 })
+        .catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+    });
+    await expect(outcome!).resolves.toBeInstanceOf(TradeApiError);
+    expect(api.quoteSwap).toHaveBeenCalledTimes(1);
+  });
+
+  it("quotes again with a FRESH key after relinking on WALLET_OWNERSHIP_MISMATCH", async () => {
+    api.createWalletChallenge.mockResolvedValue({ challengeId: "c1", message: "m", expiresAt: "" });
+    api.verifyWallet.mockResolvedValue({});
+    api.quoteSwap
+      .mockRejectedValueOnce(new TradeApiError("WALLET_OWNERSHIP_MISMATCH", "not linked", 403))
+      .mockResolvedValueOnce(quote);
+    const { result } = renderHook(() => useMemeTrade());
+    let outcome: Promise<TradeResult>;
+    await act(async () => {
+      outcome = result.current.trade({
+        side: "SELL",
+        tokenAddress: "0xc0ffee",
+        amount: "1",
+        chainId: 8453,
+      });
+      await vi.runAllTimersAsync();
+    });
+    await expect(outcome!).resolves.toMatchObject({ outcome: "confirmed", swapId: "swap-1" });
+    expect(api.quoteSwap).toHaveBeenCalledTimes(2);
+    // A relink is a new user action as far as the service is concerned.
+    expect(keyOf(api.quoteSwap.mock.calls[0])).not.toBe(keyOf(api.quoteSwap.mock.calls[1]));
   });
 });

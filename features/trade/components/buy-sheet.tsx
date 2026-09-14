@@ -13,7 +13,7 @@ import { useDepositChains, useDepositStatus } from "@/hooks/use-deposit";
 import { useBuyDestinations } from "@/features/trade/hooks/use-buy-catalog";
 import { useBuy } from "@/features/trade/hooks/use-buy";
 import { useMemeToken } from "@/features/trade/hooks/use-meme-tokens";
-import { useMemeTrade } from "@/features/trade/hooks/use-meme-trade";
+import { tradeRef, useMemeTrade } from "@/features/trade/hooks/use-meme-trade";
 import { NetworkPicker, NetworkSelect } from "@/features/trade/components/network-select";
 import { belowMinimumBuy, isSolanaChainId, minimumBuyUsd } from "@/lib/trade/minimums";
 import { routesForSymbol } from "@/lib/buy";
@@ -26,6 +26,7 @@ import { useMoney } from "@/components/ui/currency-select";
 import { ShareToSquare } from "@/components/share/share-to-square";
 import { track } from "@/lib/analytics/mixpanel";
 import { useSpotMode } from "@/features/trade/components/spot-mode";
+import { BRAND } from "@/lib/brand";
 import { friendlyError } from "@/lib/errors";
 import type { BuyPayload } from "@/lib/modal-types";
 
@@ -62,6 +63,7 @@ interface BuySheetProps {
 
 export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
   const t = useTranslations("buySell");
+  const tErr = useTranslations("tradeErrors");
   const portfolio = usePortfolio();
   const destinations = useBuyDestinations();
 
@@ -168,17 +170,17 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
     [status.data]
   );
   // A swap market reports its own phase from useMemeTrade directly, since it
-  // never goes through Dextopus's deposit-status polling. `received` is an
-  // on-chain-verified balanceOf delta that lands before the backend's own
-  // slower confirmation — treated as settled immediately, so this screen
-  // never sits on "still buying" for a trade that has already landed in the
-  // wallet.
+  // never goes through Dextopus's deposit-status polling. Only the service's
+  // CONFIRMED is "settled". A receipt the service has not confirmed
+  // (`delivered`) and a poll that ran out of time (`pending`) are shown as
+  // exactly that below, and are never "All done".
+  const swapUnrecorded = memeTrade.phase === "delivered" || memeTrade.phase === "pending";
   const swapStage: DepositStage =
-    memeTrade.phase === "confirmed" || memeTrade.received != null
+    memeTrade.phase === "confirmed"
       ? "settled"
       : memeTrade.phase === "failed"
         ? "failed"
-        : memeTrade.phase === "signing" || memeTrade.phase === "confirming"
+        : memeTrade.phase === "signing" || memeTrade.phase === "confirming" || swapUnrecorded
           ? "processing"
           : "waiting";
   const swapPct: Record<typeof memeTrade.phase, number> = {
@@ -188,10 +190,12 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
     signing: 50,
     confirming: 75,
     confirmed: 100,
+    delivered: 100,
+    pending: 90,
     failed: 0,
   };
   const progress = isSwapMarket
-    ? { stage: swapStage, pct: memeTrade.received != null ? 100 : swapPct[memeTrade.phase] }
+    ? { stage: swapStage, pct: swapPct[memeTrade.phase] }
     : dextopusProgress;
   const stage = progress.stage;
   // Shows the order-tracking view: requestId once a Dextopus buy is placed,
@@ -284,13 +288,28 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
     toastRef.current = toast.loading(t("buyingToast", { name: payload.name }));
     if (swapRoute) {
       try {
-        await memeTrade.trade({
+        const result = await memeTrade.trade({
           chainId: BASE_CHAIN_ID,
           side: "BUY",
           tokenAddress: swapRoute.tokenAddress,
           amount,
           slippageBps: SLIPPAGE_BPS,
         });
+        // CONFIRMED is toasted "bought" by the settlement effect above.
+        // Delivered and pending are not settled and say so, with the
+        // reference support will ask for.
+        if (result.outcome === "delivered" || result.outcome === "pending") {
+          const ref = tradeRef(result.swapId, result.requestId);
+          toast.success(
+            result.outcome === "delivered"
+              ? t("deliveredToast", { name: payload.name, ref })
+              : t("pendingToast", { name: payload.name, ref }),
+            { id: toastRef.current }
+          );
+          toastRef.current = undefined;
+          void portfolio.refetchUntilChanged(scopeOf(networkForChainId(BASE_CHAIN_ID)));
+          return;
+        }
         toast.dismiss(toastRef.current);
         toastRef.current = undefined;
       } catch (e) {
@@ -299,7 +318,7 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
         // reverted swap, a rejected signature) instead of a generic line that
         // hides what happened. friendlyError strips raw wallet/RPC dumps
         // (calldata, signatures, gas fields) down to plain English.
-        toast.error(friendlyError(e, t("buyFailedToast", { name: payload.name })), {
+        toast.error(friendlyError(e, t("buyFailedToast", { name: payload.name }), tErr), {
           id: toastRef.current,
         });
         toastRef.current = undefined;
@@ -329,11 +348,17 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
   if (showTracking) {
     const failed = stage === "failed" || stage === "refunded";
     const done = stage === "settled";
+    const unrecorded = isSwapMarket && swapUnrecorded;
     // Whichever path settled. Null means the trade cannot be pointed at, and
     // then no share is offered at all.
     const settlement = isSwapMarket ? memeTrade.settled : settledTx;
     const shareRef = tradeShareRef(settlement?.chainId ?? null, settlement?.txHash ?? null);
-    const color = failed ? "#f6a5a5" : done ? "#7ce7b0" : "#d4d4d8";
+    // Green marks money that verifiably moved; pending stays neutral.
+    const color = failed
+      ? "#f6a5a5"
+      : done || memeTrade.phase === "delivered"
+        ? "#7ce7b0"
+        : "#d4d4d8";
     const boughtAmount = isSwapMarket ? (memeTrade.received?.amount ?? "") : bought;
     return (
       <div>
@@ -347,9 +372,23 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
         </div>
 
         <div className="ws-inset mt-4 p-4">
-          <div className="mb-2.5 text-[13px] font-medium text-white">{t(STAGE_KEY[stage])}</div>
+          <div className="mb-2.5 text-[13px] font-medium text-white">
+            {unrecorded
+              ? t(memeTrade.phase === "delivered" ? "stageDelivered" : "stagePending")
+              : t(STAGE_KEY[stage])}
+          </div>
           <ProgressBar pct={progress.pct} color={color} />
-          {done ? (
+          {unrecorded ? (
+            <p className="mt-3 text-[13px] leading-[1.5] font-normal text-white/70">
+              {boughtAmount
+                ? `${t("amountInAccount", { amount: boughtAmount, symbol: payload.symbol })} `
+                : ""}
+              {t("deliveredBody", {
+                brand: BRAND,
+                ref: tradeRef(memeTrade.swapId, memeTrade.requestId),
+              })}
+            </p>
+          ) : done ? (
             <p className="mt-3 text-[13px] leading-[1.5] font-normal text-white/70">
               {boughtAmount
                 ? t("amountInAccount", { amount: boughtAmount, symbol: payload.symbol })
@@ -362,7 +401,7 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
               </p>
               {isSwapMarket && memeTrade.error ? (
                 <p className="mt-1 text-[11px] leading-[1.4] font-normal text-white/40">
-                  {friendlyError(memeTrade.error, t("orderFailedBody"))}
+                  {friendlyError(memeTrade.error, t("orderFailedBody"), tErr)}
                 </p>
               ) : null}
             </>
@@ -493,7 +532,9 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
           {friendlyError(buy.error, t("purchaseFailedFallback"))}
         </p>
       ) : isSwapMarket && memeTrade.error ? (
-        <p className="text-down mt-3 text-[13px] font-normal">{memeTrade.error}</p>
+        <p className="text-down mt-3 text-[13px] font-normal">
+          {friendlyError(memeTrade.error, t("purchaseFailedFallback"), tErr)}
+        </p>
       ) : null}
       <div className={`mt-4 flex gap-3 ${notEnough ? "" : "flex-col"}`}>
         <button

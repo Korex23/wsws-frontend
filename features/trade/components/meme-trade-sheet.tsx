@@ -12,6 +12,7 @@ import { MemeCoin, PctChange, RiskBadge, priceLabel } from "@/features/trade/com
 import { useSheetDismiss } from "@/features/trade/components/mobile-trade-sheet";
 import { useMemeToken } from "@/features/trade/hooks/use-meme-tokens";
 import {
+  tradeRef,
   useMemePreview,
   useMemeTrade,
   type TradePhase,
@@ -19,6 +20,7 @@ import {
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useReroutedWithdraw } from "@/hooks/use-withdraw";
 import { usePrivy } from "@privy-io/react-auth";
+import { BRAND } from "@/lib/brand";
 import { displaySymbol } from "@/lib/buy";
 import { settlementFor } from "@/lib/deposit";
 import { friendlyError } from "@/lib/errors";
@@ -53,6 +55,10 @@ const PHASE_PCT: Record<TradePhase, number> = {
   signing: 60,
   confirming: 80,
   confirmed: 100,
+  // The chain delivered; the service's ledger is what is still moving.
+  delivered: 100,
+  // Nothing terminal was heard inside the poll ceiling: not done, not failed.
+  pending: 90,
   failed: 0,
 };
 // The USDC pre-move is its own step with its own progress, not part of the
@@ -149,6 +155,7 @@ export function MemeTradeSheet({
   showRisk = true,
 }: MemeTradeSheetProps) {
   const t = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   // Fresh risk/tradability for the trade surface; the list row may be stale.
   const { token: fresh } = useMemeToken(listed);
   const token = fresh ?? listed;
@@ -164,7 +171,8 @@ export function MemeTradeSheet({
   const [side, setSide] = useState<"BUY" | "SELL">(defaultSide);
   const [amount, setAmount] = useState("");
   const [debouncedAmount, setDebouncedAmount] = useState("");
-  const { walletFor, phase, error, received, trade, reset, linkForPreview } = useMemeTrade();
+  const { walletFor, phase, error, received, swapId, requestId, trade, reset, linkForPreview } =
+    useMemeTrade();
   // The token's chain picks the wallet that pays and holds, and the network
   // the portfolio files its balances under.
   const wallet = walletFor(token.chainId);
@@ -311,13 +319,16 @@ export function MemeTradeSheet({
   const quote = preview.data && !quoteExpired && quoteMatchesField ? preview.data : null;
   const quotePending = preview.isFetching || !quoteMatchesField;
 
-  const tradeBusy = phase !== "idle" && phase !== "failed" && phase !== "confirmed";
+  // The three ways a trade ends without failing. Only the service's CONFIRMED
+  // is "settled"; an on-chain receipt the service has not confirmed is shown
+  // as what it is (delivered, still being recorded), and a poll that ran out
+  // of time claims nothing either way. See TradeOutcome in use-meme-trade.
+  const settled = phase === "confirmed";
+  const deliveredOnly = phase === "delivered";
+  const pending = phase === "pending";
+  const finished = settled || deliveredOnly || pending;
+  const tradeBusy = phase !== "idle" && phase !== "failed" && !finished;
   const busy = tradeBusy || funding === "moving";
-  // The balanceOf delta (received) is on-chain proof of delivery, landing
-  // before the backend's own slower confirmation — treat it as done rather
-  // than making the tracking screen sit on "confirming" for a trade that has
-  // already, verifiably, settled.
-  const settled = phase === "confirmed" || received != null;
   const estimate = needsFunding ? estimateReceive(payValue, token.priceUsd) : null;
   const submitDisabled =
     busy ||
@@ -446,7 +457,7 @@ export function MemeTradeSheet({
       // The toast can be gone by the time the user looks up. The sheet is
       // still open, so the reason belongs in it as well.
       setFundError(e);
-      toast.error(friendlyError(e, t("fundFailed")), { id: toastRef.current });
+      toast.error(friendlyError(e, t("fundFailed"), tErr), { id: toastRef.current });
       toastRef.current = undefined;
     }
   }
@@ -486,12 +497,27 @@ export function MemeTradeSheet({
         saleHandoffId = handoff.requestId;
         savePendingRwaSettlement(handoff);
       }
-      await trade({
+      const result = await trade({
         side,
         tokenAddress: token.address,
         amount: debouncedAmount,
         chainId: token.chainId,
       });
+      inFlightRef.current = false;
+      // Only the service's CONFIRMED is "bought" or "sold". Delivered and
+      // pending say so, with the reference, and never claim more.
+      if (result?.outcome === "delivered" || result?.outcome === "pending") {
+        const ref = tradeRef(result.swapId, result.requestId);
+        toast.success(
+          result.outcome === "delivered"
+            ? t("toastDelivered", { symbol: displaySym, ref })
+            : t("toastPending", { symbol: displaySym, ref }),
+          { id: toastRef.current }
+        );
+        toastRef.current = undefined;
+        void portfolio.refetchUntilChanged(tradedNetworks);
+        return;
+      }
       // Settles on the token's own chain, and carries the risk label the
       // screen showed the user before they confirmed.
       track("trade_completed", {
@@ -501,7 +527,6 @@ export function MemeTradeSheet({
         amount_usd: Number(debouncedAmount),
         network: chainSlug(token.chainId) ?? "base",
       });
-      inFlightRef.current = false;
       toast.success(
         buying
           ? t("toastBought", { symbol: displaySym })
@@ -524,7 +549,7 @@ export function MemeTradeSheet({
         asset: token.symbol ?? token.address,
         reason: "order_failed",
       });
-      toast.error(friendlyError(e, t("orderFailed")), { id: toastRef.current });
+      toast.error(friendlyError(e, t("orderFailed"), tErr), { id: toastRef.current });
       toastRef.current = undefined;
     }
   }
@@ -582,30 +607,52 @@ export function MemeTradeSheet({
 
   const moving = funding === "moving";
   const queued = funding === "queued";
-  const tracking = busy || phase === "confirmed" || queued;
+  const tracking = busy || finished || queued;
+  // What support will ask for on a delivered or pending trade.
+  const ref = tradeRef(swapId, requestId);
   const trackTitle = queued
     ? t("queuedTitle")
     : moving
       ? t("fundWorking")
-      : phase === "confirmed"
+      : settled
         ? t("confirmedTitle")
-        : received
-          ? t("receivedTitle", { amount: received.amount, symbol: displaySymbol(received.symbol) })
-          : (phaseLabel[phase] ?? "");
+        : deliveredOnly
+          ? t("deliveredTitle")
+          : pending
+            ? t("pendingTitle")
+            : received
+              ? t("receivedTitle", {
+                  amount: received.amount,
+                  symbol: displaySymbol(received.symbol),
+                })
+              : (phaseLabel[phase] ?? "");
   const trackBody = queued
     ? t("purchaseQueued", { symbol: displaySym })
     : moving
       ? t("workingNote")
-      : phase === "confirmed"
+      : settled
         ? t("confirmedBody")
-        : received
-          ? t("receivedBody")
-          : phase !== "confirming"
-            ? t("workingNote")
-            : confirmingLong
-              ? t("confirmingLong")
-              : t("confirmingNote");
-  const trackPct = queued || settled ? 100 : moving ? FUNDING_PCT : PHASE_PCT[phase];
+        : deliveredOnly
+          ? received
+            ? t("deliveredReceivedBody", {
+                amount: received.amount,
+                symbol: displaySymbol(received.symbol),
+                brand: BRAND,
+                ref,
+              })
+            : t("deliveredBody", { brand: BRAND, ref })
+          : pending
+            ? t("pendingBody", { brand: BRAND, ref })
+            : received
+              ? t("receivedBody")
+              : phase !== "confirming"
+                ? t("workingNote")
+                : confirmingLong
+                  ? t("confirmingLong")
+                  : t("confirmingNote");
+  const trackPct = queued ? 100 : moving ? FUNDING_PCT : PHASE_PCT[phase];
+  // Green marks money that verifiably moved; pending stays neutral.
+  const trackColor = settled || deliveredOnly || queued ? "#7ce7b0" : "#e6e6e6";
   const warnings = showRisk ? visibleWarnings(token.warnings) : [];
   const balanceLabel = buying ? formatAmount(balance) : formatHeld(heldRaw, heldDecimals);
 
@@ -630,7 +677,13 @@ export function MemeTradeSheet({
 
           {tracking ? (
             <Eyebrow>
-              {settled || queued ? t("allDone") : buying ? t("buyingLabel") : t("sellingLabel")}
+              {settled || queued
+                ? t("allDone")
+                : deliveredOnly || pending
+                  ? t("stillRecording")
+                  : buying
+                    ? t("buyingLabel")
+                    : t("sellingLabel")}
             </Eyebrow>
           ) : null}
 
@@ -669,7 +722,7 @@ export function MemeTradeSheet({
                   aria-valuenow={trackPct}
                   aria-label={trackTitle}
                 >
-                  <ProgressBar pct={trackPct} color={settled || queued ? "#7ce7b0" : "#e6e6e6"} />
+                  <ProgressBar pct={trackPct} color={trackColor} />
                 </div>
                 <p className="mt-3 text-[13px] leading-[1.5] font-normal text-white/60">
                   {trackBody}
@@ -694,7 +747,7 @@ export function MemeTradeSheet({
                   onClick={closeSheet}
                   className="ws-chrome text-ink mt-4 min-h-11 w-full cursor-pointer rounded-full p-3.5 font-sans text-[15px] font-semibold hover:opacity-90 md:min-h-auto md:rounded-[14px]"
                 >
-                  {settled || queued ? t("done") : t("closeAndNotify")}
+                  {finished || queued ? t("done") : t("closeAndNotify")}
                 </button>
               ) : null}
             </div>
@@ -827,7 +880,7 @@ export function MemeTradeSheet({
               ) : null}
               {previewFailed ? (
                 <div className="text-down mt-2 text-[12.5px] font-normal">
-                  {friendlyError(previewFailed, t("previewFailed"))}
+                  {friendlyError(previewFailed, t("previewFailed"), tErr)}
                 </div>
               ) : null}
               {needsFunding && !fundingBlocked ? (
@@ -857,8 +910,8 @@ export function MemeTradeSheet({
               {error || fundError ? (
                 <div role="alert" className="text-down mt-2 text-[12.5px] font-normal">
                   {fundError
-                    ? friendlyError(fundError, t("fundFailed"))
-                    : friendlyError(error, t("orderFailed"))}
+                    ? friendlyError(fundError, t("fundFailed"), tErr)
+                    : friendlyError(error, t("orderFailed"), tErr)}
                 </div>
               ) : null}
 

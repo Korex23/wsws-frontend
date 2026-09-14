@@ -59,8 +59,10 @@ vi.mock("@/features/trade/hooks/use-buy-catalog", () => ({
     data: [{ symbol: "LINK", destinationChainId: 8453, destinationAsset: "0xlink" }],
   }),
 }));
-vi.mock("@/features/trade/hooks/use-meme-trade", () => ({
-  useMemeTrade: () => ({ phase: "idle", trade: vi.fn() }),
+const memeTradeHook = vi.hoisted(() => ({ trade: vi.fn() }));
+vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
+  useMemeTrade: () => ({ phase: "idle", trade: memeTradeHook.trade }),
 }));
 vi.mock("@/lib/analytics/mixpanel", () => ({ track: vi.fn() }));
 vi.mock("next-intl", () => ({
@@ -69,7 +71,8 @@ vi.mock("next-intl", () => ({
 vi.mock("@/lib/buy", () => ({
   routesForSymbol: () => [{ symbol: "LINK", destinationChainId: 8453 }],
 }));
-vi.mock("@/lib/spot-swap", () => ({ swapRouteForSymbol: () => null }));
+const swapRoute = vi.hoisted(() => ({ value: null as { tokenAddress: string } | null }));
+vi.mock("@/lib/spot-swap", () => ({ swapRouteForSymbol: () => swapRoute.value }));
 
 import { useSpotBuy } from "@/features/trade/hooks/use-spot-buy";
 
@@ -90,6 +93,7 @@ async function placeOrder() {
 describe("useSpotBuy settlement", () => {
   beforeEach(() => {
     status.data = undefined;
+    swapRoute.value = null;
     toasts.success.mockClear();
     toasts.error.mockClear();
     portfolioApi.refetchUntilChanged.mockClear();
@@ -152,5 +156,39 @@ describe("useSpotBuy settlement", () => {
     rerender();
     expect(toasts.success).not.toHaveBeenCalled();
     expect(toasts.error).not.toHaveBeenCalled();
+  });
+});
+
+// The swap-market path (cbDOGE and friends) settles through the meme trade
+// engine, whose word on the outcome is the trade service's. Only CONFIRMED is
+// "bought"; delivered-but-unrecorded and pending say so, with the reference.
+describe("useSpotBuy on a swap market", () => {
+  beforeEach(() => {
+    swapRoute.value = { tokenAddress: "0xdoge" };
+    memeTradeHook.trade.mockReset();
+    buyMutation.mutateAsync.mockClear();
+    toasts.success.mockClear();
+    toasts.error.mockClear();
+  });
+
+  it("says bought when the service confirmed", async () => {
+    memeTradeHook.trade.mockResolvedValue({ outcome: "confirmed", swapId: "s1", requestId: null });
+    await placeOrder();
+    expect(toasts.success).toHaveBeenCalledWith("boughtToast", expect.anything());
+  });
+
+  it("says delivered, never bought, when the service has not confirmed", async () => {
+    memeTradeHook.trade.mockResolvedValue({ outcome: "delivered", swapId: "s1", requestId: "r1" });
+    await placeOrder();
+    expect(toasts.success).toHaveBeenCalledWith("deliveredToast", expect.anything());
+    expect(toasts.success).not.toHaveBeenCalledWith("boughtToast", expect.anything());
+    expect(buyMutation.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("says pending when the poll ran out of time", async () => {
+    memeTradeHook.trade.mockResolvedValue({ outcome: "pending", swapId: "s2", requestId: null });
+    await placeOrder();
+    expect(toasts.success).toHaveBeenCalledWith("pendingToast", expect.anything());
+    expect(toasts.success).not.toHaveBeenCalledWith("boughtToast", expect.anything());
   });
 });

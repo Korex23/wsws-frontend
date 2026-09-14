@@ -155,7 +155,15 @@
     "volume24h": "Volume (24h)",
     "liquidity": "Liquidez",
     "fdv": "FDV",
-    "topUp": "Top Up"
+    "topUp": "Top Up",
+    "stillRecording": "Ainda registrando",
+    "deliveredTitle": "Entregue on-chain",
+    "deliveredBody": "{brand} ainda está registrando esta negociação (ref. {ref}). Você pode fechar.",
+    "deliveredReceivedBody": "{amount} {symbol} chegaram à sua carteira. {brand} ainda está registrando esta negociação (ref. {ref}). Você pode fechar.",
+    "pendingTitle": "Enviada, ainda sendo registrada",
+    "pendingBody": "A transação saiu e {brand} ainda está registrando esta negociação (ref. {ref}). Você pode fechar; ela continua nas suas transações.",
+    "toastDelivered": "{symbol} entregue on-chain. Ainda sendo registrado (ref. {ref}).",
+    "toastPending": "Negociação de {symbol} enviada. Ainda sendo registrada (ref. {ref})."
   },
   "spot": {
     "balance": "Saldo {amount} {symbol}",
@@ -806,7 +814,12 @@
     "sellToken": "Vender {name}",
     "transactionFee": "Taxa de transação",
     "shareToSquare": "Share to Market Square",
-    "boughtShareTitle": "Bought {name}"
+    "boughtShareTitle": "Bought {name}",
+    "stageDelivered": "Entregue on-chain",
+    "stagePending": "Enviada, ainda sendo registrada",
+    "deliveredBody": "{brand} ainda está registrando esta negociação (ref. {ref}). Você pode fechar.",
+    "deliveredToast": "{name} entregue on-chain. Ainda sendo registrado (ref. {ref}).",
+    "pendingToast": "Ordem de {name} enviada. Ainda sendo registrada (ref. {ref})."
   },
   "rwa": {
     "eyebrow": "Ativos do mundo real",
@@ -3062,5 +3075,30 @@
     "depositHelpReply": "Para problemas de depósito: certifique-se de que a transação foi confirmada on-chain. Pode partilhar o seu **hash de transação (TXID)** ou a rede aqui.",
     "tradeHelpReply": "Para questões de negociação: partilhe o **símbolo do token**, a **rede** e a hora aproximada da ordem.",
     "bugReportReply": "Obrigado pelo relatório detalhado! A nossa equipa de frontend está a investigar o problema. Pode colar registos adicionais como um `bloco de código`."
+  },
+  "tradeErrors": {
+    "tokenBlocked": "Este token foi bloqueado pela nossa equipe, então não pode ser negociado.",
+    "tokenRiskBlocked": "Este token está bloqueado por motivos de segurança, então não pode ser negociado.",
+    "tokenBuyDisabled": "A compra deste token está pausada no momento.",
+    "tokenSellDisabled": "A venda deste token está pausada no momento.",
+    "insufficientBalance": "Você não tem o suficiente deste ativo para isso. Tente um valor menor.",
+    "noSwapRoute": "Não há rota para negociar este token agora. Tente mais tarde ou com outro valor.",
+    "highPriceImpact": "Esta negociação moveria demais o preço. Tente um valor menor.",
+    "invalidSlippage": "Essa tolerância de preço não é permitida. Tente de novo.",
+    "quoteExpired": "Seu preço expirou. Peça uma nova cotação e tente de novo.",
+    "swapAlreadySubmitted": "Esta negociação já foi enviada. Confira suas transações antes de tentar de novo.",
+    "walletOwnershipMismatch": "Esta carteira ainda não está vinculada à sua conta. Tente de novo para vinculá-la.",
+    "quoteProviderError": "Nosso provedor de preços não respondeu. Tente de novo em instantes.",
+    "providerError": "O provedor de dados da rede está indisponível agora. Tente de novo em instantes.",
+    "tokenNotFound": "Não encontramos este token.",
+    "unauthorized": "Sua sessão expirou. Entre de novo.",
+    "serviceUnavailable": "O serviço de negociação está inacessível agora. Tente de novo em instantes.",
+    "badResponse": "O serviço de negociação enviou uma resposta que não conseguimos ler. Tente de novo em instantes.",
+    "notConfigured": "Negociações não estão disponíveis neste ambiente.",
+    "failed": "A negociação não foi concluída.",
+    "reverted": "A rede reverteu esta negociação. Nada foi cobrado.",
+    "expired": "A negociação expirou antes de ser enviada. Tente de novo.",
+    "cancelled": "Esta negociação foi cancelada.",
+    "unknown": "Não foi possível concluir a negociação. Tente de novo."
   }
 }

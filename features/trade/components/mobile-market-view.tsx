@@ -32,6 +32,7 @@ import { useSpotMarkets, type SpotMarket } from "@/features/trade/hooks/use-spot
 import { useTrendingMemes } from "@/features/trade/hooks/use-meme-tokens";
 import { useFitRows } from "@/hooks/use-fit-rows";
 import {
+  memeOutcomeToast,
   useMemePreview,
   useMemeTrade,
   type MemeTradeInput,
@@ -277,6 +278,7 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
   const tCommon = useTranslations("common");
   const tSpot = useTranslations("spot");
   const tMeme = useTranslations("meme");
+  const tErr = useTranslations("tradeErrors");
   const { markets, loading, error } = useSpotMarkets();
   // A query per list. They were one field and one term until each tab grew
   // its own field; keeping them apart is what lets a tab hold what was typed
@@ -504,15 +506,12 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
       input.side === "BUY" ? tMeme("buyingToast", { symbol }) : tMeme("sellingToast", { symbol })
     );
     try {
-      await runMemeTrade(input);
-      toast.success(
-        input.side === "BUY" ? tMeme("toastBought", { symbol }) : tMeme("toastSold", { symbol }),
-        { id: toastId }
-      );
+      const result = await runMemeTrade(input);
+      toast.success(memeOutcomeToast(tMeme, result, input.side, symbol), { id: toastId });
       setMemeAmount("");
       void memePortfolio.refetchUntilChanged(tradedNetworks);
     } catch (e) {
-      toast.error(friendlyError(e, tMeme("orderFailed")), { id: toastId });
+      toast.error(friendlyError(e, tMeme("orderFailed"), tErr), { id: toastId });
       void memePortfolio.refetchFresh(tradedNetworks);
     }
   }

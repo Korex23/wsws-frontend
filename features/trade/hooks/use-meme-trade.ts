@@ -11,6 +11,7 @@ import { useEvmSendWithReceipt } from "@/hooks/use-evm-send";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useSponsoredSolanaSend } from "@/hooks/use-sponsored-solana";
 import { formatReceived, receivedFromLogs, type ReceiptLog } from "@/lib/meme/delivery";
+import { isSubmittedEvmOperationError } from "@/lib/trade/sponsor";
 import { getWalletAddress } from "@/lib/user";
 import {
   TradeApiError,
@@ -26,12 +27,14 @@ import {
   verifySolanaWallet,
   verifyWallet,
   type PreparedSwap,
+  type SubmissionHash,
   type SwapRequest,
   type SwapStatus,
 } from "@/lib/meme/api";
 import { SOLANA_CHAIN_ID, networkOf } from "@/lib/meme/chain";
 import { signatureToBase58 } from "@/lib/meme/solana-signature";
 import { track } from "@/lib/analytics/mixpanel";
+import { reportTradeRecordingMismatch } from "@/lib/analytics/watchtower";
 
 // One trade at a time, with the states the contract demands kept explicit.
 // Only the backend's CONFIRMED ever reads as success.
@@ -48,18 +51,110 @@ export interface MemeTradeInput extends Omit<SwapRequest, "walletAddress"> {
 export interface MemePreviewInput extends SwapRequest {
   chainId: number;
 }
+
+// The three ways a trade ends without failing, and they are not one thing:
+//
+//  - `confirmed`: the trade service said CONFIRMED. The only success there is.
+//  - `delivered`: the swap's own receipt proves the wallet was paid, but the
+//    service recorded FAILED/REVERTED or refused the registration (409). The
+//    money moved; the ledger has not caught up. The user is told exactly
+//    that, never "bought" or "sold", and the trade team is told too.
+//  - `pending`: the status poll ran to its ceiling without a terminal state.
+//    Nothing is claimed either way; the swap stays in the transactions list.
+export type TradeOutcome = "confirmed" | "delivered" | "pending";
+
+// What `trade()` resolves with. The ids ride along because the caller's
+// closure holds the render-time state, which is stale by the time the await
+// returns, and the toast it shows next needs the reference.
+export interface TradeResult {
+  outcome: TradeOutcome;
+  swapId: string | null;
+  requestId: string | null;
+}
+
+// The support reference for a delivered or pending trade, as shown on screen:
+// the swap the service knows, and its request id when a response carried one.
+export function tradeRef(swapId: string | null, requestId: string | null): string {
+  return [swapId, requestId].filter((id): id is string => Boolean(id)).join(" · ") || "—";
+}
+
+// The toast a desk shows once `trade()` resolves, from the `meme` namespace.
+// Shared by every surface that runs a Base trade inline so none of them can
+// drift back to saying "bought" on a trade the service has not confirmed.
+export function memeOutcomeToast(
+  t: (key: string, values?: Record<string, string>) => string,
+  result: TradeResult,
+  side: "BUY" | "SELL",
+  symbol: string
+): string {
+  if (result.outcome === "delivered" || result.outcome === "pending") {
+    const ref = tradeRef(result.swapId, result.requestId);
+    return result.outcome === "delivered"
+      ? t("toastDelivered", { symbol, ref })
+      : t("toastPending", { symbol, ref });
+  }
+  return side === "BUY" ? t("toastBought", { symbol }) : t("toastSold", { symbol });
+}
+
 export type TradePhase =
-  "idle" | "linking" | "quoting" | "signing" | "confirming" | "confirmed" | "failed";
+  | "idle"
+  | "linking"
+  | "quoting"
+  | "signing"
+  | "confirming"
+  | "confirmed"
+  | "delivered"
+  | "pending"
+  | "failed";
 
 const LINKED_KEY = "wsws.meme-linked.v1";
 // The service's verification usually lands within a few seconds of the
 // receipt: look early, then back off so a slow one is not asked every four
 // seconds for as long as it takes.
 const STATUS_POLL_STEPS_MS = [2_000, 3_000, 5_000, 8_000] as const;
+// How long the poll waits for a terminal state before the trade is `pending`.
+// Ten minutes is far past any verification the service has been seen to
+// finish, and a poll with no end holds a sheet shut for as long as it runs.
+const STATUS_POLL_CEILING_MS = 10 * 60_000;
+// The contract's one sanctioned same-key retry: a provider failure while
+// quoting is retried once, unchanged, after a short pause.
+const QUOTE_PROVIDER_RETRY_MS = 1_500;
 const TERMINAL: SwapStatus[] = ["CONFIRMED", "FAILED", "REVERTED", "EXPIRED", "CANCELLED"];
 
 function statusPollDelay(attempt: number): number {
   return STATUS_POLL_STEPS_MS[Math.min(attempt, STATUS_POLL_STEPS_MS.length - 1)];
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Polls the shared status route until a terminal state or the ceiling.
+// Returns the terminal status, or null when the ceiling was reached first.
+async function awaitTerminalStatus(swapId: string): Promise<SwapStatus | null> {
+  const startedAt = Date.now();
+  for (let attempt = 0; ; attempt += 1) {
+    const status = await fetchSwapStatus(swapId);
+    if (TERMINAL.includes(status.status)) return status.status;
+    if (Date.now() - startedAt >= STATUS_POLL_CEILING_MS) return null;
+    await sleep(statusPollDelay(attempt));
+  }
+}
+
+// One quote request under one Idempotency-Key. QUOTE_PROVIDER_ERROR is the
+// only failure the contract says to retry with the SAME key ("retry
+// carefully"): once, after a pause. Every other failure is thrown as it is,
+// and any later attempt is a new user action with a new key.
+async function quoteWithProviderRetry<T>(run: (idempotencyKey: string) => Promise<T>): Promise<T> {
+  const key = newIdempotencyKey();
+  try {
+    return await run(key);
+  } catch (e) {
+    if (!(e instanceof TradeApiError && e.code === "QUOTE_PROVIDER_ERROR")) throw e;
+    console.warn(`[meme] quote provider error (request ${e.requestId ?? "none"}); retrying once`);
+    await sleep(QUOTE_PROVIDER_RETRY_MS);
+    return run(key);
+  }
 }
 
 function linkedCache(): Set<string> {
@@ -97,8 +192,14 @@ export function useMemeTrade() {
   );
 
   const [phase, setPhase] = useState<TradePhase>("idle");
-  const [error, setError] = useState<string | null>(null);
+  // The failure as thrown, not flattened to text: the screen maps its code to
+  // copy in the reader's language and shows its requestId as the reference.
+  const [error, setError] = useState<unknown>(null);
   const [swapId, setSwapId] = useState<string | null>(null);
+  // The service's request id behind a `delivered` verdict (the 409's), for
+  // the "still recording (ref …)" line. Null when the verdict came from a
+  // status poll, whose success envelope carries none.
+  const [requestId, setRequestId] = useState<string | null>(null);
   // The on-chain verified delivery ("142,244.11 FART"), set the moment the
   // balanceOf delta confirms it — usually minutes before the server does.
   const [received, setReceived] = useState<{ amount: string; symbol: string } | null>(null);
@@ -155,21 +256,45 @@ export function useMemeTrade() {
         setPhase("idle");
       } catch (e) {
         setPhase("failed");
-        setError(e instanceof Error ? e.message : "Couldn't verify your wallet.");
+        setError(e);
         throw e;
       }
     },
     [ensureLinked]
   );
 
+  // A delivered-but-unrecorded trade, told to everyone who needs to know: the
+  // console for whoever is debugging, analytics for the count, Watchtower for
+  // the trade team with the ids that find the swap. The user hears
+  // "delivered, still being recorded", never "done".
+  const settleAsDelivered = useCallback(
+    (quote: PreparedSwap, hash: string | null, recorded: string, ref: string | null) => {
+      console.warn(
+        `[meme] swap ${quote.swapId} delivered on-chain (${hash ?? "no hash"}) but the trade service recorded ${recorded} (request ${ref ?? "none"})`
+      );
+      track("trade_recording_mismatch", {
+        vertical: "memecoin",
+        asset: quote.sellToken.symbol ?? quote.sellToken.address,
+        swap_id: quote.swapId,
+        recorded,
+        request_id: ref ?? undefined,
+        hash: hash ?? undefined,
+      });
+      reportTradeRecordingMismatch({ swapId: quote.swapId, requestId: ref, hash, recorded });
+      setRequestId(ref);
+      setPhase("delivered");
+    },
+    []
+  );
+
   // Solana: quote -> sponsor (prepare, user signs, sponsor submits) -> register
   // the signature. The quote is one transaction, so there is nothing to
   // execute in order and no balance-delta proof yet; CONFIRMED is the word.
   const tradeSolana = useCallback(
-    async (body: SwapRequest): Promise<void> => {
+    async (body: SwapRequest): Promise<TradeResult> => {
       const signer = solanaWallets.find((w) => w.address === body.walletAddress);
       if (!signer) throw new Error("Your Solana wallet is still connecting. Try again.");
-      const runQuote = () => quoteSolanaSwap(body, newIdempotencyKey());
+      const runQuote = () => quoteWithProviderRetry((key) => quoteSolanaSwap(body, key));
 
       await ensureLinked(SOLANA_CHAIN_ID);
       setPhase("quoting");
@@ -207,38 +332,40 @@ export function useMemeTrade() {
       setSettled({ txHash: signature, chainId: SOLANA_CHAIN_ID });
 
       setPhase("confirming");
-      for (let attempt = 0; ; attempt += 1) {
-        const status = await fetchSwapStatus(quote.swapId);
-        if (TERMINAL.includes(status.status)) {
-          if (status.status === "CONFIRMED") {
-            setPhase("confirmed");
-            return;
-          }
-          throw new TradeApiError(status.status, "The trade didn't complete.", 200);
-        }
-        await new Promise((resolve) => setTimeout(resolve, statusPollDelay(attempt)));
+      const status = await awaitTerminalStatus(quote.swapId);
+      if (status === null) {
+        console.warn(`[meme] swap ${quote.swapId} still not terminal after the poll ceiling`);
+        setPhase("pending");
+        return { outcome: "pending", swapId: quote.swapId, requestId: null };
       }
+      if (status === "CONFIRMED") {
+        setPhase("confirmed");
+        return { outcome: "confirmed", swapId: quote.swapId, requestId: null };
+      }
+      throw new TradeApiError(status, "The trade didn't complete.", 200);
     },
     [solanaWallets, ensureLinked, user, sendSponsoredSolana]
   );
 
   const trade = useCallback(
-    async ({ chainId, ...input }: MemeTradeInput): Promise<void> => {
-      if (activeRef.current) return;
+    async ({ chainId, ...input }: MemeTradeInput): Promise<TradeResult> => {
+      // A second press while one runs is the same action, not a new one, and
+      // nothing is known about it yet.
+      if (activeRef.current) return { outcome: "pending", swapId: null, requestId: null };
       const chainWallet = walletFor(chainId);
       if (!chainWallet) throw new Error("Sign in first.");
       activeRef.current = true;
       setError(null);
       setSwapId(null);
+      setRequestId(null);
       setReceived(null);
       try {
         if (chainId === SOLANA_CHAIN_ID) {
-          await tradeSolana({ ...input, walletAddress: chainWallet });
-          return;
+          return await tradeSolana({ ...input, walletAddress: chainWallet });
         }
         const wallet = chainWallet;
         const body: SwapRequest = { ...input, walletAddress: wallet };
-        const runQuote = () => quoteSwap(body, newIdempotencyKey());
+        const runQuote = () => quoteWithProviderRetry((key) => quoteSwap(body, key));
 
         await ensureLinked(chainId);
         setPhase("quoting");
@@ -276,13 +403,31 @@ export function useMemeTrade() {
           }
           const call = quote.calls[callIndex];
           // useEvmSend resolves after the sponsored operation's receipt, so an
-          // approval is confirmed before the swap call is sent.
-          const { hash, logs } = await evmSend({
-            to: call.to as `0x${string}`,
-            data: call.data as `0x${string}`,
-            value: BigInt(call.value),
-            chainId: quote.chainId,
-          });
+          // approval is confirmed before the swap call is sent. When the
+          // bundler accepted the operation but never produced a receipt, the
+          // operation's own hash is what there is to register: the contract
+          // takes `userOperationHash` for exactly that, and the status poll
+          // decides the outcome, as it would for any other submission.
+          let submission: SubmissionHash;
+          let logs: ReceiptLog[] | null = null;
+          let txHash: string | null = null;
+          try {
+            const sent = await evmSend({
+              to: call.to as `0x${string}`,
+              data: call.data as `0x${string}`,
+              value: BigInt(call.value),
+              chainId: quote.chainId,
+            });
+            submission = { transactionHash: sent.hash };
+            txHash = sent.hash;
+            logs = sent.logs;
+          } catch (e) {
+            if (!isSubmittedEvmOperationError(e)) throw e;
+            console.warn(
+              `[meme] swap ${quote.swapId} call ${callIndex} has no receipt yet; registering user operation ${e.userOperationHash}`
+            );
+            submission = { userOperationHash: e.userOperationHash };
+          }
           receivedLogs = logs;
           // The balance on screen moves with the receipt, before any re-read.
           if (logs) applyReceipt(networkOf(quote.chainId) ?? "base-mainnet", wallet, logs);
@@ -295,18 +440,27 @@ export function useMemeTrade() {
           // the outcome, exactly as for a FAILED status. Any other error is
           // still an error.
           try {
-            await registerSubmission(quote.swapId, callIndex, wallet, hash, newIdempotencyKey());
+            await registerSubmission(
+              quote.swapId,
+              callIndex,
+              wallet,
+              submission,
+              newIdempotencyKey()
+            );
           } catch (e) {
             if (!(e instanceof TradeApiError && e.status === 409)) throw e;
             registrationRefused = e;
             console.warn(
-              `[meme] swap ${quote.swapId} call ${callIndex} not recorded: ${e.message}`
+              `[meme] swap ${quote.swapId} call ${callIndex} not recorded: ${e.code} (request ${e.requestId ?? "none"})`
             );
           }
           // The last call IS the swap; anything before it is an approval, so
-          // this ends up holding the hash worth pointing a share at.
-          settledHash = hash;
-          setSettled({ txHash: hash, chainId: quote.chainId });
+          // this ends up holding the hash worth pointing a share at. A user
+          // operation hash is not one: an explorer link to it would be dead.
+          if (txHash) {
+            settledHash = txHash;
+            setSettled({ txHash, chainId: quote.chainId });
+          }
         }
 
         // The swap's receipt is in hand, and its own logs say what the wallet
@@ -326,67 +480,65 @@ export function useMemeTrade() {
         // wallet's balance now, the way a FAILED status is decided below.
         if (registrationRefused) {
           if (!delivered) throw registrationRefused;
-          console.warn(
-            `[meme] swap ${quote.swapId} delivered on-chain (${settledHash}) but the trade service refused its registration`
+          settleAsDelivered(
+            quote,
+            settledHash,
+            registrationRefused.code,
+            registrationRefused.requestId
           );
-          track("trade_recording_mismatch", {
-            vertical: "memecoin",
-            asset: quote.sellToken.symbol ?? quote.sellToken.address,
-            swap_id: quote.swapId,
-            recorded: registrationRefused.code,
-          });
-          setPhase("confirmed");
-          return;
+          return {
+            outcome: "delivered",
+            swapId: quote.swapId,
+            requestId: registrationRefused.requestId,
+          };
         }
 
         // The backend worker verifies on-chain; poll until it says so.
         setPhase("confirming");
-        for (let attempt = 0; ; attempt += 1) {
-          const status = await fetchSwapStatus(quote.swapId);
-          if (TERMINAL.includes(status.status)) {
-            if (status.status === "CONFIRMED") {
-              setPhase("confirmed");
-              return;
-            }
-            // The wallet's balance moved: the trade happened, whatever the
-            // service recorded. Its verifier compares a sponsored user
-            // operation's bundle transaction with the prepared call and
-            // fails, which is a recording fault, not a failed trade. Telling
-            // the user their money did not move when it did is the one thing
-            // this screen must never do. The discrepancy is logged for the
-            // trade team instead.
-            if (delivered) {
-              console.warn(
-                `[meme] swap ${quote.swapId} delivered on-chain (${settledHash}) but the trade service recorded ${status.status}`
-              );
-              track("trade_recording_mismatch", {
-                vertical: "memecoin",
-                asset: quote.sellToken.symbol ?? quote.sellToken.address,
-                swap_id: quote.swapId,
-                recorded: status.status,
-              });
-              setPhase("confirmed");
-              return;
-            }
-            throw new TradeApiError(status.status, "The trade didn't complete.", 200);
-          }
-          await new Promise((resolve) => setTimeout(resolve, statusPollDelay(attempt)));
+        const status = await awaitTerminalStatus(quote.swapId);
+        if (status === null) {
+          // No verdict inside the ceiling. Nothing is claimed either way; the
+          // swap stays in the transactions list and the service's status is
+          // still the only thing that will ever call it confirmed.
+          console.warn(
+            `[meme] swap ${quote.swapId} (${settledHash ?? "no hash"}) still not terminal after the poll ceiling`
+          );
+          setPhase("pending");
+          return { outcome: "pending", swapId: quote.swapId, requestId: null };
         }
+        if (status === "CONFIRMED") {
+          setPhase("confirmed");
+          return { outcome: "confirmed", swapId: quote.swapId, requestId: null };
+        }
+        // The wallet's balance moved: the trade happened, whatever the
+        // service recorded. Its verifier compares a sponsored user
+        // operation's bundle transaction with the prepared call and fails,
+        // which is a recording fault, not a failed trade. Telling the user
+        // their money did not move when it did is the one thing this screen
+        // must never do; calling it confirmed when the service has not is
+        // the other. So: delivered, and the discrepancy goes to the trade
+        // team.
+        if (delivered) {
+          settleAsDelivered(quote, settledHash, status, null);
+          return { outcome: "delivered", swapId: quote.swapId, requestId: null };
+        }
+        throw new TradeApiError(status, "The trade didn't complete.", 200);
       } catch (e) {
         setPhase("failed");
-        setError(e instanceof Error ? e.message : "The trade didn't complete.");
+        setError(e);
         throw e;
       } finally {
         activeRef.current = false;
       }
     },
-    [walletFor, user, ensureLinked, evmSend, applyReceipt, tradeSolana]
+    [walletFor, user, ensureLinked, evmSend, applyReceipt, tradeSolana, settleAsDelivered]
   );
 
   const reset = useCallback(() => {
     setPhase("idle");
     setError(null);
     setSwapId(null);
+    setRequestId(null);
     setReceived(null);
     // Or the next trade offers to share the previous one.
     setSettled(null);
@@ -398,6 +550,7 @@ export function useMemeTrade() {
     phase,
     error,
     swapId,
+    requestId,
     received,
     settled,
     trade,
