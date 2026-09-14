@@ -31,6 +31,16 @@ export function isConflictError(e: unknown): boolean {
   return gateway.status === 409 || gateway.code === "CONFLICT";
 }
 
+// Thrown when a legacy (old Privy identity) call is attempted without a legacy
+// session — the migration's sweep needs the user signed in to the old account.
+export class LegacySessionError extends Error {
+  readonly code = "LEGACY_SESSION";
+  constructor() {
+    super("Sign in to your old account to continue.");
+    this.name = "LegacySessionError";
+  }
+}
+
 function looksSafeServerMessage(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed || trimmed.length > 160) return false;
