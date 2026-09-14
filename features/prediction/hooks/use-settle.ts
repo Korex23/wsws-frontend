@@ -48,3 +48,6 @@ export function useSettleToBase() {
 
   return { settleToBase, phase, error };
 }
+
+// Re-exported so the positions controller can narrow on it.
+export { SettleError } from "@/lib/polymarket/settle";

@@ -86,6 +86,11 @@ export interface MarketSellInput {
 export interface MarketSellResult {
   // Estimated proceeds in USD at the estimated fill price.
   proceedsUsd: number;
+  // REVIEW(decane-migration): staging's markets workspace reads this to show a
+  // "settlement pending" state. The migration's placeMarketSell does not set
+  // it, so it stays undefined (the pending branch simply never fires). Wire it
+  // through placeMarketSell if that UX is still wanted.
+  settlementPending?: boolean;
 }
 
 // A market SELL crossing the spread at the current bid, floored so a book
