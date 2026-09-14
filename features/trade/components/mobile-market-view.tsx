@@ -19,7 +19,9 @@ import { MemeCoin, PctChange, priceLabel } from "@/features/trade/components/mem
 import { parseBaseUnits } from "@/features/trade/components/meme-base-units";
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
 import { PerpsSection } from "@/features/trade/components/perps-section";
+import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { TradeTicket, USD_DECIMALS } from "@/features/trade/components/meme-trade-ticket";
+import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import {
   MemeMarketMetrics,
   type MemeMarketMetricsData,
@@ -482,7 +484,10 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
           chainId: ticketMeme.chainId,
         }
       : null;
-  const memePreview = useMemePreview(memePreviewInput);
+  // A LOW_LIQUIDITY coin is confirmed before any preview goes out: the dialog
+  // opens the first time an amount is typed for it, and Cancel clears it.
+  const memeConsent = useRiskConsent(ticketMeme, memeAmount);
+  const memePreview = useMemePreview(memePreviewInput, memeConsent.consented);
 
   // Base executes here in full. A Solana order does not: buying one may need
   // the USDC moved to the Solana wallet first, and selling one has to record
@@ -493,7 +498,8 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
   // The tap-to-screen fix stands either way: the sheet only ever appears from
   // a submit, never from the row tap that used to open it directly.
   async function submitMemeTrade(input: MemeTradeInput) {
-    if (!ticketMeme) return;
+    // No quote for a LOW_LIQUIDITY coin the user has not confirmed.
+    if (!ticketMeme || !memeConsent.consented) return;
     if (input.chainId === SOLANA_CHAIN_ID) {
       setMemeSheetToken(ticketMeme);
       return;
@@ -685,13 +691,21 @@ export function MobileMarketView({ predictionSlot, rwaSlot, onAddFunds }: Mobile
                       funding={memeFunding}
                       heldRaw={memeHeldRaw}
                       heldDecimals={memeHeldDecimals}
-                      preview={memePreview.data ?? null}
+                      preview={memePreview.quote}
                       previewLoading={memePreview.isFetching}
                       previewError={memePreview.error}
+                      quoteExpired={memePreview.expired}
+                      onRefreshQuote={() => void memePreview.refetch()}
                       onSubmit={submitMemeTrade}
                       phase={memePhase}
                       error={memeTradeError}
                       onAddFunds={onAddFunds}
+                    />
+                    <MemeRiskConsent
+                      open={memeConsent.prompting}
+                      token={ticketMeme}
+                      onContinue={memeConsent.accept}
+                      onCancel={() => setMemeAmount("")}
                     />
                   </div>
                 </div>

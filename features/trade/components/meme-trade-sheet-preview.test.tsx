@@ -7,9 +7,18 @@ import { memeToken } from "@/features/trade/lib/meme-fixture";
 const WALLET = "0xabc0000000000000000000000000000000000001";
 const state = vi.hoisted(() => ({ phase: "idle" as string }));
 const useMemePreview = vi.hoisted(() =>
-  vi.fn<(input: unknown) => { data: null; error: null; isFetching: boolean; refetch: () => void }>(
-    () => ({ data: null, error: null, isFetching: false, refetch: vi.fn() })
-  )
+  vi.fn<
+    (
+      input: unknown,
+      consented: boolean
+    ) => {
+      quote: null;
+      expired: boolean;
+      error: null;
+      isFetching: boolean;
+      refetch: () => void;
+    }
+  >(() => ({ quote: null, expired: false, error: null, isFetching: false, refetch: vi.fn() }))
 );
 
 vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({

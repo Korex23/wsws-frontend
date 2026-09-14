@@ -11,18 +11,23 @@ import { ProgressBar } from "@/components/ui/progress-bar";
 import {
   LiquidityUnknownNote,
   MemeCoin,
+  MemeWarningList,
   PctChange,
   priceLabel,
+  QuoteExpiredNote,
   RiskBadge,
 } from "@/features/trade/components/meme-bits";
+import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { useSheetDismiss } from "@/features/trade/components/mobile-trade-sheet";
 import { useMemeToken } from "@/features/trade/hooks/use-meme-tokens";
 import {
   tradeRef,
   useMemePreview,
   useMemeTrade,
+  usePreviewRelink,
   type TradePhase,
 } from "@/features/trade/hooks/use-meme-trade";
+import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useReroutedWithdraw } from "@/hooks/use-withdraw";
 import { usePrivy } from "@privy-io/react-auth";
@@ -30,7 +35,8 @@ import { BRAND } from "@/lib/brand";
 import { displaySymbol } from "@/lib/buy";
 import { settlementFor } from "@/lib/deposit";
 import { friendlyError } from "@/lib/errors";
-import { TradeApiError, isValidTradeAmount, visibleWarnings, type MemeToken } from "@/lib/meme/api";
+import { isValidTradeAmount, visibleWarnings, type MemeToken } from "@/lib/meme/api";
+import { platformFeeText } from "@/lib/meme/format";
 import { buyFunding, estimateReceive } from "@/lib/meme/funding";
 import { exceedsHeld, maxSellAmount } from "@/lib/meme/sell-amount";
 import { toast } from "@/lib/toast";
@@ -177,8 +183,18 @@ export function MemeTradeSheet({
   const [side, setSide] = useState<"BUY" | "SELL">(defaultSide);
   const [amount, setAmount] = useState("");
   const [debouncedAmount, setDebouncedAmount] = useState("");
-  const { walletFor, phase, error, received, swapId, requestId, trade, reset, linkForPreview } =
-    useMemeTrade();
+  const {
+    walletFor,
+    phase,
+    error,
+    received,
+    swapId,
+    requestId,
+    quotedFee,
+    trade,
+    reset,
+    linkForPreview,
+  } = useMemeTrade();
   // The token's chain picks the wallet that pays and holds, and the network
   // the portfolio files its balances under.
   const wallet = walletFor(token.chainId);
@@ -186,7 +202,6 @@ export function MemeTradeSheet({
   // The USD side is always Base; the coin side is the token's chain.
   const tradedNetworks = scopeOf("base-mainnet", network);
   const portfolio = usePortfolio();
-  const linkTriedRef = useRef(false);
   const { user } = usePrivy();
   const { withdraw: routeUsdc } = useReroutedWithdraw("trade");
   const [funding, setFunding] = useState<FundingStep>("idle");
@@ -275,54 +290,30 @@ export function MemeTradeSheet({
           chainId: token.chainId,
         }
       : null;
-  const preview = useMemePreview(previewInput);
+  // A LOW_LIQUIDITY token is confirmed before any preview goes out, and so
+  // before any quote: the dialog opens the first time an amount is typed for
+  // it, and Cancel clears the amount. Held whatever showRisk says: the
+  // contract's consent is not a display preference.
+  const consent = useRiskConsent(token, amount);
+  const preview = useMemePreview(previewInput, consent.consented);
 
   // A first-ever preview 403s until the wallet is linked; link once (headless
-  // signature) and refetch. One attempt per sheet — a second mismatch is real.
+  // signature) and refetch. A second mismatch is real.
   const previewError = preview.error;
   const previewRefetch = preview.refetch;
-  useEffect(() => {
-    if (
-      previewError instanceof TradeApiError &&
-      previewError.code === "WALLET_OWNERSHIP_MISMATCH" &&
-      !linkTriedRef.current
-    ) {
-      linkTriedRef.current = true;
-      void linkForPreview(token.chainId)
-        .then(() => previewRefetch())
-        .catch(() => {});
-    }
-  }, [previewError, linkForPreview, previewRefetch, token.chainId]);
+  usePreviewRelink(previewError, token.chainId, linkForPreview, previewRefetch);
 
-  // A quote has a lifetime and the service publishes it. Watch for the moment
-  // it lapses so the figures stop being presented as a price the user can act
-  // on, rather than sitting on screen looking current for as long as the sheet
-  // is open.
-  const quoteExpiresAt = preview.data ? Date.parse(preview.data.expiresAt) : null;
-  // The lapse is recorded by a timer rather than read off the clock in render,
-  // so the sheet re-renders exactly once, at the moment the price stops being
-  // one the user can act on. A quote that arrived already stale gets a
-  // zero-delay timer, which is the same path one second later.
-  const [lapsedAt, setLapsedAt] = useState<number | null>(null);
-  useEffect(() => {
-    if (quoteExpiresAt === null || Number.isNaN(quoteExpiresAt)) return;
-    const id = setTimeout(
-      () => setLapsedAt(quoteExpiresAt),
-      Math.max(0, quoteExpiresAt - Date.now())
-    );
-    return () => clearTimeout(id);
-  }, [quoteExpiresAt]);
-
-  // Tied to the quote it belongs to, so the record of the last lapse can never
-  // condemn the quote that replaced it.
-  const quoteExpired = lapsedAt !== null && lapsedAt === quoteExpiresAt;
+  // useMemePreview watches the quote's expiresAt and hands back no quote once
+  // it lapses, so the figures stop being presented as a price the user can act
+  // on; `expired` says why.
+  const quoteExpired = preview.expired;
   // The quote describes the debounced amount. While the field holds something
   // newer, the numbers on screen belong to a trade the user is no longer
   // asking for, so they are not shown as if they did.
   const quoteMatchesField = amount.trim() === debouncedAmount.trim();
   // The one value the rest of the sheet reads. Null means there is no figure
   // to show and nothing to trade on: nothing here invents one.
-  const quote = preview.data && !quoteExpired && quoteMatchesField ? preview.data : null;
+  const quote = preview.quote && quoteMatchesField ? preview.quote : null;
   const quotePending = preview.isFetching || !quoteMatchesField;
 
   // The three ways a trade ends without failing. Only the service's CONFIRMED
@@ -338,6 +329,9 @@ export function MemeTradeSheet({
   const estimate = needsFunding ? estimateReceive(payValue, token.priceUsd) : null;
   const submitDisabled =
     busy ||
+    // The Solana pre-move queues a purchase that is quoted later, so it waits
+    // on the consent as surely as a preview does.
+    !consent.consented ||
     !amountValid ||
     !sideEnabled ||
     overBalance ||
@@ -355,7 +349,7 @@ export function MemeTradeSheet({
     !belowMin &&
     !needsFunding &&
     !preview.isFetching &&
-    !preview.data
+    !preview.quote
       ? (previewError ?? null)
       : null;
 
@@ -733,6 +727,13 @@ export function MemeTradeSheet({
                 <p className="mt-3 text-[13px] leading-[1.5] font-normal text-white/60">
                   {trackBody}
                 </p>
+                {/* Once a Solana quote is in hand, the fee it states, in USDC. */}
+                {quotedFee ? (
+                  <div className="mt-3 flex justify-between text-[12.5px] font-normal">
+                    <span className="text-white/55">{t("platformFee")}</span>
+                    <span className="tnum text-white">{platformFeeText(quotedFee)}</span>
+                  </div>
+                ) : null}
                 {stuck ? (
                   <p
                     data-testid="meme-stuck"
@@ -868,21 +869,21 @@ export function MemeTradeSheet({
                     {quote ? `${(quote.slippageBps / 100).toFixed(2)}%` : quotePending ? "…" : "—"}
                   </span>
                 </div>
+                {/* The fee the preview returned, never a rate the client assumes. */}
+                <div className="flex justify-between">
+                  <span className="text-white/55">{t("platformFee")}</span>
+                  <span className="tnum text-white">
+                    {quote
+                      ? platformFeeText(quote.platformFeeAmountFormatted)
+                      : quotePending
+                        ? "…"
+                        : "—"}
+                  </span>
+                </div>
               </div>
 
               {quoteExpired && quoteMatchesField ? (
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <span className="text-[12.5px] font-normal text-white/60">
-                    {t("quoteExpired")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void previewRefetch()}
-                    className="min-h-11 cursor-pointer rounded-full border border-white/15 px-3 font-sans text-[12px] font-semibold text-white/80 hover:border-white/35 hover:text-white"
-                  >
-                    {t("retry")}
-                  </button>
-                </div>
+                <QuoteExpiredNote className="mt-2" onRetry={() => void previewRefetch()} />
               ) : null}
               {previewFailed ? (
                 <div className="text-down mt-2 text-[12.5px] font-normal">
@@ -898,17 +899,7 @@ export function MemeTradeSheet({
                 </div>
               ) : null}
 
-              {warnings.length > 0 ? (
-                <div className="mt-3 flex flex-col gap-1">
-                  {/* Warning codes can repeat or arrive empty, so the key needs
-                      the index. */}
-                  {warnings.slice(0, 3).map((w, i) => (
-                    <div key={`${w.code}-${i}`} className="text-down/90 text-[11.5px] font-normal">
-                      {w.message}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
+              <MemeWarningList warnings={warnings} limit={3} className="mt-3" />
               {showRisk && token.liquidityUsd === null ? (
                 <LiquidityUnknownNote className="mt-2" />
               ) : null}
@@ -976,6 +967,12 @@ export function MemeTradeSheet({
           className="fixed inset-0 z-[420] cursor-default bg-black/65 backdrop-blur-sm"
         />
       </AnimatePresence>
+      <MemeRiskConsent
+        open={consent.prompting}
+        token={token}
+        onContinue={consent.accept}
+        onCancel={() => setAmount("")}
+      />
     </Portal>
   );
 }

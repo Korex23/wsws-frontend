@@ -41,6 +41,8 @@ vi.mock("@/features/trade/hooks/use-meme-tokens", () => ({
 }));
 
 const trade = vi.hoisted(() => vi.fn());
+// Whether each render let a preview go out past the risk consent.
+const previewConsented = vi.hoisted(() => [] as boolean[]);
 vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
   // The surfaces also read pure helpers (memeOutcomeToast) off this module.
   ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
@@ -50,7 +52,10 @@ vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
     error: null,
     trade,
   }),
-  useMemePreview: () => ({ data: null, isFetching: false, error: null }),
+  useMemePreview: (_input: unknown, consented: boolean) => {
+    previewConsented.push(consented);
+    return { quote: null, expired: false, isFetching: false, error: null, refetch: vi.fn() };
+  },
 }));
 
 vi.mock("@/hooks/use-portfolio", () => ({
@@ -133,6 +138,7 @@ const aaa = memeToken({ symbol: "AAA", priceUsd: "0.00001234", priceChange24hPer
 
 beforeEach(() => {
   vi.clearAllMocks();
+  previewConsented.length = 0;
   catalog.tokens = [aaa];
   catalog.isLoading = false;
   catalog.error = null;
@@ -299,5 +305,24 @@ describe("the transactions feed", () => {
     });
     renderBoard();
     expect(await screen.findByText("No transactions in this coin yet.")).toBeInTheDocument();
+  });
+});
+
+// The phone board hosts the same ticket, so it holds the same gate: a
+// LOW_LIQUIDITY coin is confirmed before any preview goes out.
+describe("the low-liquidity consent on the phone board", () => {
+  const LOW = { code: "LOW_LIQUIDITY", message: "Liquidity is below $50,000." };
+
+  it("asks once an amount is entered, and lets the preview through only on acceptance", async () => {
+    const thin = memeToken({ symbol: "THINBOARD", warnings: [LOW] });
+    catalog.tokens = [thin];
+    trending.tokens = [thin];
+    renderBoard();
+    fireEvent.change(await screen.findByLabelText("Quantity"), { target: { value: "5" } });
+    const dialog = await screen.findByRole("alertdialog");
+    expect(previewConsented.every((c) => c === false)).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "I understand, continue" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(previewConsented.at(-1)).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import baseMessages from "@/messages/en.json";
@@ -52,6 +52,18 @@ vi.mock("@/features/trade/components/perps-section", () => ({
 // wiring. TradeTicket itself has its own suite (meme-trade-ticket.test.tsx),
 // so it is stubbed here too: this suite tests the hosting, not the ticket.
 const memeTrade = vi.hoisted(() => vi.fn());
+// What useMemePreview hands back, and whether each render let a preview go out
+// past the risk consent.
+const memePreview = vi.hoisted(() => ({
+  state: {
+    quote: null as unknown,
+    expired: false,
+    isFetching: false,
+    error: null as unknown,
+    refetch: vi.fn(),
+  },
+  consented: [] as boolean[],
+}));
 vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
   // The surfaces also read pure helpers (memeOutcomeToast) off this module.
   ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
@@ -61,7 +73,10 @@ vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
     error: null,
     trade: memeTrade,
   }),
-  useMemePreview: () => ({ data: null, isFetching: false, error: null }),
+  useMemePreview: (_input: unknown, consented: boolean) => {
+    memePreview.consented.push(consented);
+    return memePreview.state;
+  },
 }));
 vi.mock("@/hooks/use-portfolio", () => ({
   usePortfolio: () => ({
@@ -74,6 +89,11 @@ vi.mock("@/hooks/use-portfolio", () => ({
 type MockTicketProps = {
   token: { symbol: string; address: string; chainId: number };
   side: "BUY" | "SELL";
+  amount: string;
+  onAmountChange: (amount: string) => void;
+  preview: unknown;
+  quoteExpired?: boolean;
+  onRefreshQuote?: () => void;
   onSubmit: (input: {
     side: "BUY" | "SELL";
     tokenAddress: string;
@@ -220,6 +240,14 @@ beforeEach(() => {
   memeTrade.mockClear();
   memeTicketProps.last = null;
   memeSheetProps.last = null;
+  memePreview.state = {
+    quote: null,
+    expired: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  };
+  memePreview.consented = [];
 });
 
 describe("MobileMarketView chrome", () => {
@@ -756,5 +784,74 @@ describe("MobileMarketView, the memecoin tap-to-screen ticket", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByRole("searchbox", { name: MEME_SEARCH })).toBeEnabled();
+  });
+});
+
+// The phone ticket against the trade contract: it is handed the live quote and
+// told when that quote lapsed, and a LOW_LIQUIDITY coin is confirmed before any
+// preview goes out. The ticket's own rendering of all of it (fee row, risk,
+// warnings, lapsed line) is pinned in meme-trade-ticket.test.tsx.
+describe("MobileMarketView, the memecoin ticket against the trade contract", () => {
+  const LOW = { code: "LOW_LIQUIDITY", message: "Liquidity is below $50,000." };
+
+  function openTicket(token: MemeToken) {
+    memes.tokens = [token];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    fireEvent.click(screen.getByText(token.symbol ?? ""));
+  }
+
+  it("hands the ticket the live quote", () => {
+    const quote = { platformFeeAmountFormatted: "0.025" };
+    memePreview.state.quote = quote;
+    openTicket(memeToken({ symbol: "PEPE", name: "Pepe" }));
+    expect(memeTicketProps.last?.preview).toBe(quote);
+  });
+
+  it("tells the ticket a lapsed quote lapsed, with the way to a fresh one", () => {
+    memePreview.state.expired = true;
+    openTicket(memeToken({ symbol: "PEPE", name: "Pepe" }));
+    expect(memeTicketProps.last?.preview).toBeNull();
+    expect(memeTicketProps.last?.quoteExpired).toBe(true);
+    act(() => memeTicketProps.last?.onRefreshQuote?.());
+    expect(memePreview.state.refetch).toHaveBeenCalled();
+  });
+
+  it("holds the preview for a LOW_LIQUIDITY coin until the consent is accepted", () => {
+    // Before a coin is opened there is nothing to consent to; count from here.
+    memes.tokens = [memeToken({ symbol: "THINPHONE", name: "Thin", warnings: [LOW] })];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    const fromTicket = memePreview.consented.length;
+    fireEvent.click(screen.getByText("THINPHONE"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    act(() => memeTicketProps.last?.onAmountChange("5"));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText(LOW.message)).toBeInTheDocument();
+    const whileOpen = memePreview.consented.slice(fromTicket);
+    expect(whileOpen.length).toBeGreaterThan(0);
+    expect(whileOpen.every((c) => c === false)).toBe(true);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "I understand, continue" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(memePreview.consented.at(-1)).toBe(true);
+  });
+
+  it("cancels the consent by clearing the amount", () => {
+    openTicket(memeToken({ symbol: "THINPHONE2", name: "Thin 2", warnings: [LOW] }));
+    act(() => memeTicketProps.last?.onAmountChange("5"));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel" })
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(memeTicketProps.last?.amount).toBe("");
+    expect(memePreview.consented.at(-1)).toBe(false);
+  });
+
+  it("never asks for a coin without the warning", () => {
+    openTicket(memeToken({ symbol: "PEPE", name: "Pepe" }));
+    act(() => memeTicketProps.last?.onAmountChange("5"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(memePreview.consented.every((c) => c === true)).toBe(true);
   });
 });

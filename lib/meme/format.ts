@@ -1,3 +1,5 @@
+import { fromBaseUnits } from "@/lib/trade/math";
+
 // Display helpers for the trade service's decimal strings. The contract's
 // rule, applied here once: null means "not currently available". It is never
 // coerced to zero, and a real zero is never hidden as if it were missing.
@@ -31,4 +33,30 @@ export function compactUsd(value: string | null): string {
     maximumFractionDigits: 2,
   }).format(Math.abs(n));
   return `${n < 0 ? "-" : ""}$${shown}`;
+}
+
+// Every platform fee settles in USDC, on Base and on Solana alike (the
+// contract's "Platform fees"). The preview names the fee's amount but not its
+// token, so the symbol is the contract's rule stated once here, not a guess
+// made per surface. The rate is never stated anywhere: the fee shown is always
+// the one the preview or quote returned.
+export const PLATFORM_FEE_SYMBOL = "USDC";
+const USDC_DECIMALS = 6;
+const BASE_UNITS = /^\d+$/;
+
+/**
+ * A USDC amount in base units ("2500") as a decimal string ("0.0025"), through
+ * a bigint so no base unit is lost however long the figure runs. Null for
+ * anything that is not a whole number of base units: an unreadable fee is not
+ * shown rather than shown wrong.
+ */
+/** The fee as a ticket shows it: the service's own figure, in USDC. */
+export function platformFeeText(formatted: string): string {
+  return `${formatted} ${PLATFORM_FEE_SYMBOL}`;
+}
+
+export function formatUsdcAtomic(atomic: string): string | null {
+  const cleaned = atomic.trim();
+  if (!BASE_UNITS.test(cleaned)) return null;
+  return fromBaseUnits(BigInt(cleaned), USDC_DECIMALS);
 }

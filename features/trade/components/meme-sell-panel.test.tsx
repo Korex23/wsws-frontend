@@ -34,6 +34,8 @@ function renderPanel(overrides: Partial<MemeSellPanelProps> = {}) {
         previewError={overrides.previewError}
         phase={overrides.phase}
         error={overrides.error}
+        quoteExpired={overrides.quoteExpired}
+        onRefreshQuote={overrides.onRefreshQuote}
         amount={amount}
         onAmountChange={setAmount}
         onSell={onSell}
@@ -248,5 +250,54 @@ describe("MemeSellPanel", () => {
     });
 
     expect(screen.getByText(/Couldn't get a price for this trade/)).toBeInTheDocument();
+  });
+});
+
+// The desktop sell panel is a trade surface like the sheet: the risk level and
+// the service's warnings are on it, and so is the fee the preview returned.
+describe("MemeSellPanel risk, fee and expiry", () => {
+  const warned = memeToken({
+    symbol: "RISKY",
+    riskLevel: "CRITICAL",
+    warnings: [
+      { code: "LOW_LIQUIDITY", message: "Liquidity is below $50,000." },
+      { code: "UPGRADEABLE_CONTRACT", message: "The token contract is upgradeable." },
+    ],
+  });
+
+  it("carries the risk badge and the visible warnings, without the upgradeable-proxy line", () => {
+    renderPanel({ token: warned });
+    expect(screen.getByText(messages.meme.riskCritical)).toBeInTheDocument();
+    expect(screen.getByText("Liquidity is below $50,000.")).toBeInTheDocument();
+    expect(screen.queryByText("The token contract is upgradeable.")).toBeNull();
+  });
+
+  it("shows the preview's formatted fee in USDC", () => {
+    renderPanel({
+      balanceRaw: "1000000000000000000000",
+      amount: "500",
+      preview: swapPreview({ platformFeeAmountFormatted: "25.000001" }),
+    });
+    const row = screen.getByText("Platform fee").parentElement as HTMLElement;
+    expect(row).toHaveTextContent("25.000001 USDC");
+  });
+
+  it("shows a dash for a fee it has not been told", () => {
+    renderPanel();
+    const row = screen.getByText("Platform fee").parentElement as HTMLElement;
+    expect(row).toHaveTextContent("—");
+  });
+
+  it("says a lapsed price lapsed and asks for a fresh one", () => {
+    const onRefreshQuote = vi.fn();
+    renderPanel({
+      balanceRaw: "1000000000000000000000",
+      amount: "500",
+      quoteExpired: true,
+      onRefreshQuote,
+    });
+    expect(screen.getByText(messages.meme.quoteExpired)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: messages.meme.retry }));
+    expect(onRefreshQuote).toHaveBeenCalledTimes(1);
   });
 });
