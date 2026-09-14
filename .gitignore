@@ -61,3 +61,8 @@ design_handoff_*/
 
 # ESLint cache, kept by CI between runs
 .eslintcache
+
+# local CCTP test harness (not for commit)
+cctp-run.mjs
+cctp-hypercore-run.mjs
+cctp-arb-to-base.mjs
