@@ -6,11 +6,13 @@
 // can be minted to the old wallet (and then transferred) once claiming is
 // live, everything else waits for the backend link to re-key the account.
 
+import { toHex } from "viem";
 import { readBaseTokenBalance } from "@/hooks/use-base-block";
 import { decimalToBaseUnits, holdingId } from "@/lib/migration/holding";
 import type { LegacyHolding, SettleOutcome, VenueAdapter } from "@/lib/migration/types";
 import { KASH_POINTS_LIVE } from "@/features/portfolio/lib/kash-launch";
 import {
+  claimSettlementMessage,
   getKashAccount,
   getKashStatus,
   getKashSubscription,
@@ -146,7 +148,19 @@ export const kashMigrationAdapter: VenueAdapter<KashRef> = {
     if (points && !ctx.signal.aborted) {
       ctx.onProgress("Claiming Kash points");
       try {
-        await postKashClaim(wallet, "legacy");
+        // REVIEW(decane-migration): staging reworked the kash claim to be
+        // signature-based. The sweep must sign claimSettlementMessage with the
+        // OLD wallet and post with the legacy identity — mirrors the normal
+        // useKashClaim flow (features/portfolio/hooks/use-kash.ts), but the
+        // legacy signer has no signMessage, so we personal_sign via its raw
+        // provider. Verify against a real legacy claim before trusting at scale.
+        const timestamp = Date.now();
+        const provider = await ctx.signer.getEthereumProvider();
+        const signature = (await provider.request({
+          method: "personal_sign",
+          params: [toHex(claimSettlementMessage(wallet, timestamp)), wallet as `0x${string}`],
+        })) as string;
+        await postKashClaim(wallet, signature, timestamp, "legacy");
         outcomes.set(points.id, { ok: true, txHashes: [] });
         if (tokenAddress) {
           for (let attempt = 0; attempt < MINT_POLL_ATTEMPTS; attempt++) {

@@ -148,7 +148,7 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
 
             {/* Wallets */}
             <div className="border-t border-white/8 pt-2">
-              <WalletAddresses user={user ?? null} />
+              <WalletAddresses />
             </div>
 
             {/* Quick Actions */}

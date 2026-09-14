@@ -287,6 +287,7 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
       </div>
       {confirming ? (
         <ConfirmDialog
+          open
           title={t("confirmTitle")}
           rows={optedIrreversible.map((h) => ({ label: h.label, value: formatUsd(h.valueUsd) }))}
           warning={t("confirmWarning")}
