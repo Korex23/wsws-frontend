@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAuthSession } from "@/hooks/use-auth-session";
 import { SheetNav } from "@/components/ui/sheet-nav";
 import { DepositStatus } from "@/components/ui/deposit-status";
 import { useMoney } from "@/components/ui/currency-select";
@@ -16,7 +16,6 @@ import {
 } from "@/hooks/use-deposit";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { usePrices } from "@/hooks/use-prices";
-import { getWalletAddress } from "@/lib/user";
 import { quoteFee, SETTLE_CHAINS, type QuoteResult } from "@/lib/deposit";
 import { fromBaseUnits, toBaseUnits } from "@/lib/trade/math";
 import { friendlyError } from "@/lib/errors";
@@ -41,13 +40,11 @@ interface FundSheetProps {
 
 export function FundSheet({ onClose }: FundSheetProps) {
   const t = useTranslations("casino.fund");
-  const { user } = usePrivy();
+  const { evmAddress: wallet } = useAuthSession();
   const money = useMoney();
   const { tokens, refetch: refetchPortfolio } = usePortfolio();
   const { sendToken } = useSendToken();
   const ethPrice = usePrices(["ETH"])["ETH"] ?? 0;
-
-  const wallet = getWalletAddress(user, "ethereum");
   const usdc = tokens.find(
     (t) => t.network === "base-mainnet" && t.symbol.toUpperCase() === "USDC"
   );

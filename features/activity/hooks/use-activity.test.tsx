@@ -5,21 +5,12 @@ import type { ReactNode } from "react";
 
 const apiFetch = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api", () => ({ apiFetch }));
-vi.mock("@privy-io/react-auth", () => ({
-  usePrivy: () => ({
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
     ready: true,
     authenticated: true,
-    user: {
-      linkedAccounts: [
-        {
-          type: "wallet",
-          chainType: "ethereum",
-          walletClientType: "privy",
-          connectorType: "embedded",
-          address: "0x1111111111111111111111111111111111111111",
-        },
-      ],
-    },
+    evmAddress: "0x1111111111111111111111111111111111111111",
+    solanaAddress: null,
   }),
 }));
 

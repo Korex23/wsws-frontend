@@ -2,16 +2,13 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { usePrivy, useSignMessage } from "@privy-io/react-auth";
-import {
-  useSignMessage as useSolanaSignMessage,
-  useWallets as useSolanaWallets,
-} from "@privy-io/react-auth/solana";
+import { useSocialWallet } from "decane-connect-kit";
 import { useEvmSendWithReceipt } from "@/hooks/use-evm-send";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useSponsoredSolanaSend } from "@/hooks/use-sponsored-solana";
 import { formatReceived, receivedFromLogs, type ReceiptLog } from "@/lib/meme/delivery";
-import { getWalletAddress } from "@/lib/user";
+import { useAuthSession } from "@/hooks/use-auth-session";
+import { ensureUnlocked } from "@/lib/decane";
 import {
   TradeApiError,
   createSolanaWalletChallenge,
@@ -30,7 +27,6 @@ import {
   type SwapStatus,
 } from "@/lib/meme/api";
 import { SOLANA_CHAIN_ID, networkOf } from "@/lib/meme/chain";
-import { signatureToBase58 } from "@/lib/meme/solana-signature";
 import { track } from "@/lib/analytics/mixpanel";
 
 // One trade at a time, with the states the contract demands kept explicit.
@@ -51,7 +47,9 @@ export interface MemePreviewInput extends SwapRequest {
 export type TradePhase =
   "idle" | "linking" | "quoting" | "signing" | "confirming" | "confirmed" | "failed";
 
-const LINKED_KEY = "wsws.meme-linked.v1";
+// v2: entries went from "userId:wallet" to the wallet alone when auth moved
+// off Privy, which had the only user id.
+const LINKED_KEY = "wsws.meme-linked.v2";
 // The service's verification usually lands within a few seconds of the
 // receipt: look early, then back off so a slow one is not asked every four
 // seconds for as long as it takes.
@@ -81,16 +79,11 @@ function markLinked(key: string) {
 }
 
 export function useMemeTrade() {
-  const { user } = usePrivy();
-  const { signMessage } = useSignMessage();
-  const { signMessage: signSolanaMessage } = useSolanaSignMessage();
-  const { wallets: solanaWallets } = useSolanaWallets();
+  const { evmAddress: wallet, solanaAddress: solanaWallet } = useAuthSession();
+  const socialWallet = useSocialWallet();
   const evmSend = useEvmSendWithReceipt();
   const { applyReceipt } = usePortfolio();
   const sendSponsoredSolana = useSponsoredSolanaSend();
-  const wallet = getWalletAddress(user, "ethereum");
-  const solanaWallet = getWalletAddress(user, "solana");
-
   const walletFor = useCallback(
     (chainId: number): string | null => (chainId === SOLANA_CHAIN_ID ? solanaWallet : wallet),
     [wallet, solanaWallet]
@@ -112,36 +105,36 @@ export function useMemeTrade() {
   // ownership mismatch clears the cache and relinks once.
   const ensureLinked = useCallback(
     async (chainId: number) => {
-      if (!user) throw new Error("Sign in first.");
+      if (!wallet) throw new Error("Sign in first.");
       if (chainId === SOLANA_CHAIN_ID) {
         // The Solana sibling: the same challenge shape, signed as raw bytes
         // by the embedded Solana wallet, and sent back as base58. The address
         // is never lowercased, on the wire or in the cache key.
         if (!solanaWallet) throw new Error("Sign in first.");
-        const key = `${user.id}:solana:${solanaWallet}`;
+        const key = `solana:${solanaWallet}`;
         if (linkedCache().has(key)) return;
-        const signer = solanaWallets.find((w) => w.address === solanaWallet);
-        if (!signer) throw new Error("Your Solana wallet is still connecting. Try again.");
         setPhase("linking");
         const challenge = await createSolanaWalletChallenge(solanaWallet);
-        const { signature } = await signSolanaMessage({
-          message: new TextEncoder().encode(challenge.message),
-          wallet: signer,
-        });
-        await verifySolanaWallet(challenge.challengeId, signatureToBase58(signature));
+        await ensureUnlocked(socialWallet);
+        // Decane returns the Solana signature already base58-encoded, which is
+        // the wire form verifySolanaWallet expects.
+        const signature = await socialWallet.signMessage("solana:mainnet", challenge.message);
+        await verifySolanaWallet(challenge.challengeId, signature);
         markLinked(key);
         return;
       }
       if (!wallet) throw new Error("Sign in first.");
-      const key = `${user.id}:${wallet.toLowerCase()}`;
+      const key = `${wallet.toLowerCase()}`;
       if (linkedCache().has(key)) return;
       setPhase("linking");
       const challenge = await createWalletChallenge(wallet);
-      const { signature } = await signMessage({ message: challenge.message }, { address: wallet });
+      await ensureUnlocked(socialWallet);
+      // Meme trades run on Base, so the ownership proof signs there too.
+      const signature = await socialWallet.signMessage("evm:8453", challenge.message);
       await verifyWallet(challenge.challengeId, signature);
       markLinked(key);
     },
-    [wallet, solanaWallet, solanaWallets, user, signMessage, signSolanaMessage]
+    [wallet, solanaWallet, socialWallet]
   );
 
   // Standalone linking for the preview path: the backend requires the wallet
@@ -167,8 +160,6 @@ export function useMemeTrade() {
   // execute in order and no balance-delta proof yet; CONFIRMED is the word.
   const tradeSolana = useCallback(
     async (body: SwapRequest): Promise<void> => {
-      const signer = solanaWallets.find((w) => w.address === body.walletAddress);
-      if (!signer) throw new Error("Your Solana wallet is still connecting. Try again.");
       const runQuote = () => quoteSolanaSwap(body, newIdempotencyKey());
 
       await ensureLinked(SOLANA_CHAIN_ID);
@@ -177,7 +168,7 @@ export function useMemeTrade() {
       try {
         quote = await runQuote();
       } catch (e) {
-        if (e instanceof TradeApiError && e.code === "WALLET_OWNERSHIP_MISMATCH" && user) {
+        if (e instanceof TradeApiError && e.code === "WALLET_OWNERSHIP_MISMATCH" && wallet) {
           try {
             window.localStorage.removeItem(LINKED_KEY);
           } catch {
@@ -200,7 +191,6 @@ export function useMemeTrade() {
       // nothing touches the transaction after; that order is the contract.
       const signature = await sendSponsoredSolana({
         transaction: quote.unsignedTransactionBase64,
-        wallet: signer,
         prefundRent: false,
       });
       await registerSolanaSubmission(quote.swapId, body.walletAddress, signature);
@@ -219,7 +209,7 @@ export function useMemeTrade() {
         await new Promise((resolve) => setTimeout(resolve, statusPollDelay(attempt)));
       }
     },
-    [solanaWallets, ensureLinked, user, sendSponsoredSolana]
+    [ensureLinked, wallet, sendSponsoredSolana]
   );
 
   const trade = useCallback(
@@ -247,7 +237,7 @@ export function useMemeTrade() {
           quote = await runQuote();
         } catch (e) {
           // A stale linked-cache entry: relink once, then quote again.
-          if (e instanceof TradeApiError && e.code === "WALLET_OWNERSHIP_MISMATCH" && user) {
+          if (e instanceof TradeApiError && e.code === "WALLET_OWNERSHIP_MISMATCH" && wallet) {
             try {
               window.localStorage.removeItem(LINKED_KEY);
             } catch {
@@ -380,7 +370,7 @@ export function useMemeTrade() {
         activeRef.current = false;
       }
     },
-    [walletFor, user, ensureLinked, evmSend, applyReceipt, tradeSolana]
+    [walletFor, wallet, ensureLinked, evmSend, applyReceipt, tradeSolana]
   );
 
   const reset = useCallback(() => {

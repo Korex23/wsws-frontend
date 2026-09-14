@@ -15,29 +15,24 @@ const chain = vi.hoisted(() => ({
   applyReceipt: vi.fn(),
 }));
 
-vi.mock("@privy-io/react-auth", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@privy-io/react-auth")>()),
-  getAccessToken: vi.fn(async () => "token"),
-  usePrivy: () => ({
-    user: {
-      id: "did:privy:u1",
-      linkedAccounts: [
-        {
-          type: "wallet",
-          chainType: "ethereum",
-          walletClientType: "privy",
-          connectorType: "embedded",
-          address: "0xabc0000000000000000000000000000000000001",
-        },
-      ],
-    },
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
+    ready: true,
+    authenticated: true,
+    evmAddress: "0xabc0000000000000000000000000000000000001",
+    solanaAddress: null,
   }),
-  useSignMessage: () => ({ signMessage: vi.fn(async () => ({ signature: "0xsig" })) }),
 }));
-vi.mock("@privy-io/react-auth/solana", () => ({
-  useSignMessage: () => ({ signMessage: vi.fn() }),
-  useWallets: () => ({ wallets: [] }),
+// One Decane wallet signs for both chains; the ownership proof is a message
+// signature, so that is all this needs to stub.
+vi.mock("decane-connect-kit", () => ({
+  useSocialWallet: () => ({
+    isUnlocked: true,
+    unlock: vi.fn(async () => {}),
+    signMessage: vi.fn(async () => "0xsig"),
+  }),
 }));
+vi.mock("@/lib/decane", () => ({ ensureUnlocked: vi.fn(async () => {}) }));
 vi.mock("@/hooks/use-evm-send", () => ({
   useEvmSend: () => chain.evmSend,
   useEvmSendWithReceipt: () => chain.evmSend,
@@ -90,8 +85,8 @@ describe("useMemeTrade on Base when the service records a delivered trade as fai
   beforeEach(() => {
     vi.useFakeTimers();
     window.localStorage.setItem(
-      "wsws.meme-linked.v1",
-      JSON.stringify([`did:privy:u1:${WALLET.toLowerCase()}`])
+      "wsws.meme-linked.v2",
+      JSON.stringify([`${WALLET.toLowerCase()}`])
     );
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
@@ -153,8 +148,8 @@ describe("useMemeTrade on Base when the service refuses the second registration"
   beforeEach(() => {
     vi.useFakeTimers();
     window.localStorage.setItem(
-      "wsws.meme-linked.v1",
-      JSON.stringify([`did:privy:u1:${WALLET.toLowerCase()}`])
+      "wsws.meme-linked.v2",
+      JSON.stringify([`${WALLET.toLowerCase()}`])
     );
     api.quoteSwap.mockResolvedValue(twoCalls);
     api.registerSubmission
@@ -217,8 +212,8 @@ describe("useMemeTrade status polling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.localStorage.setItem(
-      "wsws.meme-linked.v1",
-      JSON.stringify([`did:privy:u1:${WALLET.toLowerCase()}`])
+      "wsws.meme-linked.v2",
+      JSON.stringify([`${WALLET.toLowerCase()}`])
     );
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });

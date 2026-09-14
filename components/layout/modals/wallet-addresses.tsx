@@ -1,11 +1,10 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import type { User } from "@privy-io/react-auth";
 import { CopyButton } from "@/components/ui/copy-button";
 import { NetworkIcon } from "@/components/ui/network-icon";
 import { truncateAddress } from "@/lib/format";
-import { getWalletAddress } from "@/lib/user";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 /**
  * The addresses this account actually holds money at.
@@ -25,12 +24,17 @@ const CHAINS = [
   { chain: "solana", network: "Solana", label: "Solana" },
 ] as const;
 
-export function WalletAddresses({ user }: { user: User | null }) {
+export function WalletAddresses() {
   const t = useTranslations("account");
+  const { evmAddress, solanaAddress } = useAuthSession();
 
+  const byChain: Record<(typeof CHAINS)[number]["chain"], string | null> = {
+    ethereum: evmAddress,
+    solana: solanaAddress,
+  };
   const wallets = CHAINS.map((entry) => ({
     ...entry,
-    address: getWalletAddress(user, entry.chain),
+    address: byChain[entry.chain],
   })).filter((entry): entry is (typeof CHAINS)[number] & { address: string } =>
     Boolean(entry.address)
   );

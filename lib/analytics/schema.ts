@@ -57,6 +57,21 @@ function shape(spec: Record<string, PropType>): Shape {
 const NOTHING: EventSchema = [shape({})];
 
 export const EVENT_SCHEMA: Record<AnalyticsEventName, EventSchema> = {
+  // Privy -> Decane migration (ADR-0009)
+  migration_started: [shape({ entry: "string" })],
+  migration_linked: NOTHING,
+  migration_reviewed: [
+    shape({
+      holdings: "number",
+      opted_in: "number",
+      settle_later: "number",
+      value_usd: "number",
+    }),
+  ],
+  migration_step_completed: [shape({ venue: "string", kind: "string" })],
+  migration_step_failed: [shape({ venue: "string", kind: "string", retryable: "boolean" })],
+  migration_completed: [shape({ outcome: "string", moved_usd: "number" })],
+
   // Auth and onboarding
   auth_started: NOTHING,
   signup_completed: [shape({ method: "string" })],
