@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { MarketLogo } from "@/components/ui/market-logo";
@@ -9,7 +8,7 @@ import { Avatar } from "@/components/ui/avatar";
 import type { NavItem } from "@/components/layout/nav-items";
 import type { DashboardSection } from "@/lib/modal-types";
 import { truncateAddress } from "@/lib/format";
-import { deriveProfile, getWalletAddress } from "@/lib/user";
+import { useAuthSession } from "@/hooks/use-auth-session";
 import { GoLiveControl } from "@/components/broadcast/go-live-control";
 import { MARKET_SQUARE_HIDDEN } from "@/lib/market-square";
 import { AccountPopover } from "@/components/layout/account-popover";
@@ -29,12 +28,7 @@ interface SidebarProps {
 // choice, on the backdrop, on Escape, or on its own close button. One
 // component for both, so the nav can never differ between the two.
 export function Sidebar({ items, activeSection, onNavigate, open, onClose }: SidebarProps) {
-  const { user } = usePrivy();
-  const profile = deriveProfile(user);
-  // The footer's second line is the wallet, not the email: the topbar shows
-  // the same address on the same screen, and an email is blank for anyone who
-  // signed in with a wallet or a phone number.
-  const address = getWalletAddress(user, "ethereum");
+  const { profile, evmAddress: address } = useAuthSession();
   const t = useTranslations("topbar");
   // The square is a product with its own catalog namespace, so the rail reads
   // its name from there rather than repeating the string. The rail's word is

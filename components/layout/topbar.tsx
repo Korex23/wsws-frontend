@@ -1,14 +1,13 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
 import { useTranslations } from "next-intl";
 import { LanguageSelect } from "@/components/ui/language-select";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { MarketLogo } from "@/components/ui/market-logo";
 import { Avatar } from "@/components/ui/avatar";
 import { HelpIcon } from "@/components/ui/icons";
-import { deriveProfile } from "@/lib/user";
+import { useAuthSession } from "@/hooks/use-auth-session";
 import { requestTourReplay, startDashboardTour } from "@/features/tour";
 
 interface TopbarProps {
@@ -30,8 +29,7 @@ function CompassIcon({ size = 17 }: { size?: number }) {
 }
 
 export function Topbar({ onOpenAccount }: TopbarProps) {
-  const { user } = usePrivy();
-  const profile = deriveProfile(user);
+  const { profile } = useAuthSession();
   const t = useTranslations("topbar");
   const tTour = useTranslations("tour");
   const router = useRouter();
