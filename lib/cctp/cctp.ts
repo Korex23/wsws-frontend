@@ -144,6 +144,26 @@ export function encodeBaseToArbitrumBurn(
   });
 }
 
+// The Arbitrum -> Base burn: the mirror of the Base -> Arbitrum leg above, used
+// to finish a withdrawal over CCTP instead of the slower Dextopus swap. The
+// funds are already on the user's own Arbitrum wallet (Hyperliquid's withdraw3
+// only ever settles to Arbitrum), so this burns them home to Base.
+export function encodeArbitrumToBaseBurn(
+  amount: bigint,
+  recipient: Address,
+  maxFee: bigint,
+  fast = true
+): Hex {
+  return encodeDepositForBurn({
+    amount,
+    destinationDomain: CCTP_DOMAIN.base,
+    recipient,
+    burnToken: USDC.arbitrum,
+    maxFee,
+    fast,
+  });
+}
+
 // The Circle Forwarding Service hook for a HyperCore deposit. Format (verified
 // against Circle's encodeForwardHookData): magic "cctp-forward" right-padded to
 // 24 bytes, then version (uint32 = 0), payload length (uint32 = 24), the
