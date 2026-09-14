@@ -90,7 +90,12 @@ describe("scheduleSettlement", () => {
       NOW
     );
 
-    expect(plan.phases).toEqual([{ phase: "closes", holdings: [lossy("b", "perps", "position")] }]);
+    expect(plan.phases).toEqual([
+      { phase: "closes", holdings: [lossy("b", "perps", "position")] },
+      // The close pays into the old wallet, so the sweep trails it even with
+      // nothing discovered there to sweep.
+      { phase: "sweep", holdings: [] },
+    ]);
     expect(plan.settleLater.map((h) => h.id)).toEqual(["a"]);
   });
 
@@ -204,5 +209,45 @@ describe("helpers", () => {
         holding("b", "wallet", "token", { valueUsd: 2.25 }),
       ])
     ).toBe(3.75);
+  });
+});
+
+describe("the sweep phase survives an empty wallet", () => {
+  // runSettlement re-discovers the wallet at the start of the sweep, because
+  // claims and closes pay into it. Dropping the phase for want of a discovered
+  // balance is what would leave those proceeds behind.
+  it("keeps the sweep when a close pays into an old wallet that held nothing", () => {
+    const plan = scheduleSettlement([lossy("p", "perps", "position")], new Set(["p"]), NOW);
+    expect(plan.phases.map((p) => p.phase)).toEqual(["closes", "sweep"]);
+    expect(plan.phases.at(-1)?.holdings).toEqual([]);
+  });
+
+  it("keeps the sweep after a deterministic claim", () => {
+    const plan = scheduleSettlement([holding("c", "cashier", "available")], new Set(), NOW);
+    expect(plan.phases.map((p) => p.phase)).toEqual(["claims", "sweep"]);
+  });
+
+  it("adds no sweep when nothing pays into the wallet", () => {
+    const plan = scheduleSettlement(
+      [holding("pc", "polymarket", "collateral")],
+      new Set(),
+      NOW
+    );
+    expect(plan.phases.map((p) => p.phase)).toEqual(["settle"]);
+  });
+
+  it("adds no sweep when the only holdings wait or are stranded", () => {
+    const plan = scheduleSettlement(
+      [
+        lossy("p", "perps", "position"),
+        holding("s", "kash", "tier", {
+          settleability: { state: "stranded", reason: "unsponsoredNetwork" } as Settleability,
+        }),
+      ],
+      new Set(),
+      NOW
+    );
+    expect(plan.phases).toEqual([]);
+    expect(plan.settleLater.map((h) => h.id)).toEqual(["p"]);
   });
 });

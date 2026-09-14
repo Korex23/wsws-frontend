@@ -96,8 +96,14 @@ export function scheduleSettlement(
   // balance is the last thing to leave a wallet.
   buckets.sweep.sort((a, b) => Number(a.kind === "native") - Number(b.kind === "native"));
 
+  // Claims and closes both pay into the old wallet, so the sweep has to run
+  // even when discovery found nothing there to sweep: runSettlement
+  // re-discovers the wallet at the start of that phase, and with no phase
+  // there is nothing to re-discover into. An old account holding only a
+  // position would otherwise close it and leave the proceeds behind.
+  const paysIntoWallet = buckets.claims.length > 0 || buckets.closes.length > 0;
   const phases: SettlementPhase[] = (["claims", "closes", "settle", "sweep"] as const)
-    .filter((phase) => buckets[phase].length > 0)
+    .filter((phase) => buckets[phase].length > 0 || (phase === "sweep" && paysIntoWallet))
     .map((phase) => ({ phase, holdings: buckets[phase] }));
 
   return { phases, settleLater, skipped };

@@ -3094,11 +3094,15 @@
     "signInTitle": "Inicia sesión en tu cuenta anterior",
     "signInBody": "Usa el mismo Google, X, correo o passkey que usabas antes de la actualización. Solo lo usamos para mover lo que sigue ahí.",
     "signInButton": "Entrar en la cuenta anterior",
+    "wrongAccountTitle": "Ninguna billetera anterior en esta cuenta",
+    "wrongAccountBody": "Iniciaste sesión en una cuenta que nunca tuvo una billetera anterior, así que aquí no hay nada que mover. Si tu dinero estaba en otro correo u otro inicio de sesión, cambia a ese.",
+    "wrongAccountButton": "Usar otra cuenta",
     "reviewTitle": "Dinero en tu billetera anterior",
     "reviewBody": "Todo lo de abajo sigue perteneciendo a tu cuenta anterior. Marca lo que quieras cerrar ahora; el resto espera.",
     "checking": "Revisando cada lugar donde tu cuenta anterior podría tener dinero…",
     "checkFailed": "No pudimos revisar tu cuenta anterior. Inténtalo de nuevo.",
     "automaticHeading": "Se mueve automáticamente",
+    "autoMoved": "Ya se movieron {amount} desde tu billetera anterior. Lo que queda necesita tu visto bueno.",
     "optInHeading": "Tú decides",
     "laterHeading": "Se liquida después",
     "skippedHeading": "No se puede mover desde aquí",
@@ -3158,8 +3162,8 @@
     },
     "signInKnown": "Te quedan unos {amount} en tu billetera anterior. Inicia sesión en tu cuenta anterior para moverlos.",
     "entryBadge": "{amount} restantes",
-    "discoveryFailedTitle": "No se pudieron revisar algunos lugares",
-    "discoveryFailedHint": "De ahí no se movió nada. Inténtalo de nuevo cuando vuelvan."
+    "pendingTitle": "Queda por revisar",
+    "pendingBody": "{places} no respondió ahora mismo. Lo que haya allí sigue intacto y sigue siendo tuyo: vuelve a abrir esto más tarde y lo revisaremos otra vez."
   },
   "recovery": {
     "rotatedTitle": "Tu archivo de recuperación fue reemplazado",

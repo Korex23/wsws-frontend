@@ -3094,11 +3094,15 @@
     "signInTitle": "Sign in to your old account",
     "signInBody": "Use the same Google, X, email or passkey you used before the upgrade. We only use it to move what is still there.",
     "signInButton": "Sign in to old account",
+    "wrongAccountTitle": "No old wallet on this account",
+    "wrongAccountBody": "You're signed in to an account that never had an old wallet — so there's nothing here to move. If your money was on a different email or login, switch to that one.",
+    "wrongAccountButton": "Use a different account",
     "reviewTitle": "Money in your old wallet",
     "reviewBody": "Everything below still belongs to your old account. Tick what you want closed now; the rest waits.",
     "checking": "Checking every place your old account could hold money…",
     "checkFailed": "We couldn't check your old account. Try again.",
     "automaticHeading": "Moves automatically",
+    "autoMoved": "Moved {amount} from your old wallet already. What's left needs your say-so.",
     "optInHeading": "Your call",
     "laterHeading": "Settles later",
     "skippedHeading": "Can't move from here",
@@ -3158,8 +3162,8 @@
     },
     "signInKnown": "You have about {amount} left in your old wallet. Sign in to your old account to move it.",
     "entryBadge": "{amount} left",
-    "discoveryFailedTitle": "Some places couldn't be checked",
-    "discoveryFailedHint": "Nothing was moved from these. Try again once they're back."
+    "pendingTitle": "Still to check",
+    "pendingBody": "{places} didn't answer just now. Anything there is untouched and stays yours — reopen this later and we'll take another look."
   },
   "recovery": {
     "rotatedTitle": "Your recovery file was replaced",

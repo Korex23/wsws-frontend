@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { usePrivy } from "@privy-io/react-auth";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ProgressBar } from "@/components/ui/progress-bar";
@@ -12,8 +12,8 @@ import { usePortfolio } from "@/hooks/use-portfolio";
 import { track } from "@/lib/analytics/mixpanel";
 import { isUnconfigured } from "@/lib/api/envelope";
 import { formatUsd } from "@/lib/currency";
-import { scheduleSettlement } from "@/lib/migration/schedule";
-import type { LegacyHolding, VenueAdapter } from "@/lib/migration/types";
+import { scheduleSettlement, sumValueUsd } from "@/lib/migration/schedule";
+import type { LegacyHolding, SettleOutcome, VenueAdapter } from "@/lib/migration/types";
 import { linkLegacyAccount } from "@/features/migrate/lib/api";
 import { ethPriceFromPortfolio } from "@/features/migrate/lib/discover";
 import type { RunResult } from "@/features/migrate/lib/run";
@@ -23,9 +23,11 @@ import {
   reasonKey,
   reviewGroups,
   VENUE_ORDER,
+  worthShowing,
 } from "@/features/migrate/lib/review";
 import { markFundsMoved, markMigrationComplete } from "@/features/migrate/lib/visibility";
 import { useLegacySigner } from "@/features/migrate/hooks/use-legacy-signer";
+import { useFreshLegacySession } from "@/features/migrate/hooks/use-fresh-legacy-session";
 import {
   MIGRATION_QUERY_PREFIX,
   useLegacyHoldings,
@@ -46,14 +48,21 @@ const PRIMARY =
 const SECONDARY =
   "w-full cursor-pointer rounded-xl border border-white/14 bg-white/6 px-4 py-3 font-sans text-[14px] font-semibold text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50";
 
+// The automatic run opts into nothing: everything it moves is deterministic.
+const NO_OPT_IN: ReadonlySet<string> = new Set();
+
 // The full migration flow: sign in to the old account, review what it still
 // holds everywhere, run the settlement, read the summary. Must render inside
 // LegacyPrivyProvider; the sheet and the balance-card button each provide
 // their own.
 export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPanelProps) {
   const t = useTranslations("migrate");
+  const locale = useLocale();
   const privy = usePrivy();
   const signer = useLegacySigner();
+  // Same boolean the signer gates on; the sign-in button must not be live
+  // while an inherited session is still being cleared away.
+  const fresh = useFreshLegacySession();
   const session = useAuthSession();
   const newPortfolio = usePortfolio();
   const queryClient = useQueryClient();
@@ -82,6 +91,9 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
   const [optIn, setOptIn] = useState<Set<string> | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
+  // The deterministic sweep that runs without being asked for, kept apart from
+  // the opted-in run so the summary can add the two together.
+  const [autoResult, setAutoResult] = useState<RunResult | null>(null);
 
   useEffect(() => {
     track("migration_started", { entry });
@@ -119,8 +131,14 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
   // Settleability is judged as of discovery; before the first discovery there
   // are no holdings to judge.
   const now = holdingsQuery.dataUpdatedAt;
-  const checked = optIn ?? defaultOptIn(holdings);
-  const groups = useMemo(() => reviewGroups(holdings, checked, now), [holdings, checked, now]);
+  // What the automatic run settled drops out of the review; what it failed
+  // stays, so the button below can retry it.
+  const remaining = useMemo(
+    () => (autoResult ? holdings.filter((h) => !autoResult.results.get(h.id)?.ok) : holdings),
+    [holdings, autoResult]
+  );
+  const checked = optIn ?? defaultOptIn(remaining);
+  const groups = useMemo(() => reviewGroups(remaining, checked, now), [remaining, checked, now]);
 
   const toggle = (id: string) => {
     const next = new Set(checked);
@@ -129,46 +147,93 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
     setOptIn(next);
   };
 
-  const execute = useCallback(async () => {
-    setConfirming(false);
-    const plan = scheduleSettlement(holdings, checked, now);
-    track("migration_reviewed", {
-      holdings: holdings.length,
-      opted_in: checked.size,
-      settle_later: plan.settleLater.length,
-      value_usd: groups.movingUsd,
-    });
-    const outcome = await runner.run(plan);
-    setResult(outcome);
-    track("migration_completed", { outcome: outcome.outcome, moved_usd: outcome.movedUsd });
-    if (outcome.outcome === "complete") markMigrationComplete();
-    // Anything that landed is the user's money in their new wallet, so it
-    // stops being hidden even when the run as a whole is unfinished.
-    if (outcome.movedCount > 0) markFundsMoved();
-    void newPortfolio.refetchUntilChanged("all");
-  }, [holdings, checked, now, groups.movingUsd, runner, newPortfolio]);
+  const execute = useCallback(
+    async (opted: ReadonlySet<string>): Promise<RunResult> => {
+      setConfirming(false);
+      const plan = scheduleSettlement(remaining, opted, now);
+      track("migration_reviewed", {
+        holdings: remaining.length,
+        opted_in: opted.size,
+        settle_later: plan.settleLater.length,
+        value_usd: sumValueUsd(plan.phases.flatMap((p) => p.holdings)),
+      });
+      const outcome = await runner.run(plan);
+      track("migration_completed", { outcome: outcome.outcome, moved_usd: outcome.movedUsd });
+      if (outcome.outcome === "complete") markMigrationComplete();
+      // Anything that landed is the user's money in their new wallet, so it
+      // stops being hidden even when the run as a whole is unfinished.
+      if (outcome.movedCount > 0) markFundsMoved();
+      void newPortfolio.refetchUntilChanged("all");
+      return outcome;
+    },
+    [remaining, now, runner, newPortfolio]
+  );
+
+  // A plain transfer carries no decision, so it no longer waits for one: the
+  // deterministic group is swept the moment discovery lands. What survives to
+  // the review is only what realises a price — closing a position, selling
+  // shares — which is the only thing worth stopping a user for. A sweep that
+  // fails stays in the review, so the button is still the way to retry it.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current || !signer || holdingsQuery.isFetching) return;
+    if (groups.automatic.length === 0) return;
+    autoRan.current = true;
+    void (async () => {
+      // Resolves only once the sweep has been signed and mined, so this lands
+      // as an async callback, not a cascading render.
+      setAutoResult(await execute(NO_OPT_IN));
+    })();
+  }, [signer, holdingsQuery.isFetching, groups.automatic.length, execute]);
 
   const start = () => {
     const risky = groups.optIn.some((h) => h.irreversible && checked.has(h.id));
     if (risky) setConfirming(true);
-    else void execute();
+    else void execute(checked).then(setResult);
   };
 
   const retry = () => {
     setResult(null);
+    setAutoResult(null);
+    autoRan.current = false;
     setOptIn(null);
     void holdingsQuery.refetch();
   };
 
   if (!signer) {
     const known = status.data?.hasLegacyFunds ? status.data.legacyFundsUsd : 0;
+    // There is no signer for two unrelated reasons, and showing one screen for
+    // both is what made this button do nothing: signed in to an account that
+    // never had an old wallet, privy.login() returns without opening anything,
+    // because Privy is already signed in. The way out is a different account,
+    // so say so and offer that instead. privy.user settles with authenticated,
+    // and this provider creates no wallets on login, so an account with none
+    // here will not grow one.
+    const signedInElsewhere = fresh && privy.authenticated && privy.user !== null;
     return (
       <Step
-        title={t("signInTitle")}
-        body={known > 0 ? t("signInKnown", { amount: formatUsd(known) }) : t("signInBody")}
+        title={signedInElsewhere ? t("wrongAccountTitle") : t("signInTitle")}
+        body={
+          signedInElsewhere
+            ? t("wrongAccountBody")
+            : known > 0
+              ? t("signInKnown", { amount: formatUsd(known) })
+              : t("signInBody")
+        }
       >
-        <button onClick={() => privy.login()} disabled={!privy.ready} className={PRIMARY}>
-          {t("signInButton")}
+        <button
+          onClick={() =>
+            signedInElsewhere
+              ? void privy.logout().then(() => privy.login())
+              : void privy.login()
+          }
+          // Not merely privy.ready: between Privy being ready and the inherited
+          // session being discarded, a login would be torn down by the logout
+          // landing behind it — the same dead click by another route.
+          disabled={!privy.ready || !fresh}
+          className={PRIMARY}
+        >
+          {signedInElsewhere ? t("wrongAccountButton") : t("signInButton")}
         </button>
       </Step>
     );
@@ -189,14 +254,27 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
     );
   }
 
-  if (result) {
-    const attempted = result.plan.phases.flatMap((p) => p.holdings);
-    const failed = attempted.filter((h) => !result.results.get(h.id)?.ok);
-    const left = result.plan.settleLater.length;
+  // The automatic run is the whole migration when nothing is left to decide;
+  // otherwise the summary waits for the opted-in run and reports both.
+  const finished = result ?? (autoResult && groups.optIn.length === 0 ? autoResult : null);
+  if (finished) {
+    const runs = finished === autoResult ? [finished] : ([autoResult, finished].filter(Boolean) as RunResult[]);
+    // A holding retried across both runs is one row, and counts as failed only
+    // if no run settled it.
+    const attempted = [
+      ...new Map(
+        runs.flatMap((r) => r.plan.phases.flatMap((p) => p.holdings)).map((h) => [h.id, h])
+      ).values(),
+    ];
+    const failed = attempted.filter((h) => !runs.some((r) => r.results.get(h.id)?.ok));
+    const movedUsd = runs.reduce((sum, r) => sum + r.movedUsd, 0);
+    // Counted the way the review lists them, so "1 left" never sends the user
+    // looking for a row worth nothing.
+    const left = finished.plan.settleLater.filter(worthShowing).length;
     return (
-      <Step title={t(`summary.${result.outcome}`)} body={t("summaryBody")}>
+      <Step title={t(`summary.${finished.outcome}`)} body={t("summaryBody")}>
         <div className="ws-inset flex flex-col gap-2 p-3.5 text-[13px]">
-          <Row label={t("moved")} value={formatUsd(result.movedUsd)} />
+          <Row label={t("moved")} value={formatUsd(movedUsd)} />
           <Row label={t("left")} value={String(left)} />
           <Row
             label={t("failed")}
@@ -207,7 +285,11 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
         {failed.length > 0 ? (
           <ul className="mt-3 flex flex-col gap-1.5 text-[12.5px] text-white/60">
             {failed.map((h) => {
-              const outcome = result.results.get(h.id);
+              // The last run that attempted it holds the error worth showing.
+              const outcome = runs.reduce<SettleOutcome | undefined>(
+                (found, r) => r.results.get(h.id) ?? found,
+                undefined
+              );
               return (
                 <li key={h.id}>
                   <span className="text-white/85">{h.label}</span>:{" "}
@@ -245,26 +327,39 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
   }
 
   const failures = holdingsQuery.data?.failures ?? [];
+  // "Polymarket and Perpetuals" in the reader's own language.
+  const listFormat = new Intl.ListFormat(locale, { style: "long", type: "conjunction" });
   const nothing = groups.automatic.length === 0 && groups.optIn.length === 0;
   const optedIrreversible = groups.optIn.filter((h) => h.irreversible && checked.has(h.id));
+  // Display only. The opt-in list is deliberately not filtered: a row the user
+  // is being asked to decide about never vanishes for being worth little.
+  const shownAutomatic = groups.automatic.filter(worthShowing);
+  const shownLater = groups.later.filter(worthShowing);
+  const shownSkipped = groups.skipped.filter(worthShowing);
 
   return (
     <Step title={t("reviewTitle")} body={t("reviewBody")}>
       {failures.length > 0 ? (
-        <div className="border-down/25 bg-down/8 mb-4 rounded-xl border px-3 py-2.5">
-          <div className="text-down text-[12.5px] font-semibold">{t("discoveryFailedTitle")}</div>
-          <ul className="mt-1 flex flex-col gap-1 text-[12px] text-white/60">
-            {failures.map((failure) => (
-              <li key={failure.venue}>
-                <span className="text-white/85">{t(`venue.${failure.venue}`)}</span>:{" "}
-                {shortError(failure.error)}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1.5 text-[12px] text-white/50">{t("discoveryFailedHint")}</p>
+        // Deliberately not styled as an error, and deliberately without the
+        // underlying message. A venue that did not answer says nothing about
+        // the user's money, and the raw text ("Not found", "wallet is not
+        // connected") reads like loss to someone who is already nervous about
+        // moving funds. discover() has already logged the real error.
+        <div className="mb-4 rounded-xl border border-white/8 bg-white/4 px-3 py-2.5">
+          <div className="text-[12.5px] font-semibold text-white/85">{t("pendingTitle")}</div>
+          <p className="mt-1 text-[12px] leading-normal text-white/55">
+            {t("pendingBody", {
+              places: listFormat.format(failures.map((f) => t(`venue.${f.venue}`))),
+            })}
+          </p>
         </div>
       ) : null}
-      <Section title={t("automaticHeading")} holdings={groups.automatic} t={t} />
+      {autoResult && autoResult.movedUsd > 0 ? (
+        <div className="border-accent/25 bg-accent/8 mb-4 rounded-xl border px-3 py-2.5 text-[12.5px] text-white/75">
+          {t("autoMoved", { amount: formatUsd(autoResult.movedUsd) })}
+        </div>
+      ) : null}
+      <Section title={t("automaticHeading")} holdings={shownAutomatic} t={t} />
       <Section
         title={t("optInHeading")}
         holdings={groups.optIn}
@@ -272,9 +367,9 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
         checked={checked}
         onToggle={toggle}
       />
-      <Section title={t("laterHeading")} holdings={groups.later} t={t} showReason />
-      <Section title={t("skippedHeading")} holdings={groups.skipped} t={t} showReason />
-      {nothing && groups.later.length === 0 && groups.skipped.length === 0 ? (
+      <Section title={t("laterHeading")} holdings={shownLater} t={t} showReason />
+      <Section title={t("skippedHeading")} holdings={shownSkipped} t={t} showReason />
+      {nothing && shownLater.length === 0 && shownSkipped.length === 0 ? (
         <p className="text-[13.5px] text-white/60">{t("nothingToMove")}</p>
       ) : null}
       <div className="mt-5 grid gap-2.5">
@@ -294,7 +389,7 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
           cancelLabel={t("cancel")}
           continueLabel={t("confirmContinue")}
           onCancel={() => setConfirming(false)}
-          onContinue={() => void execute()}
+          onContinue={() => void execute(checked).then(setResult)}
         />
       ) : null}
     </Step>

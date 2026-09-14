@@ -3094,11 +3094,15 @@
     "signInTitle": "Connectez-vous à votre ancien compte",
     "signInBody": "Utilisez le même Google, X, e-mail ou passkey qu'avant la mise à niveau. Nous ne l'utilisons que pour déplacer ce qui s'y trouve encore.",
     "signInButton": "Se connecter à l'ancien compte",
+    "wrongAccountTitle": "Aucun ancien portefeuille sur ce compte",
+    "wrongAccountBody": "Vous êtes connecté à un compte qui n'a jamais eu d'ancien portefeuille — il n'y a donc rien à déplacer ici. Si votre argent était sur un autre e-mail ou une autre connexion, basculez dessus.",
+    "wrongAccountButton": "Utiliser un autre compte",
     "reviewTitle": "Argent dans votre ancien portefeuille",
     "reviewBody": "Tout ce qui suit appartient encore à votre ancien compte. Cochez ce que vous voulez clôturer maintenant ; le reste attend.",
     "checking": "Vérification de chaque endroit où votre ancien compte pourrait avoir de l'argent…",
     "checkFailed": "Impossible de vérifier votre ancien compte. Réessayez.",
     "automaticHeading": "Déplacé automatiquement",
+    "autoMoved": "Déjà déplacé {amount} depuis votre ancien portefeuille. Le reste attend votre accord.",
     "optInHeading": "À vous de décider",
     "laterHeading": "Réglé plus tard",
     "skippedHeading": "Impossible d'ici",
@@ -3158,8 +3162,8 @@
     },
     "signInKnown": "Il vous reste environ {amount} dans votre ancien portefeuille. Connectez-vous à votre ancien compte pour les déplacer.",
     "entryBadge": "{amount} restants",
-    "discoveryFailedTitle": "Certains endroits n'ont pas pu être vérifiés",
-    "discoveryFailedHint": "Rien n'en a été déplacé. Réessayez quand ils seront de retour."
+    "pendingTitle": "Reste à vérifier",
+    "pendingBody": "{places} n'a pas répondu à l'instant. Ce qui s'y trouve reste intact et vous appartient toujours — rouvrez ceci plus tard et nous regarderons à nouveau."
   },
   "recovery": {
     "rotatedTitle": "Votre fichier de récupération a été remplacé",

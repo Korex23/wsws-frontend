@@ -3094,11 +3094,15 @@
     "signInTitle": "Entre na sua conta antiga",
     "signInBody": "Use o mesmo Google, X, e-mail ou passkey de antes da atualização. Só o usamos para mover o que ainda está lá.",
     "signInButton": "Entrar na conta antiga",
+    "wrongAccountTitle": "Nenhuma carteira antiga nesta conta",
+    "wrongAccountBody": "Você entrou numa conta que nunca teve uma carteira antiga — então não há nada aqui para mover. Se o seu dinheiro estava noutro e-mail ou login, mude para esse.",
+    "wrongAccountButton": "Usar outra conta",
     "reviewTitle": "Dinheiro na sua carteira antiga",
     "reviewBody": "Tudo abaixo ainda pertence à sua conta antiga. Marque o que quer fechar agora; o resto espera.",
     "checking": "Verificando cada lugar onde sua conta antiga pode ter dinheiro…",
     "checkFailed": "Não conseguimos verificar sua conta antiga. Tente de novo.",
     "automaticHeading": "Move automaticamente",
+    "autoMoved": "Já movemos {amount} da sua carteira antiga. O resto precisa da sua autorização.",
     "optInHeading": "Você decide",
     "laterHeading": "Liquida depois",
     "skippedHeading": "Não dá para mover daqui",
@@ -3158,8 +3162,8 @@
     },
     "signInKnown": "Você ainda tem cerca de {amount} na sua carteira antiga. Entre na sua conta antiga para mover.",
     "entryBadge": "{amount} restantes",
-    "discoveryFailedTitle": "Não deu para verificar alguns lugares",
-    "discoveryFailedHint": "Nada foi movido de lá. Tente de novo quando voltarem."
+    "pendingTitle": "Ainda por verificar",
+    "pendingBody": "{places} não respondeu agora. O que estiver lá continua intacto e continua seu — abra isto mais tarde e verificamos de novo."
   },
   "recovery": {
     "rotatedTitle": "Seu arquivo de recuperação foi substituído",

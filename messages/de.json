@@ -3094,11 +3094,15 @@
     "signInTitle": "Bei deinem alten Konto anmelden",
     "signInBody": "Nutze dasselbe Google, X, E-Mail oder Passkey wie vor dem Upgrade. Wir verwenden es nur, um zu bewegen, was noch dort liegt.",
     "signInButton": "Beim alten Konto anmelden",
+    "wrongAccountTitle": "Keine alte Wallet auf diesem Konto",
+    "wrongAccountBody": "Du bist bei einem Konto angemeldet, das nie eine alte Wallet hatte — hier gibt es also nichts zu bewegen. Lag dein Geld auf einer anderen E-Mail oder einem anderen Login, wechsle dorthin.",
+    "wrongAccountButton": "Anderes Konto verwenden",
     "reviewTitle": "Geld in deiner alten Wallet",
     "reviewBody": "Alles unten gehört noch zu deinem alten Konto. Hake an, was jetzt geschlossen werden soll; der Rest wartet.",
     "checking": "Wir prüfen jeden Ort, an dem dein altes Konto Geld haben könnte…",
     "checkFailed": "Dein altes Konto konnte nicht geprüft werden. Versuch es erneut.",
     "automaticHeading": "Wird automatisch bewegt",
+    "autoMoved": "{amount} wurden bereits aus deiner alten Wallet bewegt. Der Rest braucht dein Okay.",
     "optInHeading": "Deine Entscheidung",
     "laterHeading": "Wird später abgewickelt",
     "skippedHeading": "Von hier nicht möglich",
@@ -3158,8 +3162,8 @@
     },
     "signInKnown": "In deiner alten Wallet liegen noch etwa {amount}. Melde dich bei deinem alten Konto an, um sie zu bewegen.",
     "entryBadge": "{amount} übrig",
-    "discoveryFailedTitle": "Einige Orte konnten nicht geprüft werden",
-    "discoveryFailedHint": "Von dort wurde nichts bewegt. Versuch es erneut, sobald sie wieder da sind."
+    "pendingTitle": "Noch zu prüfen",
+    "pendingBody": "{places} hat gerade nicht geantwortet. Was dort liegt, bleibt unberührt und gehört weiterhin dir — öffne das später erneut und wir schauen noch einmal nach."
   },
   "recovery": {
     "rotatedTitle": "Deine Wiederherstellungsdatei wurde ersetzt",

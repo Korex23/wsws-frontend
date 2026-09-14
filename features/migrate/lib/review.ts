@@ -31,6 +31,17 @@ export function reviewGroups(
   return groups;
 }
 
+// A holding worth less than a cent renders as "$0.00", which is noise: the
+// user can neither act on it nor learn anything from it. This hides such a row
+// from the list and NEVER from the plan — dust with a real amount is still
+// swept, and a row the user is being asked to decide about is still shown
+// whatever it is worth.
+const DISPLAY_MIN_USD = 0.01;
+
+export function worthShowing(holding: LegacyHolding): boolean {
+  return holding.valueUsd >= DISPLAY_MIN_USD;
+}
+
 // Opt-ins checked before the user touches anything. Cancelling a resting
 // perp order loses nothing, so it starts checked; closing a position or
 // selling shares realises a price, so those start unchecked.

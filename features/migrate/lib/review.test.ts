@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { byVenue, defaultOptIn, reasonKey, reviewGroups } from "@/features/migrate/lib/review";
+import {
+  byVenue,
+  defaultOptIn,
+  reasonKey,
+  reviewGroups,
+  worthShowing,
+} from "@/features/migrate/lib/review";
 import type { LegacyHolding, Venue } from "@/lib/migration/types";
 
 const NOW = 1_700_000_000_000;
@@ -84,5 +90,28 @@ describe("byVenue", () => {
       ["kash", 2],
       ["earn", 1],
     ]);
+  });
+});
+
+describe("worthShowing", () => {
+  const at = (valueUsd: number): LegacyHolding => ({ ...holding("h", "wallet"), valueUsd });
+
+  it("hides anything that would render as $0.00", () => {
+    expect(worthShowing(at(0))).toBe(false);
+    expect(worthShowing(at(0.004))).toBe(false);
+    expect(worthShowing(at(0.0099))).toBe(false);
+  });
+
+  it("keeps a cent and anything above it", () => {
+    expect(worthShowing(at(0.01))).toBe(true);
+    expect(worthShowing(at(1.25))).toBe(true);
+  });
+
+  it("does not partition the groups — the plan still carries the dust", () => {
+    // The sweep moves an unpriced or dust balance whether or not a row for it
+    // appears; hiding it from the list must never drop it from the run.
+    const dust = { ...holding("dust", "wallet"), valueUsd: 0 };
+    const groups = reviewGroups([dust], new Set(), NOW);
+    expect(groups.automatic.map((h) => h.id)).toEqual(["dust"]);
   });
 });
