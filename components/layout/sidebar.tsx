@@ -8,8 +8,7 @@ import { MarketLogo } from "@/components/ui/market-logo";
 import { Avatar } from "@/components/ui/avatar";
 import type { NavItem } from "@/components/layout/nav-items";
 import type { DashboardSection } from "@/lib/modal-types";
-import { truncateAddress } from "@/lib/format";
-import { deriveProfile, getWalletAddress } from "@/lib/user";
+import { deriveProfile } from "@/lib/user";
 import { GoLiveControl } from "@/components/broadcast/go-live-control";
 import { MARKET_SQUARE_HIDDEN } from "@/lib/market-square";
 import { AccountPopover } from "@/components/layout/account-popover";
@@ -34,7 +33,6 @@ export function Sidebar({ items, activeSection, onNavigate, open, onClose }: Sid
   // The footer's second line is the wallet, not the email: the topbar shows
   // the same address on the same screen, and an email is blank for anyone who
   // signed in with a wallet or a phone number.
-  const address = getWalletAddress(user, "ethereum");
   const t = useTranslations("topbar");
   // The square is a product with its own catalog namespace, so the rail reads
   // its name from there rather than repeating the string. The rail's word is
@@ -206,11 +204,6 @@ export function Sidebar({ items, activeSection, onNavigate, open, onClose }: Sid
               <span className="block truncate font-sans text-[13px] font-medium text-white">
                 {profile.name}
               </span>
-              {address ? (
-                <span className="tnum block truncate text-xs font-normal text-white/50">
-                  {truncateAddress(address)}
-                </span>
-              ) : null}
             </span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path
