@@ -1,4 +1,6 @@
 import { isFeeSponsoredNetwork } from "@/lib/trade/sponsored-evm";
+import { SOLANA_CHAIN_ID, chainIdOfNetwork } from "@/lib/meme/chain";
+import type { MemeToken, PortfolioPosition } from "@/lib/meme/types";
 import type { TokenBalance } from "@/lib/server/alchemy";
 
 // Deposits currently settle as USDC on Base and sit in the wallet as spendable
@@ -74,7 +76,7 @@ const ZERO_VALUE_USD = 0.005;
 // holding, so anything reaching here with a balance has already been recognized
 // and is worth showing at an unknown value rather than not at all.
 export function isZeroValueHolding(token: TokenBalance): boolean {
-  if (token.balance > 0 && token.priceUsd === 0) return false;
+  if (isUnpricedHolding(token)) return false;
   return token.valueUsd < ZERO_VALUE_USD;
 }
 
@@ -105,7 +107,7 @@ const DUST_USD = 0.01;
 export function isDustHolding(token: TokenBalance): boolean {
   // Kept explicit so the rule still holds if a feed ever reports a value
   // without a price: an unpriced balance is a real position, not dust.
-  if (token.balance > 0 && token.priceUsd === 0) return false;
+  if (isUnpricedHolding(token)) return false;
   // Deliberately formatMoney's own condition for printing "<$0.01" in place of
   // a figure, so this hides exactly the rows that cannot show one.
   //
@@ -114,4 +116,77 @@ export function isDustHolding(token: TokenBalance): boolean {
   // held however it rounds. Those render "$0.00", which is a figure, and they
   // stay.
   return token.valueUsd > 0 && token.valueUsd < DUST_USD;
+}
+
+/**
+ * True for a real balance nobody could price.
+ *
+ * The portfolio's price is a number every consumer adds and sorts by, so an
+ * unknown price is carried as 0 and valueUsd is 0 with it. A holding with a
+ * balance at that price is not worth $0; its value is unknown, and the
+ * holdings list says "Valuation unavailable" instead of "$0.00".
+ */
+export function isUnpricedHolding(token: TokenBalance): boolean {
+  return token.balance > 0 && token.priceUsd === 0;
+}
+
+/**
+ * A held trade-service memecoin as the trade sheet's token, on the chain the
+ * holding lives on, or null for anything else.
+ *
+ * The sheet re-fetches the fresh listing (risk, tradability) by chainId and
+ * address itself. It was built with Base's 8453 for every meme, so a Solana
+ * coin's sale was quoted on the wrong chain. The address goes through as the
+ * balance feed wrote it: a Solana mint is case-sensitive.
+ */
+export function memeTokenOf(token: TokenBalance): MemeToken | null {
+  if (token.meme !== true || token.address === null) return null;
+  const chainId = chainIdOfNetwork(token.network);
+  if (chainId === null) return null;
+  return {
+    chainId,
+    address: token.address,
+    name: token.name,
+    symbol: token.symbol,
+    decimals: token.decimals,
+    logoUrl: token.logo,
+    // Unpriced stays null: the sheet shows no price rather than "0".
+    priceUsd: token.priceUsd > 0 ? String(token.priceUsd) : null,
+    liquidityUsd: null,
+    volume24hUsd: null,
+    priceChange24hPercent: null,
+    marketCapUsd: null,
+    fdvUsd: null,
+    pairAddress: null,
+    dexName: null,
+    riskLevel: "UNKNOWN",
+    buyEnabled: true,
+    sellEnabled: true,
+    warnings: [],
+  };
+}
+
+/**
+ * The holdings minus the memecoins the trade service has a position for.
+ *
+ * The service's /portfolio is the record of what was bought through it, with
+ * cost basis and P&L, and the Memecoins section shows it. Listing the same coin
+ * again here from its wallet balance would show it twice at two values. A
+ * balance the service does not know (an airdrop, a transfer in) stays. Identity
+ * is chainId + address: an EVM address compares without case, a Solana mint
+ * exactly as written.
+ */
+export function withoutServiceKnownMemes(
+  tokens: TokenBalance[],
+  positions: readonly Pick<PortfolioPosition, "chainId" | "address">[]
+): TokenBalance[] {
+  if (positions.length === 0) return tokens;
+  const keyOf = (chainId: number, address: string) =>
+    `${chainId}:${chainId === SOLANA_CHAIN_ID ? address : address.toLowerCase()}`;
+  const known = new Set(positions.map((p) => keyOf(p.chainId, p.address)));
+  return tokens.filter((token) => {
+    if (token.address === null) return true;
+    const chainId = chainIdOfNetwork(token.network);
+    return chainId === null || !known.has(keyOf(chainId, token.address));
+  });
 }

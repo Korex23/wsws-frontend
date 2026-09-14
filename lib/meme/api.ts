@@ -145,6 +145,10 @@ async function request<K extends ParserName>(
   }
 }
 
+// The portfolio client (lib/meme/portfolio.ts) goes through the same request,
+// so its mappers load on demand too and its failures carry the same codes.
+export { request as tradeRequest };
+
 function post<K extends ParserName>(
   path: string,
   payload: unknown,

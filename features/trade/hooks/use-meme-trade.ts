@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePrivy, useSignMessage } from "@privy-io/react-auth";
 import {
   useSignMessage as useSolanaSignMessage,
@@ -12,6 +12,7 @@ import { usePortfolio } from "@/hooks/use-portfolio";
 import { useSponsoredSolanaSend } from "@/hooks/use-sponsored-solana";
 import { formatReceived, receivedFromLogs, type ReceiptLog } from "@/lib/meme/delivery";
 import { formatUsdcAtomic } from "@/lib/meme/format";
+import { memePortfolioKeys } from "@/lib/meme/portfolio";
 import { isSubmittedEvmOperationError } from "@/lib/trade/sponsor";
 import { getWalletAddress } from "@/lib/user";
 import {
@@ -184,6 +185,7 @@ export function useMemeTrade() {
   const evmSend = useEvmSendWithReceipt();
   const { applyReceipt } = usePortfolio();
   const sendSponsoredSolana = useSponsoredSolanaSend();
+  const queryClient = useQueryClient();
   const wallet = getWalletAddress(user, "ethereum");
   const solanaWallet = getWalletAddress(user, "solana");
 
@@ -212,6 +214,15 @@ export function useMemeTrade() {
   // its preview does). Null until then, and null when the quote states none.
   const [quotedFee, setQuotedFee] = useState<string | null>(null);
   const activeRef = useRef(false);
+
+  // The service's portfolio is built from CONFIRMED swaps only, so the moment
+  // one is confirmed its summary, positions, detail and activity are all out
+  // of date, and they share one key prefix. A delivered or pending trade has
+  // changed nothing there yet and refreshes nothing. The refetch runs in the
+  // background; its failures land on those queries, not on this trade.
+  const refreshServicePortfolio = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: memePortfolioKeys.all });
+  }, [queryClient]);
 
   // Challenge → exact-message signature → verify, cached per (user, wallet) so
   // repeat trades skip the signature. The backend stays authoritative: an
@@ -349,12 +360,13 @@ export function useMemeTrade() {
         return { outcome: "pending", swapId: quote.swapId, requestId: null };
       }
       if (status === "CONFIRMED") {
+        refreshServicePortfolio();
         setPhase("confirmed");
         return { outcome: "confirmed", swapId: quote.swapId, requestId: null };
       }
       throw new TradeApiError(status, "The trade didn't complete.", 200);
     },
-    [solanaWallets, ensureLinked, user, sendSponsoredSolana]
+    [solanaWallets, ensureLinked, user, sendSponsoredSolana, refreshServicePortfolio]
   );
 
   const trade = useCallback(
@@ -518,6 +530,7 @@ export function useMemeTrade() {
           return { outcome: "pending", swapId: quote.swapId, requestId: null };
         }
         if (status === "CONFIRMED") {
+          refreshServicePortfolio();
           setPhase("confirmed");
           return { outcome: "confirmed", swapId: quote.swapId, requestId: null };
         }
@@ -542,7 +555,16 @@ export function useMemeTrade() {
         activeRef.current = false;
       }
     },
-    [walletFor, user, ensureLinked, evmSend, applyReceipt, tradeSolana, settleAsDelivered]
+    [
+      walletFor,
+      user,
+      ensureLinked,
+      evmSend,
+      applyReceipt,
+      tradeSolana,
+      settleAsDelivered,
+      refreshServicePortfolio,
+    ]
   );
 
   const reset = useCallback(() => {

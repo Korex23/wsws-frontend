@@ -47,7 +47,15 @@ import { NetworkIcon } from "@/components/ui/network-icon";
 import { useMoney } from "@/components/ui/currency-select";
 import { SearchIcon, WalletIcon } from "@/components/ui/icons";
 import { usePortfolio, type TokenBalance } from "@/hooks/use-portfolio";
-import { isZeroValueHolding, selectHoldings } from "@/features/portfolio/lib/holdings";
+import {
+  isUnpricedHolding,
+  isZeroValueHolding,
+  memeTokenOf,
+  selectHoldings,
+  withoutServiceKnownMemes,
+} from "@/features/portfolio/lib/holdings";
+import { MemePositions } from "@/features/portfolio/components/meme-positions";
+import { useMemePortfolio } from "@/features/portfolio/hooks/use-meme-portfolio";
 import { canSellAsset } from "@/lib/sell";
 import { isPolymarketCollateral } from "@/lib/polymarket/config";
 import type { MemeToken } from "@/lib/meme/api";
@@ -66,31 +74,6 @@ interface PortfolioViewProps {
   onOpenSell: (sell: SellPayload) => void;
   onOpenRwaTrade: (rwaTrade: RwaTradePayload) => void;
   onOpenMemeSell: (token: MemeToken) => void;
-}
-
-// A held meme balance as the trade sheet's listing shape; the sheet re-fetches
-// the fresh catalog entry (risk, tradability) by address itself.
-function toMemeToken(t: TokenBalance): MemeToken {
-  return {
-    chainId: 8453,
-    address: t.address as string,
-    name: t.name,
-    symbol: t.symbol,
-    decimals: t.decimals,
-    logoUrl: t.logo,
-    priceUsd: t.priceUsd > 0 ? String(t.priceUsd) : null,
-    liquidityUsd: null,
-    volume24hUsd: null,
-    priceChange24hPercent: null,
-    marketCapUsd: null,
-    fdvUsd: null,
-    pairAddress: null,
-    dexName: null,
-    riskLevel: "UNKNOWN",
-    buyEnabled: true,
-    sellEnabled: true,
-    warnings: [],
-  };
 }
 
 const holdingsColumn = createColumnHelper<TokenBalance>();
@@ -112,6 +95,10 @@ export function PortfolioView({
   onOpenMemeSell,
 }: PortfolioViewProps) {
   const { tokens, loading, error, refetch } = usePortfolio();
+  // The service's positions: the same query the Memecoins section's first tab
+  // reads, so this asks for nothing extra. Coins it knows are shown there, with
+  // cost basis and P&L, and leave the generic table below.
+  const { items: servicePositions } = useMemePortfolio();
   const money = useMoney();
   const router = useRouter();
   const t = useTranslations("portfolio");
@@ -138,9 +125,9 @@ export function PortfolioView({
   // that rounds to $0.00. A held balance we could not price is not zero-value and
   // survives the toggle; see isZeroValueHolding.
   const visibleTokens = useMemo(() => {
-    const holdings = selectHoldings(tokens);
+    const holdings = withoutServiceKnownMemes(selectHoldings(tokens), servicePositions);
     return hideZero ? holdings.filter((t) => !isZeroValueHolding(t)) : holdings;
-  }, [tokens, hideZero]);
+  }, [tokens, hideZero, servicePositions]);
 
   const table = useReactTable({
     data: visibleTokens,
@@ -179,9 +166,12 @@ export function PortfolioView({
     // which cannot source or deliver them. Route both buy and sell to the RWA
     // panel. `address` is always set for an RWA (it is never a native balance).
     const isRwa = token.kind === "rwa" && token.address !== null;
-    // Trade-catalog memecoins sell through the meme trade service; Dextopus
-    // cannot quote them, so its sell sheet always fails for these.
-    const isMeme = token.meme === true && token.address !== null;
+    // Trade-catalog memecoins sell through the meme trade service, on the chain
+    // the holding lives on; Dextopus cannot quote them, so its sell sheet
+    // always fails for these.
+    const meme = memeTokenOf(token);
+    // A real balance nobody could price: its value is unknown, never "$0.00".
+    const unpriced = isUnpricedHolding(token);
     const isPredictionCollateral = isPolymarketCollateral(token.network, token.address);
     // Otherwise offer "Sell" only for assets Dextopus can take as an origin;
     // native POL/SOL, for example, cannot be sold, so we don't dead-end the user.
@@ -216,10 +206,10 @@ export function PortfolioView({
               mode: "sell",
             }),
         }
-      : isMeme
+      : meme
         ? {
             cta2: t("sell", { name: token.name }),
-            onCta2: () => onOpenMemeSell(toMemeToken(token)),
+            onCta2: () => onOpenMemeSell(meme),
           }
         : sellable
           ? {
@@ -243,14 +233,17 @@ export function PortfolioView({
       sym: token.symbol,
       name: token.name,
       sub: `${formatQty(token.balance)} ${token.symbol}`,
-      price: money.format(token.priceUsd),
+      price: unpriced ? t("valuationUnavailable") : money.format(token.priceUsd),
       chg: "",
       bg: tokenBg(token.symbol),
       stats: [
         { k: t("holdings"), v: `${formatQty(token.balance)} ${token.symbol}` },
-        { k: t("marketPrice"), v: money.format(token.priceUsd) },
+        { k: t("marketPrice"), v: unpriced ? "—" : money.format(token.priceUsd) },
         { k: t("network"), v: displayNetworkLabel(token) },
-        { k: t("positionValue"), v: money.format(token.valueUsd) },
+        {
+          k: t("positionValue"),
+          v: unpriced ? t("valuationUnavailable") : money.format(token.valueUsd),
+        },
       ],
       cta: isPredictionCollateral ? t("managePrediction") : t("buyMore", { name: token.name }),
       onCta: buyAction,
@@ -318,6 +311,9 @@ export function PortfolioView({
   // states, and all the machinery feeding them stay in place behind this flag,
   // so flipping it to false brings the section straight back.
   const HOLDINGS_HIDDEN = true;
+  // What a held balance nobody could price shows in place of "$0.00". Read here
+  // because the holdings rows below name each row `t`.
+  const valuationUnavailable = t("valuationUnavailable");
 
   return (
     <div className="mx-auto w-full max-w-[1520px] p-4 sm:p-6 lg:p-8">
@@ -407,6 +403,14 @@ export function PortfolioView({
           <KashBanner onBuy={() => setKashModal("buy")} />
           {squareBanner ?? stakeBanner}
         </PromoRail>
+      </div>
+
+      {/* Memecoins: positions, P&L and activity from the trade service, on the
+          desk and the phone alike (the section lays itself out for both). Sell
+          goes up through onOpenMemeSell to the app's modal host, which owns the
+          trade sheet; this feature never imports trade. */}
+      <div className="mt-[18px]">
+        <MemePositions onSell={onOpenMemeSell} />
       </div>
 
       {/* Commented out for now, at explicit request — cross-border is still
@@ -578,14 +582,14 @@ export function PortfolioView({
                         <TypeChip kind={t.kind} />
                       </span>
                       <span className="tnum hidden text-right text-sm font-normal min-[560px]:block">
-                        {money.format(t.priceUsd)}
+                        {isUnpricedHolding(t) ? "—" : money.format(t.priceUsd)}
                       </span>
                       <span className="hidden items-center justify-end gap-1.5 text-[13px] font-normal text-white/60 min-[560px]:flex">
                         <NetworkIcon network={displayNetworkIconKey(t)} size={16} />
                         {displayNetworkLabel(t)}
                       </span>
                       <span className="tnum text-right font-sans text-sm font-medium">
-                        {money.format(t.valueUsd)}
+                        {isUnpricedHolding(t) ? valuationUnavailable : money.format(t.valueUsd)}
                       </span>
                     </button>
                   );

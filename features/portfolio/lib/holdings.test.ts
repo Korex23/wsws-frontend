@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   isDepositSettlementToken,
   isDustHolding,
+  isUnpricedHolding,
   isZeroValueHolding,
+  memeTokenOf,
   selectHoldings,
+  withoutServiceKnownMemes,
 } from "@/features/portfolio/lib/holdings";
 import type { TokenBalance } from "@/lib/server/alchemy";
 
@@ -207,5 +210,94 @@ describe("selectHoldings on unsponsored chains", () => {
   it("keeps Solana holdings with no SOL, since its sends are sponsored too", () => {
     const bonk = token({ symbol: "BONK", network: "solana-mainnet", address: "Bonk111" });
     expect(selectHoldings([bonk])).toEqual([bonk]);
+  });
+});
+
+// A real balance with no price: the holdings list says "Valuation unavailable"
+// for it rather than "$0.00". Judged on the exact base units, not the float.
+describe("isUnpricedHolding", () => {
+  it("is a held balance whose price is unknown", () => {
+    expect(
+      isUnpricedHolding(token({ balance: 4, rawBalance: "4000000", priceUsd: 0, valueUsd: 0 }))
+    ).toBe(true);
+  });
+
+  it("is not a priced holding, and not an empty baseline row", () => {
+    expect(isUnpricedHolding(token({}))).toBe(false);
+    expect(
+      isUnpricedHolding(token({ balance: 0, rawBalance: "0", priceUsd: 0, valueUsd: 0 }))
+    ).toBe(false);
+  });
+});
+
+// A held catalogue memecoin as the trade sheet's token. It hard-coded Base's
+// 8453 for every meme, so a Solana coin opened the sheet on the wrong chain.
+describe("memeTokenOf", () => {
+  const MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+
+  it("takes the chain from the holding's network", () => {
+    const pepe = token({
+      symbol: "PEPE",
+      network: "base-mainnet",
+      address: "0xpepe",
+      meme: true,
+      priceUsd: 0.5,
+    });
+    expect(memeTokenOf(pepe)).toMatchObject({ chainId: 8453, address: "0xpepe", priceUsd: "0.5" });
+
+    const bonk = token({ symbol: "BONK", network: "solana-mainnet", address: MINT, meme: true });
+    expect(memeTokenOf(bonk)).toMatchObject({ chainId: 101, address: MINT });
+  });
+
+  it('leaves an unpriced holding\'s price null, never "0"', () => {
+    const held = token({
+      network: "base-mainnet",
+      address: "0xabc",
+      meme: true,
+      priceUsd: 0,
+      valueUsd: 0,
+    });
+    expect(memeTokenOf(held)?.priceUsd).toBeNull();
+  });
+
+  it("is null for a holding that is not a trade-service meme on a chain it executes on", () => {
+    expect(memeTokenOf(token({ meme: false }))).toBeNull();
+    expect(memeTokenOf(token({ meme: true, address: null }))).toBeNull();
+    expect(memeTokenOf(token({ meme: true, network: "eth-mainnet", address: "0xabc" }))).toBeNull();
+  });
+});
+
+// The service's /portfolio is the record of memes bought through it, with
+// cost basis and P&L; the Memecoins section shows those. The generic holdings
+// table keeps only the balances the service does not know (an airdrop, a
+// transfer in), so a coin is never listed twice with two different values.
+describe("withoutServiceKnownMemes", () => {
+  const MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+  const pepe = token({ symbol: "PEPE", network: "base-mainnet", address: "0xAbCd", meme: true });
+  const bonk = token({ symbol: "BONK", network: "solana-mainnet", address: MINT });
+  const airdrop = token({ symbol: "DROP", network: "base-mainnet", address: "0xd70p", meme: true });
+  const usdc = token({});
+
+  it("drops a holding the service has a position for, EVM case-insensitively", () => {
+    const rows = withoutServiceKnownMemes(
+      [pepe, airdrop, usdc],
+      [{ chainId: 8453, address: "0xabcd" }]
+    );
+    expect(rows).toEqual([airdrop, usdc]);
+  });
+
+  it("matches a Solana mint exactly as written", () => {
+    expect(withoutServiceKnownMemes([bonk], [{ chainId: 101, address: MINT }])).toEqual([]);
+    expect(
+      withoutServiceKnownMemes([bonk], [{ chainId: 101, address: MINT.toLowerCase() }])
+    ).toEqual([bonk]);
+  });
+
+  it("never drops the same address on another chain", () => {
+    expect(withoutServiceKnownMemes([pepe], [{ chainId: 101, address: "0xAbCd" }])).toEqual([pepe]);
+  });
+
+  it("keeps everything while the service's positions are unknown", () => {
+    expect(withoutServiceKnownMemes([pepe, usdc], [])).toEqual([pepe, usdc]);
   });
 });

@@ -60,3 +60,26 @@ export function formatUsdcAtomic(atomic: string): string | null {
   if (!BASE_UNITS.test(cleaned)) return null;
   return fromBaseUnits(BigInt(cleaned), USDC_DECIMALS);
 }
+
+// A position's mark is labelled stale once it is older than this. The
+// contract asks for marketDataUpdatedAt to be shown or used to label stale
+// prices, without naming a threshold; fifteen minutes is this app's, stated
+// once here (ADR-2026-09-14-memecoins-trade-contract, slice 5).
+export const MARKET_DATA_STALE_MS = 15 * 60_000;
+
+export type MarketDataAge =
+  { kind: "none" } | { kind: "fresh"; minutes: number } | { kind: "stale"; minutes: number };
+
+/**
+ * How old a position's market data is at `now`: "none" when the service has
+ * no timestamp (or an unreadable one), otherwise its whole-minute age, stale
+ * past MARKET_DATA_STALE_MS.
+ */
+export function marketDataAge(updatedAt: string | null, now: number): MarketDataAge {
+  if (updatedAt === null) return { kind: "none" };
+  const at = Date.parse(updatedAt);
+  if (Number.isNaN(at)) return { kind: "none" };
+  const age = Math.max(0, now - at);
+  const minutes = Math.floor(age / 60_000);
+  return age > MARKET_DATA_STALE_MS ? { kind: "stale", minutes } : { kind: "fresh", minutes };
+}

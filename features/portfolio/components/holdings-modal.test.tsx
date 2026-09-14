@@ -30,6 +30,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     kindStablecoin: "Stablecoin",
     kindRwa: "RWA",
     kindToken: "Token",
+    valuationUnavailable: "Valuation unavailable",
   },
 };
 vi.mock("next-intl", () => ({
@@ -320,6 +321,58 @@ describe("HoldingsModal", () => {
 
     expect(onOpenMemeSell).toHaveBeenCalledWith(expect.objectContaining({ symbol: "PEPE" }));
     expect(onOpenSell).not.toHaveBeenCalled();
+  });
+
+  // The catalogue could not price this coin. Its balance is real, so it is
+  // listed, but its value is unknown, not "$0.00".
+  it("says a held meme it cannot price is valuation unavailable, never $0.00", () => {
+    setPortfolio({
+      tokens: [
+        token({
+          symbol: "PEPE",
+          name: "Pepe",
+          network: "base-mainnet",
+          address: "0x6982508145454ce325ddbe47a25d4ec3d2311933",
+          meme: true,
+          priceUsd: 0,
+          valueUsd: 0,
+        }),
+      ],
+    });
+    const { onOpenDetail } = renderModal();
+
+    expect(screen.getByText("Valuation unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("$0.00")).toBeNull();
+
+    fireEvent.click(screen.getByText("PEPE"));
+    const detail = onOpenDetail.mock.calls[0][0];
+    expect(detail.price).toBe("Valuation unavailable");
+    expect(JSON.stringify(detail.stats)).not.toContain("$0.00");
+  });
+
+  // It opened every held meme on Base's 8453, so a Solana coin's sale was
+  // quoted on the wrong chain.
+  it("opens a held Solana meme's sale on Solana, with the mint as written", () => {
+    const mint = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+    setPortfolio({
+      tokens: [
+        token({
+          symbol: "BONK",
+          name: "Bonk",
+          network: "solana-mainnet",
+          address: mint,
+          meme: true,
+        }),
+      ],
+    });
+    const { onOpenDetail, onOpenMemeSell } = renderModal();
+
+    fireEvent.click(screen.getByText("BONK"));
+    onOpenDetail.mock.calls[0][0].onCta2();
+
+    expect(onOpenMemeSell).toHaveBeenCalledWith(
+      expect.objectContaining({ chainId: 101, address: mint })
+    );
   });
 
   it("locks the page behind it and releases it again", () => {

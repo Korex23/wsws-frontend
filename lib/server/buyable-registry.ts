@@ -13,9 +13,11 @@ export type BuyableRegistry = Record<string, Set<string>>;
 
 // Display metadata for trade-catalog memecoins, keyed like the registry.
 // Alchemy has no logo and often no price for these, but the catalog does.
+// `priceUsd` is null when the catalogue has no price for the coin: per the
+// trade contract, null means "not currently available", never zero.
 export interface MemeTokenInfo {
   logo: string | null;
-  priceUsd: number;
+  priceUsd: number | null;
 }
 export type MemeRegistry = Record<string, Map<string, MemeTokenInfo>>;
 
@@ -88,6 +90,15 @@ interface RawCatalogRow {
   priceUsd?: string | null;
 }
 
+// The catalogue's decimal-string price as a number for the Alchemy path's
+// valuation, or null when there is none or it cannot be read. Never 0 for a
+// missing price: that is what valued an unpriced holding at $0.00.
+function catalogPrice(value: string | null | undefined): number | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const price = Number(value);
+  return Number.isFinite(price) ? price : null;
+}
+
 function readMeta(value: unknown): Paged<unknown>["meta"] | null {
   if (!value || typeof value !== "object") return null;
   const { page, limit, total } = value as Record<string, unknown>;
@@ -131,10 +142,9 @@ async function addTradeCatalog(out: BuyableRegistry, meta: MemeRegistry): Promis
       if (t.chainId !== 8453 || typeof t.address !== "string") continue;
       const address = t.address.toLowerCase();
       (out["base-mainnet"] ??= new Set()).add(address);
-      const priceUsd = t.priceUsd ? Number(t.priceUsd) : 0;
       (meta["base-mainnet"] ??= new Map()).set(address, {
         logo: t.logoUrl ?? null,
-        priceUsd: Number.isFinite(priceUsd) ? priceUsd : 0,
+        priceUsd: catalogPrice(t.priceUsd),
       });
     }
     const pageMeta = readMeta(body?.data?.meta);

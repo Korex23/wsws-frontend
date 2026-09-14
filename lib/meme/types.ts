@@ -169,3 +169,127 @@ export interface WalletChallenge {
   message: string;
   expiresAt: string;
 }
+
+// The trade service's portfolio, profit/loss and activity model (the
+// contract's "Portfolio, profit/loss, and complete user activity"). Every
+// quantity, USD amount, price and percentage is a decimal string; a null
+// valuation means the providers cannot currently value the asset, never zero.
+
+export type PortfolioChain = "base" | "solana";
+
+export type TradeActivityStatus = Exclude<SwapStatus, "QUOTED">;
+
+export interface PortfolioPosition {
+  chain: PortfolioChain;
+  chainId: number;
+  address: string;
+  name: string | null;
+  symbol: string | null;
+  decimals: number;
+  logoUrl: string | null;
+  positionStatus: "OPEN" | "CLOSED";
+  // PARTIAL: the live wallet balance and the service's ledger differ, or a
+  // confirmed sell exceeded tracked buys. Cost basis and P&L are incomplete.
+  costBasisStatus: "COMPLETE" | "PARTIAL";
+  quantityBought: string;
+  quantitySold: string;
+  // The live balance when every wallet could be read, otherwise the ledger's.
+  quantityRemaining: string;
+  ledgerQuantityRemaining: string;
+  walletQuantity: string | null;
+  externalQuantityDelta: string | null;
+  // UNAVAILABLE: quantityRemaining is ledger-derived, not live.
+  balanceStatus: "MATCHED" | "LOWER_THAN_LEDGER" | "HIGHER_THAN_LEDGER" | "UNAVAILABLE";
+  balanceUpdatedAt: string | null;
+  totalInvestedUsd: string;
+  totalProceedsUsd: string;
+  remainingCostBasisUsd: string;
+  averageEntryPriceUsd: string | null;
+  lowestEntryPriceUsd: string | null;
+  highestEntryPriceUsd: string | null;
+  currentPriceUsd: string | null;
+  // An informational mark, never guaranteed sell proceeds.
+  currentValueUsd: string | null;
+  realizedPnlUsd: string;
+  realizedReturnPercent: string | null;
+  unrealizedPnlUsd: string | null;
+  unrealizedReturnPercent: string | null;
+  totalPnlUsd: string;
+  // Percentage points: "32" is +32%.
+  totalReturnPercent: string | null;
+  buyCount: number;
+  sellCount: number;
+  firstBoughtAt: string;
+  lastBoughtAt: string;
+  lastActivityAt: string;
+  liquidityUsd: string | null;
+  volume24hUsd: string | null;
+  priceChange24hPercent: string | null;
+  marketCapUsd: string | null;
+  fdvUsd: string | null;
+  pairAddress: string | null;
+  dexName: string | null;
+  marketDataUpdatedAt: string | null;
+  // PARTIAL: a price exists but complete pair identity does not.
+  marketDataStatus: "READY" | "PARTIAL" | "UNAVAILABLE";
+  riskLevel: TokenRiskLevel;
+  sellEnabled: boolean;
+  warnings: TokenWarning[];
+  valuationDisclaimer: string;
+}
+
+export interface PortfolioSummary {
+  totalPositions: number;
+  openPositions: number;
+  closedPositions: number;
+  totalInvestedUsd: string;
+  totalProceedsUsd: string;
+  currentValueUsd: string;
+  realizedPnlUsd: string;
+  unrealizedPnlUsd: string;
+  totalPnlUsd: string;
+  totalReturnPercent: string | null;
+  profitablePositions: number;
+  losingPositions: number;
+  // false: the aggregate value and unrealised/total P&L leave out positions
+  // that cannot be priced, and must be labelled partial.
+  marketValueComplete: boolean;
+  calculatedAt: string;
+}
+
+export interface TradeActivity {
+  id: string;
+  quoteId: string;
+  chain: PortfolioChain;
+  chainId: number;
+  side: "BUY" | "SELL";
+  status: TradeActivityStatus;
+  walletAddress: string;
+  tokenAddress: string;
+  tokenDecimals: number;
+  tokenName: string | null;
+  tokenSymbol: string | null;
+  tokenLogoUrl: string | null;
+  sellTokenAddress: string;
+  buyTokenAddress: string;
+  sellAmountAtomic: string;
+  sellAmount: string;
+  buyAmountAtomic: string;
+  buyAmount: string;
+  usdAmount: string;
+  platformFeeAmountAtomic: string | null;
+  platformFeeAmountUsd: string | null;
+  transactionHashes: string[];
+  userOperationHashes: string[];
+  createdAt: string;
+  submittedAt: string | null;
+  confirmedAt: string | null;
+  updatedAt: string;
+  failureCode: string | null;
+  failureReason: string | null;
+}
+
+/** GET /portfolio/{chain}/{address}: the position and its confirmed trades, newest first. */
+export interface PortfolioPositionDetail extends PortfolioPosition {
+  activity: TradeActivity[];
+}

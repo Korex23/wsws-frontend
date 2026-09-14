@@ -95,3 +95,44 @@ describe("the trade catalogue in the buyable registry", () => {
     warn.mockRestore();
   });
 });
+
+// The contract: a null price means "not currently available", never zero. The
+// registry stored 0 for it, and lib/server/alchemy then valued the holding at
+// $0.00. It keeps the null now, so the holding reads unpriced.
+describe("a catalogue row the market cannot price", () => {
+  it("is stored with a null price, not 0", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          items: [
+            {
+              chainId: 8453,
+              address: "0xAbC0000000000000000000000000000000000001",
+              priceUsd: null,
+            },
+            {
+              chainId: 8453,
+              address: "0xabc0000000000000000000000000000000000002",
+              priceUsd: "0.25",
+            },
+            {
+              chainId: 8453,
+              address: "0xabc0000000000000000000000000000000000003",
+              priceUsd: "n/a",
+            },
+          ],
+          meta: { page: 1, limit: 500, total: 3 },
+        },
+      }),
+    });
+    const { meme } = await fetchBuyableRegistry();
+    const base = meme["base-mainnet"];
+    expect(base?.get("0xabc0000000000000000000000000000000000001")?.priceUsd).toBeNull();
+    expect(base?.get("0xabc0000000000000000000000000000000000002")?.priceUsd).toBe(0.25);
+    // An unreadable price is not a price either.
+    expect(base?.get("0xabc0000000000000000000000000000000000003")?.priceUsd).toBeNull();
+  });
+});

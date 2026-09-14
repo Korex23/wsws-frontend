@@ -88,6 +88,17 @@ import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import { memeToken } from "@/features/trade/lib/meme-fixture";
 import { TradeApiError } from "@/lib/meme/api";
 import { SubmittedEvmOperationError } from "@/lib/trade/sponsor";
+import { memePortfolioKeys } from "@/lib/meme/portfolio";
+
+// useMemeTrade refreshes the service's portfolio when a swap is CONFIRMED, so
+// it needs a query client. One per test, reachable here for the spy below.
+let queryClient: QueryClient;
+function tradeWrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+beforeEach(() => {
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+});
 
 const WALLET = "0xabc0000000000000000000000000000000000001";
 const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
@@ -141,7 +152,7 @@ describe("useMemeTrade on Base when the service records a delivered trade as fai
   });
 
   it("ends in `delivered`, never `confirmed`, on the on-chain proof", async () => {
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
@@ -172,7 +183,7 @@ describe("useMemeTrade on Base when the service records a delivered trade as fai
   });
 
   it("reports the mismatch to Watchtower and analytics with the swap and the hash", async () => {
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     await act(async () => {
       void result.current.trade({
         side: "SELL",
@@ -196,7 +207,7 @@ describe("useMemeTrade on Base when the service records a delivered trade as fai
 
   it("is `confirmed` only when the service says CONFIRMED", async () => {
     api.fetchSwapStatus.mockResolvedValue({ swapId: "swap-1", status: "CONFIRMED", updatedAt: "" });
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
@@ -257,7 +268,7 @@ describe("useMemeTrade on Base when the service refuses the second registration"
   });
 
   it("ends in `delivered` on the on-chain proof, keeping the 409's requestId for the screen", async () => {
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
@@ -294,7 +305,7 @@ describe("useMemeTrade on Base when the service refuses the second registration"
     chain.evmSend
       .mockResolvedValueOnce({ hash: "0xapprove", logs: [] })
       .mockResolvedValueOnce({ hash: "0xswap", logs: [] });
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<unknown>;
     await act(async () => {
       outcome = result.current
@@ -337,7 +348,7 @@ describe("useMemeTrade status polling", () => {
   });
 
   it("asks at 2, 5, 10 and 18 seconds rather than every 4", async () => {
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
@@ -381,7 +392,7 @@ describe("useMemeTrade status polling", () => {
       status: "CONFIRMING",
       updatedAt: "",
     });
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
@@ -438,7 +449,7 @@ describe("useMemeTrade on Base when only a user-operation hash comes back", () =
   });
 
   it("registers the user-operation hash and continues to the poll", async () => {
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
@@ -498,7 +509,7 @@ describe("useMemeTrade quote retries", () => {
     api.quoteSwap
       .mockRejectedValueOnce(new TradeApiError("QUOTE_PROVIDER_ERROR", "0x down", 502, "req-q1"))
       .mockResolvedValueOnce(quote);
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
@@ -523,7 +534,7 @@ describe("useMemeTrade quote retries", () => {
     api.quoteSwap.mockRejectedValue(
       new TradeApiError("QUOTE_PROVIDER_ERROR", "0x down", 502, "req-q2")
     );
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<unknown>;
     await act(async () => {
       outcome = result.current
@@ -538,7 +549,7 @@ describe("useMemeTrade quote retries", () => {
 
   it("does not retry any other quote failure", async () => {
     api.quoteSwap.mockRejectedValue(new TradeApiError("NO_SWAP_ROUTE", "no route", 422, "req-q3"));
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<unknown>;
     await act(async () => {
       outcome = result.current
@@ -556,7 +567,7 @@ describe("useMemeTrade quote retries", () => {
     api.quoteSwap
       .mockRejectedValueOnce(new TradeApiError("WALLET_OWNERSHIP_MISMATCH", "not linked", 403))
       .mockResolvedValueOnce(quote);
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     let outcome: Promise<TradeResult>;
     await act(async () => {
       outcome = result.current.trade({
@@ -708,7 +719,7 @@ describe("useMemeTrade on Solana", () => {
   });
 
   async function runSolanaBuy() {
-    const { result } = renderHook(() => useMemeTrade());
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
     await act(async () => {
       const done = result.current.trade({
         side: "BUY",
@@ -733,5 +744,96 @@ describe("useMemeTrade on Solana", () => {
     api.quoteSolanaSwap.mockResolvedValue(solanaQuote());
     const result = await runSolanaBuy();
     expect(result.current.quotedFee).toBeNull();
+  });
+});
+
+// The contract: "refresh summary and open positions after a swap reaches
+// CONFIRMED". The portfolio is built from confirmed swaps only, so a delivered
+// or pending trade has nothing to show there yet. All four portfolio queries
+// sit under one key prefix and are invalidated together, and only then.
+describe("useMemeTrade refreshes the service portfolio", () => {
+  const PORTFOLIO = { queryKey: [...memePortfolioKeys.all] };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      "wsws.meme-linked.v1",
+      JSON.stringify([`did:privy:u1:${WALLET.toLowerCase()}`])
+    );
+    api.quoteSwap.mockResolvedValue(quote);
+    api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
+    chain.evmSend.mockResolvedValue(delivered(USDC, 1_960_000n));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  async function sell(advance: () => Promise<unknown>) {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
+    await act(async () => {
+      void result.current
+        .trade({ side: "SELL", tokenAddress: "0xc0ffee", amount: "1", chainId: 8453 })
+        .catch(() => undefined);
+      await advance();
+    });
+    return { invalidate, result };
+  }
+
+  it("invalidates every portfolio query when the swap is CONFIRMED", async () => {
+    api.fetchSwapStatus.mockResolvedValue({ swapId: "swap-1", status: "CONFIRMED", updatedAt: "" });
+    const { invalidate, result } = await sell(() => vi.runAllTimersAsync());
+    expect(result.current.phase).toBe("confirmed");
+    expect(invalidate).toHaveBeenCalledWith(PORTFOLIO);
+  });
+
+  it("does not on a delivered trade the service recorded as FAILED", async () => {
+    api.fetchSwapStatus.mockResolvedValue({ swapId: "swap-1", status: "FAILED", updatedAt: "" });
+    const { invalidate, result } = await sell(() => vi.runAllTimersAsync());
+    expect(result.current.phase).toBe("delivered");
+    expect(invalidate).not.toHaveBeenCalledWith(PORTFOLIO);
+  });
+
+  it("does not on a trade still pending at the poll ceiling", async () => {
+    api.fetchSwapStatus.mockResolvedValue({
+      swapId: "swap-1",
+      status: "CONFIRMING",
+      updatedAt: "",
+    });
+    const { invalidate, result } = await sell(() => vi.advanceTimersByTimeAsync(11 * 60_000));
+    expect(result.current.phase).toBe("pending");
+    expect(invalidate).not.toHaveBeenCalledWith(PORTFOLIO);
+  });
+
+  it("invalidates on a CONFIRMED Solana swap too", async () => {
+    const SOL_WALLET = "So1WalletCaseSensitive11111111111111111111";
+    window.localStorage.setItem(
+      "wsws.meme-linked.v1",
+      JSON.stringify([`did:privy:u1:solana:${SOL_WALLET}`])
+    );
+    solana.wallets = [{ address: SOL_WALLET }];
+    solana.send.mockResolvedValue("5igSignature");
+    api.quoteSolanaSwap.mockResolvedValue({
+      swapId: "sol-1",
+      unsignedTransactionBase64: "AAAA",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    api.registerSolanaSubmission.mockResolvedValue({ swapId: "sol-1", status: "SUBMITTED" });
+    api.fetchSwapStatus.mockResolvedValue({ swapId: "sol-1", status: "CONFIRMED", updatedAt: "" });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
+    await act(async () => {
+      void result.current.trade({
+        side: "BUY",
+        tokenAddress: "BonkMint",
+        amount: "5",
+        chainId: 101,
+      });
+      await vi.runAllTimersAsync();
+    });
+    solana.wallets = [];
+    expect(result.current.phase).toBe("confirmed");
+    expect(invalidate).toHaveBeenCalledWith(PORTFOLIO);
   });
 });

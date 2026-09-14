@@ -1,5 +1,9 @@
 import type { z } from "zod";
 import {
+  activityPageSchema,
+  portfolioPageSchema,
+  portfolioPositionDetailSchema,
+  portfolioSummarySchema,
   solanaSwapQuoteSchema,
   submissionSchema,
   swapPageSchema,
@@ -17,6 +21,9 @@ import {
 import { withRiskDefaults, type Paged } from "@/lib/meme/catalog";
 import type {
   MemeToken,
+  PortfolioPosition,
+  PortfolioPositionDetail,
+  PortfolioSummary,
   PreparedSolanaSwap,
   PreparedSwap,
   SubmissionReceipt,
@@ -24,6 +31,7 @@ import type {
   SwapPreview,
   SwapStatusUpdate,
   TokenTradability,
+  TradeActivity,
   WalletChallenge,
 } from "@/lib/meme/types";
 
@@ -123,4 +131,23 @@ export function parseWalletChallenge(data: unknown): WalletChallenge {
 // The contract names no fields for a verified link and nothing reads one.
 export function parseWalletVerification(data: unknown): void {
   read(walletVerifySchema, data, "wallet verification");
+}
+
+// The portfolio routes. Nothing is filled in on the way through: a null
+// valuation is the service saying it cannot price the asset, and it reaches
+// the screen as null.
+export function parsePortfolioPage(data: unknown): Paged<PortfolioPosition> {
+  return read(portfolioPageSchema, data, "portfolio page");
+}
+
+export function parsePortfolioSummary(data: unknown): PortfolioSummary {
+  return read(portfolioSummarySchema, data, "portfolio summary");
+}
+
+export function parsePortfolioPosition(data: unknown): PortfolioPositionDetail {
+  return read(portfolioPositionDetailSchema, data, "portfolio position");
+}
+
+export function parseActivityPage(data: unknown): Paged<TradeActivity> {
+  return read(activityPageSchema, data, "trade activity");
 }

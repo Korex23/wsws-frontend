@@ -4,6 +4,7 @@ import {
   changeDirection,
   compactUsd,
   formatUsdcAtomic,
+  marketDataAge,
 } from "@/lib/meme/format";
 
 // The contract: null means "not currently available", never zero. A missing
@@ -67,5 +68,31 @@ describe("formatUsdcAtomic", () => {
 
   it("names USDC as the fee currency on both chains", () => {
     expect(PLATFORM_FEE_SYMBOL).toBe("USDC");
+  });
+});
+
+// A position's mark is only as good as its age. The contract says to show
+// marketDataUpdatedAt or use it to label stale prices; past fifteen minutes
+// the mark is labelled stale, and a missing timestamp is "no market data".
+describe("marketDataAge", () => {
+  const NOW = Date.parse("2026-09-14T15:30:00.000Z");
+  const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
+
+  it("is none when the service has no market data timestamp", () => {
+    expect(marketDataAge(null, NOW)).toEqual({ kind: "none" });
+    expect(marketDataAge("not a date", NOW)).toEqual({ kind: "none" });
+  });
+
+  it("is fresh with its age in whole minutes up to fifteen", () => {
+    expect(marketDataAge(minutesAgo(5), NOW)).toEqual({ kind: "fresh", minutes: 5 });
+    expect(marketDataAge(minutesAgo(15), NOW)).toEqual({ kind: "fresh", minutes: 15 });
+  });
+
+  it("is stale past fifteen minutes", () => {
+    expect(marketDataAge(minutesAgo(16), NOW)).toEqual({ kind: "stale", minutes: 16 });
+  });
+
+  it("never reports a negative age for a clock slightly ahead", () => {
+    expect(marketDataAge(minutesAgo(-1), NOW)).toEqual({ kind: "fresh", minutes: 0 });
   });
 });
