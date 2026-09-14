@@ -1,9 +1,9 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { usePrivy } from "@privy-io/react-auth";
-import { getWalletAddress } from "@/lib/user";
+
 import type { SellPayload } from "@/lib/modal-types";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { ModalShell } from "@/components/ui/modal-shell";
@@ -33,8 +33,9 @@ interface LastStandingLobbyProps {
 
 export function LastStandingLobby({ renderWithdrawSheet }: LastStandingLobbyProps) {
   const t = useTranslations("casino.lastStanding");
-  const { user } = usePrivy();
-  const address = getWalletAddress(user, "ethereum");
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
+  const address = evmAddress;
   const [historyOpen, setHistoryOpen] = useState(false);
   const {
     games,

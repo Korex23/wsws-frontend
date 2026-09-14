@@ -1,6 +1,7 @@
 "use client";
+import { useRouter } from "next/navigation";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
-import { usePrivy } from "@privy-io/react-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cancelArkjetBet,
@@ -27,7 +28,9 @@ export const ARKJET_KEYS = {
 };
 
 export function useArkjet() {
-  const { ready, authenticated, login } = usePrivy();
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const router = useRouter();
+  const login = () => router.push("/auth");
   const queryClient = useQueryClient();
   const hasSession = ready && authenticated;
   const current = useQuery({

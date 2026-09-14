@@ -1,9 +1,9 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useCallback, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
 import { decodeEventLog, encodeFunctionData } from "viem";
-import { getWalletAddress } from "@/lib/user";
+
 import { awaitReceipt, publicClientForChain } from "@/lib/trade/receipt";
 import { useEvmSend } from "@/hooks/use-evm-send";
 import { KING_OF_NIGHT_ABI } from "@/lib/vault/king-of-night-abi";
@@ -86,7 +86,8 @@ export async function readGame(gameId: number): Promise<{
  * confirmation so the caller's refetch reflects the result.
  */
 export function useVaultActions() {
-  const { user } = usePrivy();
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
   const evmSend = useEvmSend();
   const [starting, setStarting] = useState(false);
   const [wagering, setWagering] = useState(false);
@@ -94,10 +95,10 @@ export function useVaultActions() {
   const [settling, setSettling] = useState(false);
 
   const owner = useCallback((): `0x${string}` => {
-    const address = getWalletAddress(user, "ethereum");
+    const address = evmAddress;
     if (!address) throw new Error("No EVM wallet is connected.");
     return address as `0x${string}`;
-  }, [user]);
+  }, [evmAddress]);
 
   /** Opens a game. The stake becomes that game's minimum for everyone else. */
   const startGame = useCallback(

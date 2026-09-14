@@ -1,8 +1,8 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePrivy } from "@privy-io/react-auth";
 import {
   cashierLockBuckets,
   confirmChessDeposit,
@@ -17,7 +17,7 @@ import {
   type CashierWithdrawal,
 } from "@/features/casino/lib/api/cashier";
 import { useSendToken } from "@/hooks/use-withdraw";
-import { getWalletAddress } from "@/lib/user";
+
 import { toBaseUnits } from "@/lib/trade/math";
 
 // The chess cashier's balance and money movements. Everything hangs off the
@@ -67,8 +67,9 @@ export interface ChessDepositOutcome {
 // mount; it touches no wallet SDK, so it is safe on screens that never move
 // money.
 export function useChessCashierStatus() {
-  const { user, ready, authenticated } = usePrivy();
-  const wallet = getWalletAddress(user, "ethereum");
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
+  const wallet = evmAddress;
 
   const config = useQuery({
     queryKey: CASHIER_KEYS.config,

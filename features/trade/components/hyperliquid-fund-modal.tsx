@@ -1,7 +1,7 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
 import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { SuccessPanel } from "@/components/ui/success-panel";
@@ -12,7 +12,7 @@ import { usePortfolio } from "@/hooks/use-portfolio";
 import { formatAmount, toBaseUnits } from "@/lib/trade/math";
 import { encodeTransfer } from "@/lib/trade/erc20";
 import { BUY_ORIGIN } from "@/lib/buy";
-import { getWalletAddress } from "@/lib/user";
+
 import type { GatewayApiError } from "@/lib/api/envelope";
 import { isBridgeMinimumDetails } from "@/features/trade/lib/hyperliquid-types";
 import {
@@ -94,8 +94,9 @@ export function HyperliquidFundModal({
 }: HyperliquidFundModalProps) {
   const [amount, setAmount] = useState("");
   const [stage, setStage] = useState<Stage>({ name: "form" });
-  const { user } = usePrivy();
-  const walletAddress = getWalletAddress(user, "ethereum");
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
+  const walletAddress = evmAddress;
   const portfolio = usePortfolio();
   const sendEvmBatch = useEvmSendBatch();
 

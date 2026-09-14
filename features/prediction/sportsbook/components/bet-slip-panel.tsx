@@ -1,7 +1,8 @@
 "use client";
+import { useRouter } from "next/navigation";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useEffect, useId, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
 import { usePrices } from "@/hooks/use-prices";
 import type { SportsbookCapabilities } from "../api";
 import { usePlaceSportsbookOrder } from "../hooks/use-place-order";
@@ -50,7 +51,9 @@ export function BetSlipPanel({
   const [tab, setTab] = useState<"slip" | "tickets">(initialTab);
   const [reviewedFingerprint, setReviewedFingerprint] = useState<string | null>(null);
   const inputId = useId();
-  const { authenticated, login } = usePrivy();
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const router = useRouter();
+  const login = () => router.push("/auth");
   const ethPriceUsd = usePrices(["ETH"]).ETH ?? 0;
   const slip = useSportsbookSlip();
   const placement = usePlaceSportsbookOrder();

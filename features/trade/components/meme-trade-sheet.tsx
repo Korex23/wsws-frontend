@@ -1,4 +1,5 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { SOLANA_CHAIN_ID, chainSlug, networkOf } from "@/lib/meme/chain";
 import { scopeOf } from "@/lib/portfolio/fresh-scope";
@@ -18,7 +19,6 @@ import {
 } from "@/features/trade/hooks/use-meme-trade";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useReroutedWithdraw } from "@/hooks/use-withdraw";
-import { usePrivy } from "@privy-io/react-auth";
 import { displaySymbol } from "@/lib/buy";
 import { settlementFor } from "@/lib/deposit";
 import { friendlyError } from "@/lib/errors";
@@ -35,7 +35,6 @@ import {
   type PendingRwaSettlement,
 } from "@/lib/trade/pending-settlement";
 import { fetchConfirmedSolanaBalance } from "@/lib/trade/solana-balance";
-import { getWalletAddress } from "@/lib/user";
 
 const DECIMAL_INPUT = /^\d*\.?\d*$/;
 const PREVIEW_DEBOUNCE_MS = 600;
@@ -173,7 +172,8 @@ export function MemeTradeSheet({
   const tradedNetworks = scopeOf("base-mainnet", network);
   const portfolio = usePortfolio();
   const linkTriedRef = useRef(false);
-  const { user } = usePrivy();
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
   const { withdraw: routeUsdc } = useReroutedWithdraw("trade");
   const [funding, setFunding] = useState<FundingStep>("idle");
   const [fundError, setFundError] = useState<unknown>(null);
@@ -391,8 +391,8 @@ export function MemeTradeSheet({
   // sheet's part is over at that point, and it says so rather than vanishing.
   async function fundAndQueue() {
     if (submitDisabled) return;
-    const baseWallet = getWalletAddress(user, "ethereum");
-    const solanaWallet = getWalletAddress(user, "solana");
+    const baseWallet = evmAddress;
+    const solanaWallet = solanaAddress;
     if (!baseWallet || !solanaWallet) {
       setFundError(new Error(t("connectWallet")));
       toast.error(t("connectWallet"));

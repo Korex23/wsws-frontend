@@ -1,8 +1,8 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { usePrivy } from "@privy-io/react-auth";
 import { SheetNav } from "@/components/ui/sheet-nav";
 import { MASK_ATTRIBUTE, NO_AUTOCAPTURE_CLASS } from "@/lib/analytics/clarity";
 import { track } from "@/lib/analytics/mixpanel";
@@ -17,7 +17,7 @@ import {
   useResolveBankAccount,
 } from "@/hooks/use-ramping";
 import { friendlyError } from "@/lib/errors";
-import { getWalletAddress } from "@/lib/user";
+
 import { formatAmount, fromBaseUnits, toBaseUnits } from "@/lib/trade/math";
 import { SETTLE_CHAINS } from "@/lib/deposit";
 import {
@@ -147,10 +147,11 @@ function BankAvatar({
 // Naira figure shown comes from the order once the rail reports it.
 export function BankWithdrawScreen({ onBack }: BankWithdrawScreenProps) {
   const t = useTranslations("bankWithdraw");
-  const { user } = usePrivy();
+  const { authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
   const { tokens, refetch: refetchPortfolio } = usePortfolio();
   const { sendToken } = useSendToken();
-  const walletAddress = getWalletAddress(user, "ethereum");
+  const walletAddress = evmAddress;
 
   const rates = useRampingRates();
   const banks = useRampingBanks(true);

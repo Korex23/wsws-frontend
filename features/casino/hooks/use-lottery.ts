@@ -1,7 +1,7 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePrivy } from "@privy-io/react-auth";
 import {
   createLotteryQuickPick,
   fetchCurrentLotteryDraw,
@@ -19,7 +19,6 @@ import {
   CASHIER_KEYS,
 } from "@/features/casino/hooks/use-chess-cashier";
 import { errorCode } from "@/lib/api/envelope";
-import { getWalletAddress } from "@/lib/user";
 
 export const LOTTERY_KEYS = {
   config: ["casino", "lottery", "config"] as const,
@@ -42,8 +41,9 @@ export interface LotteryPurchaseRequest {
 
 export function useLottery() {
   const queryClient = useQueryClient();
-  const { user, ready, authenticated } = usePrivy();
-  const wallet = getWalletAddress(user, "ethereum");
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
+  const wallet = evmAddress;
   const privateReadsEnabled = ready && authenticated && !!wallet;
 
   const config = useQuery({

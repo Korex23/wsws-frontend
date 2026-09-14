@@ -1,11 +1,11 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { usePrivy } from "@privy-io/react-auth";
 import { queryKeys } from "@/lib/query-keys";
 import { fetchUserActivity, type UserActivity } from "@/lib/api/services/activity";
-import { getWalletAddress } from "@/lib/user";
+
 import { buildActivityEntries, type ActivityEntry } from "@/lib/activity/entries";
 import type { ActivityItem } from "@/lib/server/activity";
 
@@ -31,9 +31,10 @@ const EMPTY: ActivityItem[] = [];
 const EMPTY_ENTRIES: ActivityEntry[] = [];
 
 export function useActivity({ pollMs = POLL_MS }: { pollMs?: number } = {}) {
-  const { user, ready, authenticated } = usePrivy();
-  const evm = getWalletAddress(user, "ethereum");
-  const solana = getWalletAddress(user, "solana");
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
+  const evm = evmAddress;
+  const solana = solanaAddress;
   const enabled = ready && authenticated && Boolean(evm || solana);
 
   const query = useQuery<UserActivity>({

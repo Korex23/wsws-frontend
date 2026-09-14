@@ -1,10 +1,10 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { usePrivy } from "@privy-io/react-auth";
 import { useMoney } from "@/components/ui/currency-select";
 import { useBalanceVisibility } from "@/components/ui/balance-visibility";
 import { parseEther } from "viem";
@@ -17,7 +17,7 @@ import {
   subscribeFollowedGame,
 } from "@/features/casino/lib/last-standing/followed-game";
 import { useVaultActions } from "@/features/casino/hooks/use-vault-actions";
-import { getWalletAddress } from "@/lib/user";
+
 import { friendlyError } from "@/lib/errors";
 import { toast } from "@/lib/toast";
 
@@ -443,7 +443,8 @@ function MiniTimerLive({
 }) {
   const t = useTranslations("casino.lastStanding");
   const router = useRouter();
-  const { user } = usePrivy();
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
   const money = useMoney();
   const { mask } = useBalanceVisibility();
   // The game this timer follows: the last one the user put money into. With
@@ -471,7 +472,7 @@ function MiniTimerLive({
   const { wager, wagering } = useVaultActions();
   const { holding: ethHolding, settle: settleBalance } = useGameBalance();
 
-  const address = getWalletAddress(user, "ethereum");
+  const address = evmAddress;
   const gameActive = !!status?.gameActive;
   const serverSeconds = gameActive ? (status?.timeRemaining ?? 0) : 0;
 

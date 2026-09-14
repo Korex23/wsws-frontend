@@ -1,8 +1,8 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { usePrivy } from "@privy-io/react-auth";
 import { SheetNav } from "@/components/ui/sheet-nav";
 import { BankIcon, CheckIcon, CopyIcon } from "@/components/ui/icons";
 import { usePortfolio } from "@/hooks/use-portfolio";
@@ -17,7 +17,7 @@ import { MASK_ATTRIBUTE, NO_AUTOCAPTURE_CLASS } from "@/lib/analytics/clarity";
 import { track } from "@/lib/analytics/mixpanel";
 import { friendlyError } from "@/lib/errors";
 import { errorCode } from "@/lib/api/envelope";
-import { getWalletAddress } from "@/lib/user";
+
 import {
   idempotencyKey,
   isValidOnrampNgn,
@@ -96,12 +96,13 @@ function compactNgn(amount: number): string {
 // final figures shown come from the order itself, never from our own math.
 export function BankTransferScreen({ onBack, onClose }: BankTransferScreenProps) {
   const t = useTranslations("bankTransfer");
-  const { user } = usePrivy();
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
   const { refetch } = usePortfolio();
   const { data: rates } = useRampingRates();
   const rate = rates?.onrampRate ?? null;
 
-  const walletAddress = getWalletAddress(user, "ethereum");
+  const walletAddress = evmAddress;
 
   const [amountNgn, setAmountNgn] = useState("");
   // After the user says they have paid, we show a brief confirming state and

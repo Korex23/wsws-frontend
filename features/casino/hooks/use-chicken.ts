@@ -1,7 +1,8 @@
 "use client";
+import { useRouter } from "next/navigation";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cashoutChicken,
@@ -33,7 +34,9 @@ function action(session: ChickenSession) {
 }
 
 export function useChicken() {
-  const { ready, authenticated, login } = usePrivy();
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const router = useRouter();
+  const login = () => router.push("/auth");
   const queryClient = useQueryClient();
   const [terminalResult, setTerminalResult] = useState<ChickenSession | null>(null);
   const hasSession = ready && authenticated;

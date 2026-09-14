@@ -1,4 +1,5 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -7,7 +8,6 @@ import type { SellPayload } from "@/lib/modal-types";
 import { motion, useReducedMotion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { parseEther } from "viem";
-import { usePrivy } from "@privy-io/react-auth";
 import { formatEther } from "viem";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { ProgressBar } from "@/components/ui/progress-bar";
@@ -55,7 +55,7 @@ import { useGameBalance } from "@/features/casino/hooks/use-game-balance";
 import { usePayoutRefresh } from "@/features/casino/hooks/use-payout-refresh";
 import { useVaultParams } from "@/features/casino/hooks/use-vault-params";
 import { usePaged } from "@/hooks/use-paged";
-import { getWalletAddress } from "@/lib/user";
+
 import { truncateAddress } from "@/lib/format";
 import { friendlyError, isAlreadySettledError } from "@/lib/errors";
 import {
@@ -190,7 +190,8 @@ export function LastStandingSection({ gameId, renderWithdrawSheet }: LastStandin
   const t = useTranslations("casino.lastStanding");
   const tBuySell = useTranslations("buySell");
   const tBuySellNotEnough = tBuySell("notEnoughBalance");
-  const { user } = usePrivy();
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
   const money = useMoney();
   // The stake and the payout are native value the portfolio's own receipt
   // path cannot see, so this hook is told the amounts and confirms them with
@@ -268,7 +269,7 @@ export function LastStandingSection({ gameId, renderWithdrawSheet }: LastStandin
   const [recentWinUsd, setRecentWinUsd] = useState<number | null>(null);
 
   const reduce = useReducedMotion();
-  const address = getWalletAddress(user, "ethereum");
+  const address = evmAddress;
 
   // Leaving the arena stops the track — background music must not follow the
   // user to the portfolio.
