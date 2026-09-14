@@ -5,6 +5,16 @@ import { WSAPI_BASE } from "@/lib/wsapi-base";
 // envelope. RWA endpoints live under /v1/rwa/*, perp endpoints under /v1/perp/*.
 const BASE = WSAPI_BASE;
 
+// The perp service can be pointed at its own deployment while the rest of the
+// app rides the shared gateway. Staging needs exactly that: perps, chess and
+// arkjet run against the staging gateway while every other service reads
+// production, so without this the base URL drags perps along with them.
+// Trimmed and checked for emptiness, not just for undefined: an env var set to
+// the empty string is a real deployment state, and `??` would keep it and build
+// an unparseable URL.
+const PERP_OVERRIDE = process.env.PERP_API_BASE_URL?.trim();
+const PERP_BASE = PERP_OVERRIDE ? PERP_OVERRIDE : BASE;
+
 const ALLOWED = /^(health|categories|assets|assets\/[^/]+|quote|build)$/;
 
 export function isAllowedRwaPath(path: string): boolean {
@@ -105,5 +115,5 @@ export async function wsapiRwaRequest(path: string, init: GatewayInit): Promise<
 }
 
 export async function wsapiPerpRequest(path: string, init: GatewayInit): Promise<Response> {
-  return gatewayRequest(new URL(`${BASE}/v1/perp/${path}`), init);
+  return gatewayRequest(new URL(`${PERP_BASE}/v1/perp/${path}`), init);
 }
