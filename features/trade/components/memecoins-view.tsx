@@ -237,7 +237,11 @@ export function MemecoinsView() {
         ) : trending.length > 0 ? (
           <div className="flex gap-2.5">
             {trending.map((token) => (
-              <TrendCard key={token.address} token={token} onOpen={setSelected} />
+              <TrendCard
+                key={`${token.chainId}:${token.address}`}
+                token={token}
+                onOpen={setSelected}
+              />
             ))}
           </div>
         ) : null}
@@ -283,7 +287,11 @@ export function MemecoinsView() {
         ) : (
           <div className="flex flex-col">
             {rows.map((token) => (
-              <TableRow key={token.address} token={token} onOpen={setSelected} />
+              <TableRow
+                key={`${token.chainId}:${token.address}`}
+                token={token}
+                onOpen={setSelected}
+              />
             ))}
           </div>
         )}

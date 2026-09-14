@@ -16,7 +16,9 @@ import {
   type MemeMetricValue,
 } from "@/features/trade/components/meme-market-metrics";
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
+import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { TradeTicket, USD_DECIMALS } from "@/features/trade/components/meme-trade-ticket";
+import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import { MemeTrending } from "@/features/trade/components/meme-trending";
 import { MemeUnavailable } from "@/features/trade/components/meme-unavailable";
 import { useMemeSwaps } from "@/features/trade/hooks/use-meme-swaps";
@@ -57,11 +59,6 @@ import { belowMinimumBuy } from "@/lib/trade/minimums";
 // live next door and are wired in below: BoardChart, TradeTicket,
 // LiveTransactions, and the swap history behind useMemeSwaps.
 
-// The whole catalogue in one request, filtered client-side. Same figure and
-// same query key as MemeGrid uses, so opening the picker reuses this entry
-// rather than asking again.
-const CATALOG_LIMIT = 500;
-
 // Long enough that typing an amount does not spend a quote per keystroke, short
 // enough that the ticket settles while you look at it. The quote endpoint is
 // rate limited at 20/min.
@@ -94,7 +91,10 @@ export function MemeBoard() {
   const metricsPanelId = `meme-metrics-${useId()}`;
   const pickerPanelId = `meme-picker-${useId()}`;
 
-  const catalog = useMemeCatalog(1, CATALOG_LIMIT);
+  // The first page of the curated catalogue, which picks the coin on screen
+  // until one is chosen. Same query key as MemeGrid's pages, so opening the
+  // picker reuses this entry rather than asking again.
+  const catalog = useMemeCatalog();
   const portfolio = usePortfolio();
   const { walletFor, phase, error, trade } = useMemeTrade();
 
@@ -173,7 +173,10 @@ export function MemeBoard() {
           chainId: selected.chainId,
         }
       : null;
-  const preview = useMemePreview(previewInput);
+  // A LOW_LIQUIDITY coin is confirmed before any preview goes out: the dialog
+  // opens the first time an amount is typed for it, and Cancel clears it.
+  const consent = useRiskConsent(selected, amount);
+  const preview = useMemePreview(previewInput, consent.consented);
 
   // The transactions feed. The hook holds the request and the poll; the card
   // filters the page down to the coin on screen.
@@ -198,7 +201,8 @@ export function MemeBoard() {
   // to the USD balance. Both of those live in MemeTradeSheet, so a Solana order
   // is handed there rather than run here with half the plumbing.
   async function runTrade(input: MemeTradeInput) {
-    if (!selected) return;
+    // No quote for a LOW_LIQUIDITY coin the user has not confirmed.
+    if (!selected || !consent.consented) return;
     if (input.chainId === SOLANA_CHAIN_ID) {
       setSheetToken(selected);
       return;
@@ -372,12 +376,20 @@ export function MemeBoard() {
                 funding={funding}
                 heldRaw={heldRaw}
                 heldDecimals={heldDecimals}
-                preview={preview.data ?? null}
+                preview={preview.quote}
                 previewLoading={preview.isFetching}
                 previewError={preview.error}
+                quoteExpired={preview.expired}
+                onRefreshQuote={() => void preview.refetch()}
                 onSubmit={runTrade}
                 phase={phase}
                 error={error}
+              />
+              <MemeRiskConsent
+                open={consent.prompting}
+                token={selected}
+                onContinue={consent.accept}
+                onCancel={() => setAmount("")}
               />
 
               <LiveTransactions

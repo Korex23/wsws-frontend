@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { MemeCoin } from "@/features/trade/components/meme-bits";
+import { MemeCoin, MemeRiskSummary, QuoteExpiredNote } from "@/features/trade/components/meme-bits";
 import type { MemeTradeInput, TradePhase } from "@/features/trade/hooks/use-meme-trade";
 import { displaySymbol } from "@/lib/buy";
 import { friendlyError } from "@/lib/errors";
 import { isValidTradeAmount, type MemeToken, type SwapPreview } from "@/lib/meme/api";
+import { platformFeeText } from "@/lib/meme/format";
 import { exceedsHeld } from "@/lib/meme/sell-amount";
 import { fromBaseUnits } from "@/lib/trade/math";
 
@@ -39,10 +40,14 @@ export interface MemeSellPanelProps {
   /** Controlled amount, a human decimal string, so the parent can debounce it. */
   amount: string;
   onAmountChange: (amount: string) => void;
-  /** The indicative quote for `amount`, or null while there is none. */
+  /** The indicative quote for `amount`, or null while there is none (a lapsed
+   *  one included: useMemePreview blanks it). */
   preview?: SwapPreview | null;
   previewLoading?: boolean;
   previewError?: unknown;
+  /** The quote lapsed at its expiresAt; the panel says so and offers a fresh one. */
+  quoteExpired?: boolean;
+  onRefreshQuote?: () => void;
   /** Runs the sell. Takes exactly what the meme trade hook's `trade` takes. */
   onSell: (input: MemeTradeInput) => Promise<void>;
   /** The trade hook's phase and error, when the caller wires them through. */
@@ -82,6 +87,8 @@ export function MemeSellPanel({
   preview = null,
   previewLoading = false,
   previewError,
+  quoteExpired = false,
+  onRefreshQuote,
   onSell,
   phase = "idle",
   error = null,
@@ -256,7 +263,21 @@ export function MemeSellPanel({
             {preview ? `${(preview.slippageBps / 100).toFixed(2)}%` : "—"}
           </span>
         </div>
+        {/* The fee the preview returned, never a rate the client assumes. */}
+        <div className="flex items-center justify-between">
+          <span className="text-grey-400">{t("platformFee")}</span>
+          <span className="tnum text-white">
+            {preview
+              ? platformFeeText(preview.platformFeeAmountFormatted)
+              : previewLoading
+                ? "…"
+                : "—"}
+          </span>
+        </div>
       </div>
+
+      {quoteExpired ? <QuoteExpiredNote onRetry={onRefreshQuote} /> : null}
+      <MemeRiskSummary token={token} />
 
       {quoteFailed ? (
         <p className="text-down text-[12.5px] font-normal">

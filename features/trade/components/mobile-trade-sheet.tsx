@@ -19,8 +19,12 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
 // market screen opens the trade sheet over it, and Escape belongs to whichever
 // went up last. Read off the DOM rather than a shared counter so it also
 // defers to a confirmation dialog or a wallet prompt neither sheet knows about.
+// An alert dialog counts: the memecoin risk consent stacks over the trade sheet,
+// and Escape there must cancel the consent, not close the sheet beneath it.
 function isTopmostDialog(node: HTMLElement): boolean {
-  const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]');
+  const dialogs = document.querySelectorAll<HTMLElement>(
+    '[role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]'
+  );
   return dialogs.length === 0 || dialogs[dialogs.length - 1] === node;
 }
 

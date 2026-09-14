@@ -16,7 +16,7 @@ import { ListPagination } from "@/components/ui/list-pagination";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
 import {
-  useMemeCatalog,
+  useMemeCatalogPage,
   useMemeSearch,
   useMemeToken,
 } from "@/features/trade/hooks/use-meme-tokens";
@@ -45,7 +45,7 @@ function CoinPicker({
 }) {
   const t = useTranslations("meme");
   const [page, setPage] = useState(1);
-  const { tokens, pageCount, isLoading } = useMemeCatalog(page, PICKER_PER_PAGE);
+  const { tokens, pageCount, isLoading } = useMemeCatalogPage(page, PICKER_PER_PAGE);
 
   return (
     <div className="ws-card overflow-hidden" data-sensitive="position">
@@ -64,7 +64,7 @@ function CoinPicker({
 export function MemeProView() {
   const t = useTranslations("meme");
   const [page, setPage] = useState(1);
-  const { tokens, pageCount, isLoading } = useMemeCatalog(page, PER_PAGE);
+  const { tokens, pageCount, isLoading } = useMemeCatalogPage(page, PER_PAGE);
   const [search, setSearch] = useState("");
   const searchState = useMemeSearch(search);
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
@@ -95,7 +95,7 @@ export function MemeProView() {
   // switches to one from inside the trade screen.
   const coinRow = (row: MemeToken, onPick: () => void) => (
     <button
-      key={row.address}
+      key={`${row.chainId}:${row.address}`}
       onClick={onPick}
       className="flex w-full cursor-pointer items-center gap-3 border-b border-white/6 px-4 py-3.5 text-left transition-colors last:border-b-0 active:bg-white/4"
     >
@@ -163,7 +163,7 @@ export function MemeProView() {
               const active = row.address === address;
               return (
                 <div
-                  key={row.address}
+                  key={`${row.chainId}:${row.address}`}
                   onClick={() => setSelectedAddress(row.address)}
                   className={`grid cursor-pointer grid-cols-[2fr_1fr_1fr_1fr_1fr_90px] items-center gap-3 border-t border-white/6 px-4 py-3 text-[13px] transition-colors ${
                     active ? "bg-white/6" : "hover:bg-white/4"

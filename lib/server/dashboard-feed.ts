@@ -152,12 +152,14 @@ async function memesSection(): Promise<MemeBriefRow[]> {
   // can be thin or empty without ever erroring. The brief then fills from the
   // Base catalogue, as the page's own shortlist does; "nothing to show"
   // beside a page full of coins is the one thing it must not say.
-  let page = tradableHere(await trending().catch(catalog));
+  // The brief is curated whatever view a list on the meme desk is switched to
+  // (ADR-2026-09-14-memecoins-trade-contract, slice 4).
+  let page = tradableHere(await trending().catch(catalog), "curated");
   if (page.items.length < DASHBOARD_FEED_ROWS) {
     // The catalogue failing must not throw away a thin trending list; the
     // fuller of the two wins.
     const fallback = await catalog()
-      .then(tradableHere)
+      .then((fallbackPage) => tradableHere(fallbackPage, "curated"))
       .catch(() => null);
     if (fallback && fallback.items.length > page.items.length) page = fallback;
   }

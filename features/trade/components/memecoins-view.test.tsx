@@ -50,3 +50,23 @@ describe("volume cells", () => {
     expect(within(pending).queryByText("$0")).toBeNull();
   });
 });
+
+// A token is chainId + address. Two chains can carry the same address, and a
+// list keyed by address alone collides: React warns and may reuse one row's
+// element for the other.
+describe("row identity", () => {
+  it("keys rows by chainId:address, so the same address on two chains is two rows", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    trending.tokens = [
+      memeToken({ symbol: "TWIN", name: "Blaze", address: "0xsame", chainId: 8453 }),
+      memeToken({ symbol: "TWIN", name: "Ember", address: "0xsame", chainId: 1 }),
+    ];
+    render(<MemecoinsView />);
+    expect(tableOrder()).toEqual(["Blaze", "Ember"]);
+    const keyWarnings = error.mock.calls.filter((call) =>
+      call.some((part) => typeof part === "string" && part.includes("same key"))
+    );
+    expect(keyWarnings).toEqual([]);
+    error.mockRestore();
+  });
+});

@@ -37,7 +37,14 @@ import type {
   TokenWarning,
   WalletChallenge,
 } from "@/lib/meme/types";
-import { isMemecoinHere, tradableHere, withRiskDefaults, type Paged } from "@/lib/meme/catalog";
+import {
+  CATALOG_PAGE_LIMIT,
+  isMemecoinHere,
+  tradableHere,
+  withRiskDefaults,
+  type DiscoveryView,
+  type Paged,
+} from "@/lib/meme/catalog";
 import { SOLANA_CHAIN_ID, chainSlug, type MemeChainSlug } from "@/lib/meme/chain";
 import { TradeShapeError } from "@/lib/meme/trade-shape-error";
 
@@ -196,6 +203,18 @@ export async function fetchTrendingTokens(): Promise<Paged<MemeToken>> {
   );
 }
 
+// One page of the catalogue at the contract's maximum of 500, parsed but not
+// judged: the discovery view is applied over the merged pages, so switching
+// between Curated and All never asks again, and the meta is the server's.
+// `chain` narrows it to one network; omitted, the catalogue is every chain.
+export function fetchTokenCatalogPage(
+  page: number,
+  chain?: MemeChainSlug
+): Promise<Paged<MemeToken>> {
+  const scope = chain ? `&chain=${chain}` : "";
+  return request(`/tokens?page=${page}&limit=${CATALOG_PAGE_LIMIT}${scope}`, "parseTokenPage");
+}
+
 // The catalog is the only discovery route that honours ?chain, and this
 // client executes on every chain the service does, so it asks for all of
 // them. The boundary filter still drops rows the client cannot open (an
@@ -210,16 +229,21 @@ export async function fetchTokenCatalog(
   chain?: MemeChainSlug
 ): Promise<Paged<MemeToken>> {
   const scope = chain ? `&chain=${chain}` : "";
-  const page_ = await request(`/tokens?page=${page}&limit=${limit}${scope}`, "parseTokenPage");
-  return { ...page_, items: page_.items.filter(isMemecoinHere) };
+  // Never above the contract's maximum, whatever a surface asks for.
+  const size = Math.min(limit, CATALOG_PAGE_LIMIT);
+  const page_ = await request(`/tokens?page=${page}&limit=${size}${scope}`, "parseTokenPage");
+  return { ...page_, items: page_.items.filter((token) => isMemecoinHere(token)) };
 }
 
-export async function searchTokens(q: string): Promise<MemeToken[]> {
+export async function searchTokens(
+  q: string,
+  view: DiscoveryView = "curated"
+): Promise<MemeToken[]> {
   const rows = await request(
     `/tokens/search?q=${encodeURIComponent(q.trim())}`,
     "parseTokenSearch"
   );
-  return rows.filter(isMemecoinHere);
+  return rows.filter((token) => isMemecoinHere(token, view));
 }
 
 // The detail routes require the chain by name; without it a Solana mint is

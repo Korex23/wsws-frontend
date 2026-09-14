@@ -14,7 +14,9 @@ import { useBuyDestinations } from "@/features/trade/hooks/use-buy-catalog";
 import { useBuy } from "@/features/trade/hooks/use-buy";
 import { useMemeToken } from "@/features/trade/hooks/use-meme-tokens";
 import { tradeRef, useMemeTrade } from "@/features/trade/hooks/use-meme-trade";
+import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import { NetworkPicker, NetworkSelect } from "@/features/trade/components/network-select";
+import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { belowMinimumBuy, isSolanaChainId, minimumBuyUsd } from "@/lib/trade/minimums";
 import { routesForSymbol } from "@/lib/buy";
 import { swapRouteForSymbol } from "@/lib/spot-swap";
@@ -114,6 +116,11 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
   }, [routes, chainMeta.data]);
 
   const [amount, setAmount] = useState("");
+  // The swap path's trade() asks the trade service for a quote straight away,
+  // with no preview in front of it, so a LOW_LIQUIDITY token's consent holds
+  // the Buy action itself. The Dextopus path is not the trade service and
+  // carries no such warning.
+  const swapConsent = useRiskConsent(isSwapMarket ? swapToken.token : null, amount);
   const buy = useBuy();
   const [requestId, setRequestId] = useState<string | null>(null);
   // The settled transaction for the order path. The swap path carries its own
@@ -148,6 +155,7 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
   const canBuy =
     (Boolean(route) || isSwapMarket) &&
     swapTradable &&
+    swapConsent.consented &&
     value >= minUsd &&
     !portfolio.loading &&
     value <= balance &&
@@ -276,7 +284,7 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
 
   const confirm = async () => {
     if (!route && !swapRoute) return;
-    if (isSwapMarket && !swapTradable) return;
+    if (isSwapMarket && (!swapTradable || !swapConsent.consented)) return;
     // The attempt, as opposed to the fill reported on settlement. The two
     // together are what make the drop-off between them visible.
     track("trade_previewed", {
@@ -535,6 +543,14 @@ export function BuySheet({ payload, onClose, onTopUp }: BuySheetProps) {
         <p className="text-down mt-3 text-[13px] font-normal">
           {friendlyError(memeTrade.error, t("purchaseFailedFallback"), tErr)}
         </p>
+      ) : null}
+      {isSwapMarket && swapToken.token ? (
+        <MemeRiskConsent
+          open={swapConsent.prompting}
+          token={swapToken.token}
+          onContinue={swapConsent.accept}
+          onCancel={() => setAmount("")}
+        />
       ) : null}
       <div className={`mt-4 flex gap-3 ${notEnough ? "" : "flex-col"}`}>
         <button

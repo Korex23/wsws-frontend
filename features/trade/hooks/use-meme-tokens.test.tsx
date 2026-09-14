@@ -9,14 +9,15 @@ import { memeToken } from "@/features/trade/lib/meme-fixture";
 // show a temporary state; 404 TOKEN_NOT_FOUND is a confirmed absence. Neither
 // is stored as a token that does not exist.
 
-const api = vi.hoisted(() => ({ fetchToken: vi.fn() }));
+const api = vi.hoisted(() => ({ fetchToken: vi.fn(), fetchTokenCatalogPage: vi.fn() }));
 vi.mock("@/lib/meme/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/meme/api")>()),
   fetchToken: api.fetchToken,
+  fetchTokenCatalogPage: api.fetchTokenCatalogPage,
 }));
 
 import { TradeApiError } from "@/lib/meme/api";
-import { useMemeToken } from "@/features/trade/hooks/use-meme-tokens";
+import { useMemeCatalog, useMemeToken } from "@/features/trade/hooks/use-meme-tokens";
 
 const MINT = { address: "x95HN3DWvbfCBtTjGm587z8suK3ec6cwQwgZNLbWKyp", chainId: 101 };
 const providerError = () => new TradeApiError("PROVIDER_ERROR", "rpc down", 502, "req-502");
@@ -42,6 +43,7 @@ const settle = () => advance(1);
 beforeEach(() => {
   vi.useFakeTimers();
   api.fetchToken.mockReset();
+  api.fetchTokenCatalogPage.mockReset();
 });
 afterEach(() => vi.useRealTimers());
 
@@ -123,5 +125,102 @@ describe("neither failure is a negative cache entry", () => {
     await settle();
     expect(result.current.token?.symbol).toBe("HACHI");
     expect(result.current.unavailable).toBe("temporary");
+  });
+});
+
+// Slice 4: the catalogue is paged per the contract, "until page * limit >=
+// total", a page of 500 at a time, the next one only when asked for. The count
+// is the server's total; what the discovery view keeps is shownCount.
+describe("useMemeCatalog walks the catalogue a page at a time", () => {
+  const LIMIT = 500;
+  const TOTAL = 1_200; // three pages of 500
+  const row = (n: number, extra: Parameters<typeof memeToken>[0] = {}) =>
+    memeToken({ symbol: `C${n}`, address: `0x${String(n).padStart(40, "0")}`, ...extra });
+
+  function servePages() {
+    api.fetchTokenCatalogPage.mockImplementation(async (page: number) => {
+      const start = (page - 1) * LIMIT;
+      const count = Math.min(LIMIT, TOTAL - start);
+      const items = Array.from({ length: count }, (_, i) =>
+        // Every tenth row is HIGH risk: curated drops it, All keeps it.
+        row(start + i, (start + i) % 10 === 0 ? { riskLevel: "HIGH" } : {})
+      );
+      // The service shifted a row onto the next page while the reader
+      // scrolled: page 2 repeats the last row of page 1.
+      if (page === 2) items.unshift(row(start - 1));
+      return { items, meta: { page, limit: LIMIT, total: TOTAL } };
+    });
+  }
+
+  it("fetches page 1 only, and reports the server's total", async () => {
+    servePages();
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useMemeCatalog(), { wrapper });
+    await settle();
+    expect(api.fetchTokenCatalogPage).toHaveBeenCalledTimes(1);
+    expect(api.fetchTokenCatalogPage).toHaveBeenLastCalledWith(1, undefined);
+    expect(result.current.total).toBe(TOTAL);
+    expect(result.current.loaded).toBe(500);
+    expect(result.current.hasMore).toBe(true);
+    // Curated keeps 450 of the first 500.
+    expect(result.current.shownCount).toBe(450);
+    expect(result.current.tokens).toHaveLength(450);
+  });
+
+  it("loads page 2 and appends it without a duplicate row", async () => {
+    servePages();
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useMemeCatalog({ view: "all" }), { wrapper });
+    await settle();
+    await act(async () => {
+      result.current.loadMore();
+    });
+    await settle();
+    expect(api.fetchTokenCatalogPage).toHaveBeenLastCalledWith(2, undefined);
+    const keys = result.current.tokens.map((t) => `${t.chainId}:${t.address}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(result.current.loaded).toBe(1_000);
+    expect(result.current.tokens).toHaveLength(1_000);
+  });
+
+  it("stops at page * limit >= total and never asks for a fourth page", async () => {
+    servePages();
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useMemeCatalog({ view: "all" }), { wrapper });
+    await settle();
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => {
+        result.current.loadMore();
+      });
+      await settle();
+    }
+    expect(api.fetchTokenCatalogPage.mock.calls.map((c) => c[0])).toEqual([1, 2, 3]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.loaded).toBe(TOTAL);
+    expect(result.current.total).toBe(TOTAL);
+  });
+
+  it("switches views over the pages it holds, without asking again", async () => {
+    servePages();
+    const { wrapper } = setup();
+    const { result, rerender } = renderHook(
+      ({ view }: { view: "curated" | "all" }) => useMemeCatalog({ view }),
+      { wrapper, initialProps: { view: "curated" } }
+    );
+    await settle();
+    expect(result.current.shownCount).toBe(450);
+    rerender({ view: "all" });
+    await settle();
+    expect(result.current.shownCount).toBe(500);
+    expect(result.current.total).toBe(TOTAL);
+    expect(api.fetchTokenCatalogPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes every page to the chain it was given", async () => {
+    servePages();
+    const { wrapper } = setup();
+    renderHook(() => useMemeCatalog({ chain: "base" }), { wrapper });
+    await settle();
+    expect(api.fetchTokenCatalogPage).toHaveBeenLastCalledWith(1, "base");
   });
 });

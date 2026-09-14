@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import baseMessages from "@/messages/en.json";
@@ -21,13 +21,39 @@ vi.mock("@/features/trade/hooks/use-spot-markets", () => ({
   useSpotMarkets: () => spot,
 }));
 
+// The Memecoins tab lists the paged catalogue (slice 4), behind the same
+// Curated / All switch and "Load more" as the desk and the grid.
 const memes = vi.hoisted(() => ({
   tokens: [] as MemeToken[],
+  // What the All view keeps, when a test gives the two views different rows.
+  allTokens: null as MemeToken[] | null,
+  total: null as number | null,
+  loaded: 0,
+  shownCount: 0,
+  hasMore: false,
+  isLoadingMore: false,
+  loadMore: vi.fn(),
   isLoading: false,
+  isFetching: false,
+  error: null as unknown,
+  refetch: vi.fn(),
+}));
+const memeSearch = vi.hoisted(() => ({
+  results: [] as MemeToken[],
+  searching: false,
+  active: false,
   error: null as unknown,
 }));
+const memeViews = vi.hoisted(() => ({ catalog: [] as unknown[], search: [] as unknown[] }));
 vi.mock("@/features/trade/hooks/use-meme-tokens", () => ({
-  useTrendingMemes: () => memes,
+  useMemeCatalog: (opts?: { view?: string }) => {
+    memeViews.catalog.push(opts?.view);
+    return opts?.view === "all" && memes.allTokens ? { ...memes, tokens: memes.allTokens } : memes;
+  },
+  useMemeSearch: (_raw: string, view?: string) => {
+    memeViews.search.push(view);
+    return memeSearch;
+  },
 }));
 
 const router = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }));
@@ -52,6 +78,18 @@ vi.mock("@/features/trade/components/perps-section", () => ({
 // wiring. TradeTicket itself has its own suite (meme-trade-ticket.test.tsx),
 // so it is stubbed here too: this suite tests the hosting, not the ticket.
 const memeTrade = vi.hoisted(() => vi.fn());
+// What useMemePreview hands back, and whether each render let a preview go out
+// past the risk consent.
+const memePreview = vi.hoisted(() => ({
+  state: {
+    quote: null as unknown,
+    expired: false,
+    isFetching: false,
+    error: null as unknown,
+    refetch: vi.fn(),
+  },
+  consented: [] as boolean[],
+}));
 vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
   // The surfaces also read pure helpers (memeOutcomeToast) off this module.
   ...(await importOriginal<typeof import("@/features/trade/hooks/use-meme-trade")>()),
@@ -61,7 +99,10 @@ vi.mock("@/features/trade/hooks/use-meme-trade", async (importOriginal) => ({
     error: null,
     trade: memeTrade,
   }),
-  useMemePreview: () => ({ data: null, isFetching: false, error: null }),
+  useMemePreview: (_input: unknown, consented: boolean) => {
+    memePreview.consented.push(consented);
+    return memePreview.state;
+  },
 }));
 vi.mock("@/hooks/use-portfolio", () => ({
   usePortfolio: () => ({
@@ -74,6 +115,11 @@ vi.mock("@/hooks/use-portfolio", () => ({
 type MockTicketProps = {
   token: { symbol: string; address: string; chainId: number };
   side: "BUY" | "SELL";
+  amount: string;
+  onAmountChange: (amount: string) => void;
+  preview: unknown;
+  quoteExpired?: boolean;
+  onRefreshQuote?: () => void;
   onSubmit: (input: {
     side: "BUY" | "SELL";
     tokenAddress: string;
@@ -182,7 +228,7 @@ const [SPOT, PERPS, MEMES, RWA, PREDICTION] = [0, 1, 2, 3, 4];
 // The Real assets and Prediction fields belong to those panels, not to this
 // view, so they are asserted in those components' own suites.
 const SPOT_SEARCH = "Search markets";
-const MEME_SEARCH = "Search trending memecoins";
+const MEME_SEARCH = "Search all memecoins";
 
 function tabs() {
   return within(screen.getByRole("tablist")).getAllByRole("tab");
@@ -213,13 +259,33 @@ beforeEach(() => {
   spot.loading = false;
   spot.error = null;
   memes.tokens = [];
+  memes.allTokens = null;
+  memes.total = null;
+  memes.loaded = 0;
+  memes.shownCount = 0;
+  memes.hasMore = false;
+  memes.isLoadingMore = false;
+  memes.loadMore.mockClear();
   memes.isLoading = false;
   memes.error = null;
+  memeSearch.active = false;
+  memeSearch.results = [];
+  memeSearch.error = null;
+  memeViews.catalog = [];
+  memeViews.search = [];
   router.push.mockClear();
   router.back.mockClear();
   memeTrade.mockClear();
   memeTicketProps.last = null;
   memeSheetProps.last = null;
+  memePreview.state = {
+    quote: null,
+    expired: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  };
+  memePreview.consented = [];
 });
 
 describe("MobileMarketView chrome", () => {
@@ -756,5 +822,151 @@ describe("MobileMarketView, the memecoin tap-to-screen ticket", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByRole("searchbox", { name: MEME_SEARCH })).toBeEnabled();
+  });
+});
+
+describe("MobileMarketView, the memecoin catalogue", () => {
+  const switchGroup = () => screen.getByRole("group", { name: "Which memecoins to list" });
+
+  it("opens curated, and the switch lists what All keeps, in the catalogue and search", () => {
+    memes.tokens = [memeToken({ symbol: "SAFE", name: "Safe" })];
+    memes.allTokens = [
+      memeToken({ symbol: "SAFE", name: "Safe" }),
+      memeToken({ symbol: "WILD", name: "Wild", riskLevel: "HIGH" }),
+    ];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(memeViews.catalog.at(-1)).toBe("curated");
+    expect(screen.queryByText("WILD")).toBeNull();
+
+    fireEvent.click(within(switchGroup()).getByRole("button", { name: "All" }));
+    expect(screen.getByText("WILD")).toBeInTheDocument();
+    expect(memeViews.catalog.at(-1)).toBe("all");
+    expect(memeViews.search.at(-1)).toBe("all");
+  });
+
+  it("counts the loaded rows against the server's total, and loads the next page", () => {
+    memes.tokens = memeTokens(3);
+    memes.total = 11_502;
+    memes.loaded = 500;
+    memes.shownCount = 156;
+    memes.hasMore = true;
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(within(memeMarketList()).getByText("500 of 11,502")).toBeInTheDocument();
+    expect(within(memeMarketList()).getByText("156 shown")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(memes.loadMore).toHaveBeenCalledOnce();
+  });
+
+  it("lists search results in place of the catalogue, without its count", () => {
+    memes.tokens = [memeToken({ symbol: "ONPAGE", name: "On page" })];
+    memes.total = 11_502;
+    memes.loaded = 500;
+    memes.hasMore = true;
+    memeSearch.active = true;
+    memeSearch.results = [memeToken({ symbol: "FOUND", name: "Found" })];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(screen.getByText("FOUND")).toBeInTheDocument();
+    expect(screen.queryByText("ONPAGE")).toBeNull();
+    expect(screen.queryByText("500 of 11,502")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  // A token is chainId + address. The same address on two chains is two coins,
+  // and tapping one must open that one, not whichever the list found first.
+  it("opens the coin that was tapped when two chains share its address", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    memes.tokens = [
+      memeToken({ symbol: "BTWIN", name: "Base twin", address: "0xsame", chainId: 8453 }),
+      memeToken({
+        symbol: "STWIN",
+        name: "Solana twin",
+        address: "0xsame",
+        chainId: SOLANA_CHAIN_ID,
+      }),
+    ];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(screen.getByText("BTWIN")).toBeInTheDocument();
+    expect(screen.getByText("STWIN")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("STWIN"));
+    expect(memeTicketProps.last?.token.symbol).toBe("STWIN");
+    expect(memeTicketProps.last?.token.chainId).toBe(SOLANA_CHAIN_ID);
+    const keyWarnings = error.mock.calls.filter((call) =>
+      call.some((part) => typeof part === "string" && part.includes("same key"))
+    );
+    expect(keyWarnings).toEqual([]);
+    error.mockRestore();
+  });
+});
+
+// The phone ticket against the trade contract: it is handed the live quote and
+// told when that quote lapsed, and a LOW_LIQUIDITY coin is confirmed before any
+// preview goes out. The ticket's own rendering of all of it (fee row, risk,
+// warnings, lapsed line) is pinned in meme-trade-ticket.test.tsx.
+describe("MobileMarketView, the memecoin ticket against the trade contract", () => {
+  const LOW = { code: "LOW_LIQUIDITY", message: "Liquidity is below $50,000." };
+
+  function openTicket(token: MemeToken) {
+    memes.tokens = [token];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    fireEvent.click(screen.getByText(token.symbol ?? ""));
+  }
+
+  it("hands the ticket the live quote", () => {
+    const quote = { platformFeeAmountFormatted: "0.025" };
+    memePreview.state.quote = quote;
+    openTicket(memeToken({ symbol: "PEPE", name: "Pepe" }));
+    expect(memeTicketProps.last?.preview).toBe(quote);
+  });
+
+  it("tells the ticket a lapsed quote lapsed, with the way to a fresh one", () => {
+    memePreview.state.expired = true;
+    openTicket(memeToken({ symbol: "PEPE", name: "Pepe" }));
+    expect(memeTicketProps.last?.preview).toBeNull();
+    expect(memeTicketProps.last?.quoteExpired).toBe(true);
+    act(() => memeTicketProps.last?.onRefreshQuote?.());
+    expect(memePreview.state.refetch).toHaveBeenCalled();
+  });
+
+  it("holds the preview for a LOW_LIQUIDITY coin until the consent is accepted", () => {
+    // Before a coin is opened there is nothing to consent to; count from here.
+    memes.tokens = [memeToken({ symbol: "THINPHONE", name: "Thin", warnings: [LOW] })];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    const fromTicket = memePreview.consented.length;
+    fireEvent.click(screen.getByText("THINPHONE"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    act(() => memeTicketProps.last?.onAmountChange("5"));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText(LOW.message)).toBeInTheDocument();
+    const whileOpen = memePreview.consented.slice(fromTicket);
+    expect(whileOpen.length).toBeGreaterThan(0);
+    expect(whileOpen.every((c) => c === false)).toBe(true);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "I understand, continue" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(memePreview.consented.at(-1)).toBe(true);
+  });
+
+  it("cancels the consent by clearing the amount", () => {
+    openTicket(memeToken({ symbol: "THINPHONE2", name: "Thin 2", warnings: [LOW] }));
+    act(() => memeTicketProps.last?.onAmountChange("5"));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel" })
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(memeTicketProps.last?.amount).toBe("");
+    expect(memePreview.consented.at(-1)).toBe(false);
+  });
+
+  it("never asks for a coin without the warning", () => {
+    openTicket(memeToken({ symbol: "PEPE", name: "Pepe" }));
+    act(() => memeTicketProps.last?.onAmountChange("5"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(memePreview.consented.every((c) => c === true)).toBe(true);
   });
 });
