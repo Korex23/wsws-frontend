@@ -6,6 +6,14 @@ import { getPrivyClient } from "@/lib/server/privy";
 import { decaneConfigured, getDecaneClient } from "@/lib/server/decane";
 
 export interface AccessClaims {
+  /**
+   * Which issuer verified this token. Callers branch on it rather than
+   * re-deriving it from the id's shape: a Privy DID and a Decane UUID look
+   * nothing alike, but guessing from the string is exactly the kind of check
+   * that rots. Mirrors IdentityContext.provider in the backend's shared
+   * verifier.
+   */
+  provider: "privy" | "decane";
   userId: string;
   sessionId: string;
   issuedAt: number;
@@ -69,6 +77,7 @@ async function verifyWithPrivy(token: string): Promise<AccessClaims | null> {
   try {
     const claims = await getPrivyClient().utils().auth().verifyAccessToken(token);
     return {
+      provider: "privy",
       userId: claims.user_id,
       sessionId: claims.session_id,
       issuedAt: claims.issued_at,
@@ -84,6 +93,7 @@ async function verifyWithDecane(token: string): Promise<AccessClaims | null> {
   try {
     const claims = await getDecaneClient().verifyAccessToken(token);
     return {
+      provider: "decane",
       userId: claims.userId,
       // Decane has no session id. The token id is unique per issued token and
       // only keys the short-lived request-user cache, so it is close enough.

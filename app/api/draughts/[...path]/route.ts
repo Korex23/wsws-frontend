@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestUser, verifyRequest } from "@/lib/server/auth";
+import { getRequestIdentity, getRequestUser, verifyRequest } from "@/lib/server/auth";
 import {
   chessReadNeedsSession,
-  walletOfUser,
   withChessReadIdentity,
   withChessIdentity,
 } from "@/lib/server/chess-identity";
@@ -139,8 +138,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   const needsSession = chessReadNeedsSession(joined, req.nextUrl.searchParams);
   const claims = needsSession ? await verifyRequest(req) : null;
   if (needsSession && !claims) return unauthorized();
-  const user = needsSession ? await getRequestUser(req, claims) : null;
-  const wallet = needsSession ? walletOfUser(user) : null;
+  const user =
+    needsSession && claims?.provider === "privy" ? await getRequestUser(req, claims) : null;
+  // Provider-agnostic wallet: Decane resolves through its address endpoint,
+  // Privy through the user object. The old Privy-only path returned null for a
+  // Decane session and failed the wallet check against the caller's own wallet.
+  const wallet = needsSession ? ((await getRequestIdentity(req, claims))?.evmAddress ?? null) : null;
   if (needsSession && !user) return walletUnavailable();
   if (needsSession && !wallet) return noWallet();
 
@@ -174,9 +177,9 @@ async function authedWrite(
   const claims = await verifyRequest(req);
   if (!claims) return unauthorized();
 
-  const user = await getRequestUser(req, claims);
+  const user = claims?.provider === "privy" ? await getRequestUser(req, claims) : null;
   if (!user) return walletUnavailable();
-  const wallet = walletOfUser(user);
+  const wallet = (await getRequestIdentity(req, claims))?.evmAddress ?? null;
   if (!wallet) return noWallet();
 
   const raw = await req.text();

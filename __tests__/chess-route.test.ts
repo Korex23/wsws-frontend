@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 const auth = vi.hoisted(() => ({
   verifyRequest: vi.fn(),
   getRequestUser: vi.fn(),
+  getRequestIdentity: vi.fn(),
 }));
 vi.mock("@/lib/server/auth", () => ({
   ...auth,
@@ -62,6 +63,7 @@ describe("chess proxy route", () => {
   beforeEach(() => {
     auth.verifyRequest.mockReset();
     auth.getRequestUser.mockReset();
+    auth.getRequestIdentity.mockReset();
     global.fetch = vi.fn(
       async () =>
         new Response(JSON.stringify({ success: true }), {
@@ -134,8 +136,9 @@ describe("chess proxy route", () => {
 
   it("pins deployed chess requests to the staging gateway", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
 
     try {
       const { GET } = await loadRoute({
@@ -181,8 +184,9 @@ describe("chess proxy route", () => {
   });
 
   it("never caches player coach state", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     const { GET } = await loadRoute();
     const request = () => makeReq("https://app.test/api/chess/players/0xabc/coach/home");
     const context = { params: Promise.resolve({ path: ["players", "0xabc", "coach", "home"] }) };
@@ -204,8 +208,9 @@ describe("chess proxy route", () => {
   });
 
   it("authenticates server-rendered challenge pages and preserves their route prefix", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     const { GET } = await loadRoute();
     const res = await GET(makeReq("https://app.test/api/chess/challenge"), {
       params: Promise.resolve({ path: ["challenge"] }),
@@ -221,10 +226,13 @@ describe("chess proxy route", () => {
   });
 
   it("never shares viewer-specific challenge pages through the read cache", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser
       .mockResolvedValueOnce(walletUser("0xaaa"))
       .mockResolvedValueOnce(walletUser("0xbbb"));
+    auth.getRequestIdentity
+      .mockResolvedValueOnce({ userId: "user_1", evmAddress: "0xaaa", solanaAddress: null })
+      .mockResolvedValueOnce({ userId: "user_1", evmAddress: "0xbbb", solanaAddress: null });
     const { GET } = await loadRoute();
     const request = () => makeReq("https://app.test/api/chess/challenge/challenge-1");
     const context = { params: Promise.resolve({ path: ["challenge", "challenge-1"] }) };
@@ -235,8 +243,9 @@ describe("chess proxy route", () => {
   });
 
   it("authenticates challenge lifecycle polling", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     const { GET } = await loadRoute();
 
     const res = await GET(makeReq("https://app.test/api/chess/challenges/challenge-1"), {
@@ -273,8 +282,9 @@ describe("chess proxy route", () => {
   });
 
   it("forwards the verified wallet on match notes", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     const { GET } = await loadRoute();
     const res = await GET(makeReq("https://app.test/api/chess/matches/match-1/note"), {
       params: Promise.resolve({ path: ["matches", "match-1", "note"] }),
@@ -287,8 +297,9 @@ describe("chess proxy route", () => {
   });
 
   it("forwards the verified wallet on private chess reads", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     const { GET } = await loadRoute();
     const res = await GET(makeReq("https://app.test/api/chess/cashier/players/0xstale/balance"), {
       params: Promise.resolve({ path: ["cashier", "players", "0xstale", "balance"] }),
@@ -301,8 +312,9 @@ describe("chess proxy route", () => {
   });
 
   it("forwards signed Privy credentials on authenticated lottery reads", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     global.fetch = vi.fn(
       async () =>
         new Response(JSON.stringify({ success: true, data: [] }), {
@@ -332,7 +344,7 @@ describe("chess proxy route", () => {
   });
 
   it("rejects writes until the proxy can prove the caller's wallet", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(null);
     const { POST } = await loadRoute();
     const res = await POST(
@@ -347,8 +359,9 @@ describe("chess proxy route", () => {
   });
 
   it("forwards the verified wallet in both header and body on writes", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     const { POST } = await loadRoute();
     const res = await POST(
       makeReq("https://app.test/api/chess/betting/bets", {
@@ -378,12 +391,19 @@ describe("chess proxy route", () => {
   });
 
   it("opens server-created computer games in the interactive chess board", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue({
       linked_accounts: [
         ...walletUser("0xabc").linked_accounts,
         { type: "google_oauth", name: "Alice" },
       ],
+    });
+    // The display name still comes off the Privy user; only the wallet moved
+    // to the provider-agnostic identity.
+    auth.getRequestIdentity.mockResolvedValue({
+      userId: "user_1",
+      evmAddress: "0xabc",
+      solanaAddress: null,
     });
     mockRedirectingUpstream("/round/game-1");
     const { POST } = await loadRoute();
@@ -418,8 +438,9 @@ describe("chess proxy route", () => {
   });
 
   it("opens created challenges on a refreshable frontend invite route", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     mockRedirectingUpstream("/challenge/challenge-1");
     const { POST } = await loadRoute();
 
@@ -441,8 +462,9 @@ describe("chess proxy route", () => {
   });
 
   it("opens funded challenge redirects on the same refreshable invite route", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     mockRedirectingUpstream("/challenge/funded/challenge-2");
     const { POST } = await loadRoute();
 
@@ -459,8 +481,9 @@ describe("chess proxy route", () => {
   });
 
   it("opens accepted friend challenges on the interactive board", async () => {
-    auth.verifyRequest.mockResolvedValue({ userId: "user_1" });
+    auth.verifyRequest.mockResolvedValue({ provider: "privy", userId: "user_1" });
     auth.getRequestUser.mockResolvedValue(walletUser("0xabc"));
+    auth.getRequestIdentity.mockResolvedValue({ userId: "user_1", evmAddress: "0xabc", solanaAddress: null });
     mockRedirectingUpstream("/round/game-1");
     const { POST } = await loadRoute();
 
