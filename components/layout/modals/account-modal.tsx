@@ -130,9 +130,7 @@ export function AccountModal({ onClose }: AccountModalProps) {
             <LockIcon size={20} />
             <span className="flex min-w-0 flex-col items-start">
               <span>
-                {unlockPassword.isSet
-                  ? t("changeUnlockPassword")
-                  : t("setUnlockPassword")}
+                {unlockPassword.isSet ? t("changeUnlockPassword") : t("setUnlockPassword")}
               </span>
               <span className="text-[11.5px] font-normal text-white/45">
                 {t("setUnlockPasswordHint")}

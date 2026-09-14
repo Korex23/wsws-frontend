@@ -269,8 +269,7 @@ function UnlockPasswordDialog({
   const tooShort = password.length > 0 && password.length < MIN_UNLOCK_PASSWORD_LENGTH;
   const digitsOnly = password.length > 0 && /^\d+$/.test(password);
   const mismatched = request.setup && confirm.length > 0 && confirm !== password;
-  const wellFormed =
-    password.length >= MIN_UNLOCK_PASSWORD_LENGTH && !/^\d+$/.test(password);
+  const wellFormed = password.length >= MIN_UNLOCK_PASSWORD_LENGTH && !/^\d+$/.test(password);
   // Only the setup path can be checked for strength; on unlock the password is
   // whatever it already is, and blocking submission would lock the user out.
   const ready = request.setup ? wellFormed && confirm === password : password.length > 0;

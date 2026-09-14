@@ -84,10 +84,7 @@ const quote = {
 describe("useMemeTrade on Base when the service records a delivered trade as failed", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue(delivered(USDC, 1_960_000n));
@@ -147,10 +144,7 @@ describe("useMemeTrade on Base when the service refuses the second registration"
 
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.quoteSwap.mockResolvedValue(twoCalls);
     api.registerSubmission
       .mockResolvedValueOnce({ swapId: "swap-1", status: "SUBMITTED", callIndex: 0 })
@@ -211,10 +205,7 @@ describe("useMemeTrade on Base when the service refuses the second registration"
 describe("useMemeTrade status polling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue({ hash: "0xhash", logs: [] });

@@ -34,10 +34,7 @@ import { UserIcon } from "@/components/ui/icons";
 // set an unlock password, not to move the PIN here.
 
 export type UnlockOffer =
-  | { kind: "passkey" }
-  | { kind: "password" }
-  | { kind: "google" }
-  | { kind: "kingschat" };
+  { kind: "passkey" } | { kind: "password" } | { kind: "google" } | { kind: "kingschat" };
 
 /**
  * What this browser can offer a returning user, or null to show the full list
@@ -55,9 +52,13 @@ export function useUnlockOffer(): UnlockOffer | null {
   useEffect(() => {
     let live = true;
     canUnlockWithPassword()
-      .then((can) => { if (live) setHasPassword(can); })
+      .then((can) => {
+        if (live) setHasPassword(can);
+      })
       .catch(() => {});
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [canUnlockWithPassword]);
 
   // A passkey outranks a password: one biometric beats typing a password.
@@ -93,11 +94,7 @@ function Avatar({ profile }: { profile: DisplayProfile | null }) {
       // next/image would need every provider host allow-listed for a 44px
       // decoration.
       // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={profile.picture}
-        alt=""
-        className="size-11 shrink-0 rounded-full object-cover"
-      />
+      <img src={profile.picture} alt="" className="size-11 shrink-0 rounded-full object-cover" />
     );
   }
   return (
@@ -169,7 +166,7 @@ export function UnlockPanel({
         toast.error(
           offer.kind === "passkey" || offer.kind === "password"
             ? t("passkeyError")
-            : t("oauthError"),
+            : t("oauthError")
         );
       }
     } finally {
