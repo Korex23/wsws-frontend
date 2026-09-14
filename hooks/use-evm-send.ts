@@ -53,7 +53,14 @@ function connectedEvmAddress(wallet: SocialWallet, expected?: string): `0x${stri
 // through the 7702 + bundler flow; unsupported chains keep the normal EOA send
 // path via Decane. The sponsored path already waits for the userOp receipt, so
 // callers can treat its returned transaction hash as confirmed.
-const EIP7702_REFUSED = /EIP-7702 is not supported|Invalid fields set on User Operation/i;
+//
+// Deliberately narrow: ONLY the bundler's "EIP-7702 is not supported" refusal
+// may degrade to a user-paid send. Anything broader is a money bug — Alchemy's
+// gas-sponsorship-limit error begins "Invalid fields set on User Operation",
+// and matching it would silently charge the user for a send that was meant to
+// be sponsored. A sponsorship limit must surface as an error, never as a
+// user-paid fallback.
+const EIP7702_REFUSED = /EIP-7702 is not supported/i;
 
 function refusesEip7702(error: unknown): boolean {
   return EIP7702_REFUSED.test(error instanceof Error ? error.message : String(error));
