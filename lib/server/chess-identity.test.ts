@@ -219,6 +219,27 @@ describe("chess identity helper", () => {
     ).toBe(JSON.stringify({ player: "0xDD0737-6C2E", uci: "e2e4" }));
     expect(
       withChessIdentity(
+        "round/commands",
+        JSON.stringify({
+          commandId: "command-1",
+          matchId: "123",
+          player: "0xDD0737-6C2E",
+          expectedPly: 0,
+          command: { type: "move", uci: "e2e4" },
+        }),
+        proven
+      )
+    ).toBe(
+      JSON.stringify({
+        commandId: "command-1",
+        matchId: "123",
+        player: "0xDD0737-6C2E",
+        expectedPly: 0,
+        command: { type: "move", uci: "e2e4" },
+      })
+    );
+    expect(
+      withChessIdentity(
         "matches/123/video/token",
         JSON.stringify({ player: "0xDD0737-6C2E" }),
         proven

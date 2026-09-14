@@ -1,6 +1,8 @@
 "use client";
 
 import { chessDelete, chessGet, chessPost, chessPut } from "@/features/casino/lib/api/chess-client";
+import { newChessIdempotencyKey } from "@/features/casino/lib/api/chess-idempotency";
+import { sendChessRoundCommand } from "@/features/casino/lib/chess/live-socket";
 // Shared with the dashboard feed on the server; see lib/chess/live-match.
 import { isPlausiblyActiveMatch } from "@/lib/chess/live-match";
 import {
@@ -30,7 +32,7 @@ import {
   type ChessMoveWire,
   type ChessWeaknessProfileWire,
 } from "@/features/casino/lib/api/chess-wire";
-import { apiError, errorCode } from "@/lib/api/envelope";
+import { apiError, errorCode, errorStatus } from "@/lib/api/envelope";
 import type {
   ChessChatMessage,
   ChessChatRoom,
@@ -80,6 +82,43 @@ interface MovesWire {
 interface MoveResultWire {
   match: ChessMatchWire;
   move: ChessMoveWire;
+}
+
+interface RoundCommandResponseWire<T = MoveResultWire> {
+  commandId: string;
+  matchId: string;
+  commandType: string;
+  status: "applied" | "replayed";
+  data: T;
+}
+
+const ROUND_COMMAND_RETRY_DELAYS_MS = [0, 1_200, 2_400] as const;
+
+function retryableRoundCommandError(error: unknown): boolean {
+  const status = errorStatus(error);
+  return status === null || status === 429 || status >= 500;
+}
+
+async function postRoundCommand<T = MoveResultWire>(
+  body: Record<string, unknown>
+): Promise<RoundCommandResponseWire<T>> {
+  let lastError: unknown;
+  try {
+    return await sendChessRoundCommand<RoundCommandResponseWire<T>>(body);
+  } catch (error) {
+    lastError = error;
+    if (!retryableRoundCommandError(error)) throw error;
+  }
+  for (const delayMs of ROUND_COMMAND_RETRY_DELAYS_MS) {
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      return await chessPost<RoundCommandResponseWire<T>>("/round/commands", body);
+    } catch (error) {
+      lastError = error;
+      if (!retryableRoundCommandError(error)) throw error;
+    }
+  }
+  throw lastError;
 }
 
 type ChessCoachMoveReviewWire = Omit<ChessCoachMoveReview, "matchState"> & {
@@ -538,10 +577,16 @@ export async function submitMove(
   player: string,
   previousSan: string[] = []
 ): Promise<ChessMatch> {
-  const result = await chessPost<MoveResultWire>(`/matches/${requireMatchId(matchId)}/moves`, {
+  const validMatchId = requireMatchId(matchId);
+  const response = await postRoundCommand({
+    commandId: newChessIdempotencyKey(),
+    matchId: validMatchId,
     player,
-    uci: move,
+    expectedPly: previousSan.length,
+    clientSentAtMs: Date.now(),
+    command: { type: "move", uci: move },
   });
+  const result = response.data;
   const match = toChessMatch(result.match, { moves: [result.move] });
   return {
     ...match,
@@ -549,19 +594,27 @@ export async function submitMove(
   };
 }
 
-async function playerAction(matchId: string, action: string, player: string): Promise<ChessMatch> {
-  const wire = await chessPost<ChessMatchWire>(`/matches/${requireMatchId(matchId)}/${action}`, {
+async function playerAction(
+  matchId: string,
+  player: string,
+  command: Record<string, unknown>
+): Promise<ChessMatch> {
+  const response = await postRoundCommand<ChessMatchWire>({
+    commandId: newChessIdempotencyKey(),
+    matchId: requireMatchId(matchId),
     player,
+    clientSentAtMs: Date.now(),
+    command,
   });
-  return toChessMatch(wire);
+  return toChessMatch(response.data);
 }
 
 export async function resignMatch(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "resign", player);
+  return playerAction(matchId, player, { type: "resign" });
 }
 
 export async function offerDraw(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "draw-offer", player);
+  return playerAction(matchId, player, { type: "offerDraw" });
 }
 
 // Answers an outstanding offer. Declining leaves the game running.
@@ -570,48 +623,44 @@ export async function respondToDraw(
   player: string,
   accept: boolean
 ): Promise<ChessMatch> {
-  const wire = await chessPost<ChessMatchWire>(
-    `/matches/${requireMatchId(matchId)}/draw-response`,
-    { player, accept }
-  );
-  return toChessMatch(wire);
+  return playerAction(matchId, player, { type: "respondDraw", accept });
 }
 
 // Claims a draw the position already entitles the player to, by repetition or
 // the fifty-move rule.
 export async function claimDraw(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "claim-draw", player);
+  return playerAction(matchId, player, { type: "claimDraw" });
 }
 
 // Flags an opponent whose clock has run out. The service does not end a game on
 // time by itself, so without this call a game whose clock expired would sit
 // unfinished forever.
 export async function claimTimeout(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "claim-timeout", player);
+  return playerAction(matchId, player, { type: "claimTimeout" });
 }
 
 export async function abortMatch(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "abort", player);
+  return playerAction(matchId, player, { type: "abort" });
 }
 
 // Lila-style rematch "yes": the first click offers, the second accepts and the
 // response carries the original match plus `rematch.nextMatchId`.
 export async function requestRematch(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "rematch", player);
+  return playerAction(matchId, player, { type: "rematch" });
 }
 
 export async function declineRematch(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "rematch-decline", player);
+  return playerAction(matchId, player, { type: "declineRematch" });
 }
 
 // Lila-style takeback "yes": the first click offers, the second accepts and
 // rewinds the current game.
 export async function requestTakeback(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "takeback", player);
+  return playerAction(matchId, player, { type: "takeback" });
 }
 
 export async function declineTakeback(matchId: string, player: string): Promise<ChessMatch> {
-  return playerAction(matchId, "takeback-decline", player);
+  return playerAction(matchId, player, { type: "declineTakeback" });
 }
 
 export async function fetchPgn(matchId: string): Promise<string> {

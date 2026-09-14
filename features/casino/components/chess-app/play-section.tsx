@@ -559,7 +559,6 @@ function PostGameActions({
   result,
   ratingDiff,
   winnings,
-  computerGame,
   canRematch,
   rematchReadyId,
   opponentRematchOffer,
@@ -570,7 +569,7 @@ function PostGameActions({
   onAcceptRematch,
   onOfferRematch,
   onDeclineRematch,
-  onNewComputer,
+  onNewGame,
   onWithdrawWinnings,
   onReview,
   onLobby,
@@ -583,7 +582,6 @@ function PostGameActions({
     balanceUsdc: string;
     withdrawalFeePct: number | null;
   } | null;
-  computerGame: boolean;
   canRematch: boolean;
   rematchReadyId: string | null;
   opponentRematchOffer: boolean;
@@ -594,7 +592,7 @@ function PostGameActions({
   onAcceptRematch: () => void;
   onOfferRematch: () => void;
   onDeclineRematch: () => void;
-  onNewComputer: () => void;
+  onNewGame: () => void;
   onWithdrawWinnings: () => void;
   onReview: () => void;
   onLobby: () => void;
@@ -643,11 +641,11 @@ function PostGameActions({
         </div>
       ) : null}
 
-      {computerGame ? (
-        <button type="button" onClick={onNewComputer} className={`${railActionButton} mt-3`}>
-          {t("newComputerGame")}
-        </button>
-      ) : canRematch ? (
+      <button type="button" onClick={onNewGame} className={`${railActionButton} mt-3`}>
+        {t("newGame")}
+      </button>
+
+      {canRematch ? (
         rematchReadyId ? (
           <button type="button" onClick={onOpenRematch} className={`${railActionButton} mt-3`}>
             {t("openRematch")}
@@ -2195,7 +2193,6 @@ export function PlaySection({
                   result={resultLine(t, match, you)}
                   ratingDiff={yourRatingDiff}
                   winnings={settledPvpWinnings}
-                  computerGame={isComputerGame}
                   canRematch={you !== null && !isComputerGame}
                   rematchReadyId={rematchReadyId}
                   opponentRematchOffer={opponentRematchOffer}
@@ -2210,7 +2207,13 @@ export function PlaySection({
                   onAcceptRematch={() => void onAcceptRematch()}
                   onOfferRematch={() => void onRematch()}
                   onDeclineRematch={() => void onDeclineRematch()}
-                  onNewComputer={() => router.push("/casino/chess?computer=1")}
+                  onNewGame={() =>
+                    router.push(
+                      isComputerGame
+                        ? "/casino/chess?setup=ai#game-setup"
+                        : "/casino/chess?tab=lobby&setup=hook#game-setup"
+                    )
+                  }
                   onWithdrawWinnings={() => setWithdrawWinningsOpen(true)}
                   onReview={() => router.push(`/casino/chess/review?match=${match.id}`)}
                   onLobby={() => router.push("/casino/chess")}
@@ -2437,7 +2440,6 @@ export function PlaySection({
                   result={resultLine(t, match, you)}
                   ratingDiff={yourRatingDiff}
                   winnings={settledPvpWinnings}
-                  computerGame={isComputerGame}
                   canRematch={you !== null && !isComputerGame}
                   rematchReadyId={rematchReadyId}
                   opponentRematchOffer={opponentRematchOffer}
@@ -2452,7 +2454,13 @@ export function PlaySection({
                   onAcceptRematch={() => void onAcceptRematch()}
                   onOfferRematch={() => void onRematch()}
                   onDeclineRematch={() => void onDeclineRematch()}
-                  onNewComputer={() => router.push("/casino/chess?computer=1")}
+                  onNewGame={() =>
+                    router.push(
+                      isComputerGame
+                        ? "/casino/chess?setup=ai#game-setup"
+                        : "/casino/chess?tab=lobby&setup=hook#game-setup"
+                    )
+                  }
                   onWithdrawWinnings={() => setWithdrawWinningsOpen(true)}
                   onReview={() => router.push(`/casino/chess/review?match=${match.id}`)}
                   onLobby={() => router.push("/casino/chess")}

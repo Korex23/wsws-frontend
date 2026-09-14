@@ -2143,6 +2143,7 @@
         "rematch": "Rematch",
         "reviewGame": "Review game",
         "newComputerGame": "New computer game",
+        "newGame": "New game",
         "backToLobby": "Back to lobby",
         "claimDraw": "Claim draw",
         "toastDrawClaimed": "Draw claimed. Game over.",

@@ -21,6 +21,7 @@ import {
   reloadInteractiveLichessRound,
   type LichessApiMove,
 } from "@/features/casino/lib/chess/lichess-round-sync";
+import { lichessRoundReviewRoute } from "@/features/casino/lib/chess/lichess-round-route";
 import {
   createLichessSound,
   isLichessSound,
@@ -50,6 +51,7 @@ type LichessController = {
   data: Record<string, unknown>;
   ply: number;
   lastPly(): number;
+  preventDrawOffer?: unknown;
   replaying(): boolean;
   reload(data: Record<string, unknown>): void;
   setLoading(value: boolean): void;
@@ -969,6 +971,21 @@ export function LichessRound({
       host.dataset.roundViewer = initialRound.you ?? "spectator";
     }
 
+    const routeAnalysisLink = (event: MouseEvent) => {
+      const anchor =
+        event.target instanceof Element
+          ? event.target.closest<HTMLAnchorElement>("a[href]")
+          : null;
+      const href = anchor?.getAttribute("href");
+      if (!href) return;
+      const route = lichessRoundReviewRoute(href, matchId, controllerRef.current?.ply ?? 0);
+      if (!route) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      router.push(route);
+    };
+    host?.addEventListener("click", routeAnalysisLink, true);
+
     const runAction = (
       type: string,
       payload?: { u?: unknown; role?: unknown; pos?: unknown },
@@ -1066,6 +1083,7 @@ export function LichessRound({
           element,
           onChange() {},
         });
+        if (activeRound.match.computer) controller.preventDrawOffer = true;
         // `data.local` bypasses Lichess's own WebSocket boot, but Ark games are
         // still authoritative remote rounds. Restore normal replay semantics so
         // browsing history disables moves until the user returns to the latest ply.
@@ -1118,6 +1136,7 @@ export function LichessRound({
 
     return () => {
       cancelled = true;
+      host?.removeEventListener("click", routeAnalysisLink, true);
       controllerRef.current = null;
       proxyRef.current = null;
       appliedRevisionRef.current = null;
@@ -1158,6 +1177,7 @@ export function LichessRound({
       <div
         ref={hostRef}
         id="main-wrap"
+        className="ws-chess-lichess-round-host"
         data-no-ripple-scope="true"
         aria-hidden={loading || undefined}
         style={{ display: loading ? "none" : undefined, marginTop: 0 }}

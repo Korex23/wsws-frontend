@@ -2142,6 +2142,7 @@
         "rematch": "Revancha",
         "reviewGame": "Revisar partida",
         "newComputerGame": "Nueva partida contra la computadora",
+        "newGame": "Nueva partida",
         "backToLobby": "Volver a la sala",
         "claimDraw": "Reclamar tablas",
         "toastDrawClaimed": "Tablas reclamadas. Fin de la partida.",
