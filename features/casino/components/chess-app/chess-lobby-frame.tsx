@@ -9,11 +9,13 @@ import {
   useFundedChessChallenge,
 } from "@/features/casino/hooks/use-funded-chess-challenge";
 import { useFundedChessComputer } from "@/features/casino/hooks/use-funded-chess-computer";
+import { useCasinoWallet } from "@/features/casino/hooks/use-casino-wallet";
 import {
   exceedsUsdcBalance,
   normalizeUsdcAmount,
 } from "@/features/casino/lib/api/cashier";
 import type { ChessVariant, CreateComputerMatchInput } from "@/features/casino/lib/api/types";
+import { installChessSetupPersistence } from "@/features/casino/lib/chess/setup-persistence";
 import { copyTextWhenReady } from "@/lib/clipboard";
 import { friendlyError } from "@/lib/errors";
 import { shareOrigin } from "@/lib/site-url";
@@ -277,6 +279,7 @@ export function rewriteChessFrameLinks(
 export function ChessLobbyFrame({ source }: { source: string }) {
   const router = useRouter();
   const { logout } = usePrivy();
+  const wallet = useCasinoWallet();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const authRedirectingRef = useRef(false);
   const [frameSource, setFrameSource] = useState(source);
@@ -445,6 +448,7 @@ export function ChessLobbyFrame({ source }: { source: string }) {
     let fundedFriendAcceptForm: HTMLFormElement | null = null;
     let tournamentEntryForm: HTMLFormElement | null = null;
     let detachVariantPickers: () => void = () => undefined;
+    let detachSetupPersistence: () => void = () => undefined;
     const onComputerSubmit = (event: SubmitEvent) => {
       const form = event.currentTarget as HTMLFormElement;
       const formData = new FormData(form);
@@ -557,7 +561,7 @@ export function ChessLobbyFrame({ source }: { source: string }) {
           showError(message);
           toast.error(message, { id: toastId });
           if (submit) submit.disabled = false;
-          if (submitLabel) submitLabel.textContent = "Create a lobby game";
+          if (submitLabel) submitLabel.textContent = "Play online";
         });
     };
     const onFriendSubmit = (event: SubmitEvent) => {
@@ -741,6 +745,8 @@ export function ChessLobbyFrame({ source }: { source: string }) {
     const attach = (reveal: boolean) => {
       detachVariantPickers();
       detachVariantPickers = () => undefined;
+      detachSetupPersistence();
+      detachSetupPersistence = () => undefined;
       lobbyForm?.removeEventListener("submit", onLobbySubmit, true);
       computerForm?.removeEventListener("submit", onComputerSubmit, true);
       friendForm?.removeEventListener("submit", onFriendSubmit, true);
@@ -771,6 +777,10 @@ export function ChessLobbyFrame({ source }: { source: string }) {
         rewriteChessFrameLinks(frameDocument);
         normalizeChessLobbyLayout(frameDocument);
         detachVariantPickers = installChessVariantPickers(frameDocument);
+        detachSetupPersistence = installChessSetupPersistence(
+          frameDocument,
+          wallet.address ?? "anon"
+        );
       }
       lobbyForm = frameDocument?.querySelector<HTMLFormElement>("form[data-lobby-setup]") ?? null;
       lobbyForm?.addEventListener("submit", onLobbySubmit, true);
@@ -805,6 +815,7 @@ export function ChessLobbyFrame({ source }: { source: string }) {
     attach(false);
     return () => {
       detachVariantPickers();
+      detachSetupPersistence();
       frame.removeEventListener("load", onFrameLoad);
       lobbyForm?.removeEventListener("submit", onLobbySubmit, true);
       computerForm?.removeEventListener("submit", onComputerSubmit, true);
@@ -825,6 +836,7 @@ export function ChessLobbyFrame({ source }: { source: string }) {
     logout,
     router,
     startComputer,
+    wallet.address,
   ]);
 
   return (

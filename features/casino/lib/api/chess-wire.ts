@@ -700,7 +700,7 @@ const MATCH_STATE_ORDER: Record<ChessMatchState, number> = {
 
 function matchPly(match: ChessMatch): number {
   const roundPly = match.round?.steps.at(-1)?.ply;
-  return typeof roundPly === "number" ? roundPly : match.moves.length;
+  return Math.max(match.moves.length, typeof roundPly === "number" ? roundPly : 0);
 }
 
 // A REST repair can finish after a newer socket frame. Never let that older
@@ -719,6 +719,22 @@ export function mergeChessMatchSnapshot(
     return previous;
   }
   return incoming;
+}
+
+// A round-command acknowledgement confirms persistence; it is not the live
+// round event that advances Lichess's controller. Keep the replay steps until
+// the corresponding versioned position frame arrives, otherwise an ack that
+// wins the network race erases the only history that frame can append to and
+// leaves the board and clock frozen on the previous ply.
+export function mergeChessCommandAcknowledgement(
+  previous: ChessMatch | undefined,
+  incoming: ChessMatch
+): ChessMatch {
+  const merged = mergeChessMatchSnapshot(previous, incoming);
+  if (merged !== incoming || incoming.round || !previous?.round || previous.id !== incoming.id) {
+    return merged;
+  }
+  return { ...incoming, round: previous.round };
 }
 
 // Fold a `state` frame (a full match snapshot: join, draw-offer changes, terminal

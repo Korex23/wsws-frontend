@@ -534,6 +534,10 @@ body:has([data-chess-setup-open]) [data-support-launcher] {
   line-height: 50px;
 }
 
+.ws-chess-lichess-round-host .rclock .time {
+  z-index: 0;
+}
+
 .ws-chess-round-root .ws-chess-lila-clock-compact {
   font-size: 1.35rem;
   font-weight: 500;
@@ -554,6 +558,7 @@ body:has([data-chess-setup-open]) [data-support-launcher] {
 
 .ws-chess-round-rail-top {
   grid-row: 2;
+  min-height: 8.5rem;
 }
 
 .ws-chess-round-rail-table {
@@ -568,6 +573,7 @@ body:has([data-chess-setup-open]) [data-support-launcher] {
 
 .ws-chess-round-rail-bottom {
   grid-row: 5;
+  min-height: 8.5rem;
 }
 
 .ws-chess-round-desktop-left,

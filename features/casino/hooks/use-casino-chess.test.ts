@@ -7,17 +7,19 @@ const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 describe("chess match polling", () => {
   it("keeps waiting games polling so an opponent join shows up quickly", () => {
     expect(chessMatchRefetchMs("awaiting_opponent", false)).toBe(1000);
-    expect(chessMatchRefetchMs("awaiting_opponent", true)).toBe(1000);
+    expect(chessMatchRefetchMs("awaiting_opponent", true)).toBe(false);
   });
 
-  it("slows only once an active game has a live socket feed", () => {
+  it("uses HTTP only as fallback once an active game has a live socket feed", () => {
     expect(chessMatchRefetchMs("in_progress", false)).toBe(1000);
-    expect(chessMatchRefetchMs("in_progress", true)).toBe(5000);
+    expect(chessMatchRefetchMs("in_progress", true)).toBe(false);
   });
 
-  it("does not poll computer matches whose move writes return authoritative state", () => {
+  it("polls only while an asynchronous computer reply is pending", () => {
     expect(chessMatchRefetchMs("in_progress", false, true)).toBe(false);
     expect(chessMatchRefetchMs("in_progress", true, true)).toBe(false);
+    expect(chessMatchRefetchMs("in_progress", false, true, true)).toBe(1000);
+    expect(chessMatchRefetchMs("in_progress", true, true, true)).toBe(false);
   });
 
   it("stops polling once the game is over", () => {

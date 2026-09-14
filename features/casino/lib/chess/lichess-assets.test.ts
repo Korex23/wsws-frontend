@@ -46,6 +46,12 @@ describe("Lichess round assets", () => {
     ).toBe("https://assets.example.com/chess-assets/v1/npm/stockfish-web/sf_18.wasm");
   });
 
+  it("keeps bundled voice grammars on the application origin", () => {
+    expect(
+      resolveLichessPublicAssetPath("compiled/grammar/move-en.json", "https://assets.example.com")
+    ).toBe("/compiled/grammar/move-en.json");
+  });
+
   it("keeps legacy same-origin paths when no public asset origin is configured", () => {
     expect(resolveLichessPublicAssetPath("lifat/vosk/model-en-us-0.15.tar.gz", "")).toBe(
       "/chess/lichess/lifat/vosk/model-en-us-0.15.tar.gz"
