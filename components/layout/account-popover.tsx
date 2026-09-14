@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useLinkWithPasskey, useLogout, usePrivy } from "@privy-io/react-auth";
+import { useSocialAuth, useSocialWallet } from "decane-connect-kit";
+import { useAuthSession } from "@/hooks/use-auth-session";
 import { Avatar } from "@/components/ui/avatar";
 import { InviteFriendsModal } from "@/features/referrals";
 import { HelpIcon, SignOutIcon } from "@/components/ui/icons";
-import { deriveProfile } from "@/lib/user";
 import { WalletAddresses } from "@/components/layout/modals/wallet-addresses";
 import { toast } from "@/lib/toast";
 
@@ -66,26 +66,29 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
   const popoverRef = useRef<HTMLDivElement>(null);
   const t = useTranslations("account");
   const [inviteOpen, setInviteOpen] = useState(false);
-  const { user } = usePrivy();
+  const { profile, logout: sessionLogout } = useAuthSession();
+  const { canUsePasskey } = useSocialAuth();
+  const { addPasskey } = useSocialWallet();
   const router = useRouter();
   const reduce = useReducedMotion();
 
-  const { logout } = useLogout({
-    onSuccess: () => router.push("/auth"),
-  });
+  const logout = async () => {
+    await sessionLogout();
+    router.push("/auth");
+  };
 
-  const { linkWithPasskey } = useLinkWithPasskey({
-    onSuccess: () => {
+  // Privy's useLinkWithPasskey → the kit's addPasskey (Promise, throws on error).
+  const linkWithPasskey = async () => {
+    try {
+      await addPasskey();
       toast.success(t("passkeyAdded"));
-    },
-    onError: (err) => {
+    } catch (err) {
       console.error("Passkey linking failed:", err);
       toast.error(t("passkeyFailed"));
-    },
-  });
+    }
+  };
 
-  const profile = deriveProfile(user);
-  const hasPasskey = user?.linkedAccounts?.some((a) => a.type === "passkey") ?? false;
+  const hasPasskey = canUsePasskey;
 
   useEffect(() => {
     if (!open) return;
