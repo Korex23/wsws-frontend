@@ -8,6 +8,7 @@ import {
   applyRematchOfferFrame,
   applyRematchTakenFrame,
   applyTakebackOffersFrame,
+  mergeChessCommandAcknowledgement,
   mergeChessMatchSnapshot,
   formatTimeControl,
   isMatchId,
@@ -400,6 +401,82 @@ describe("live game frames", () => {
 
     expect(mergeChessMatchSnapshot(newer, older)).toBe(newer);
     expect(mergeChessMatchSnapshot(older, newer)).toBe(newer);
+  });
+
+  it("keeps round history when a command ack arrives before its position frame", () => {
+    const firstFen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
+    const secondFen = "rnbqkbnr/pppp1ppp/8/4p3/3PP3/8/PPP2PPP/RNBQKBNR b KQkq - 0 2";
+    const previous = toChessMatch(wire({ fen: firstFen, turn: "white", ply: 2 }), {
+      moveSan: ["e4", "e5"],
+      round: {
+        steps: [
+          {
+            ply: 0,
+            uci: null,
+            san: null,
+            fen: START_FEN,
+            check: false,
+            byPlayer: null,
+            clockMsRemaining: null,
+            createdAt: null,
+          },
+          {
+            ply: 1,
+            uci: "e2e4",
+            san: "e4",
+            fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+            check: false,
+            byPlayer: "0xwhite",
+            clockMsRemaining: 299_000,
+            createdAt: "2026-07-30T09:01:02.000Z",
+          },
+          {
+            ply: 2,
+            uci: "e7e5",
+            san: "e5",
+            fen: firstFen,
+            check: false,
+            byPlayer: "0xblack",
+            clockMsRemaining: 298_000,
+            createdAt: "2026-07-30T09:01:04.000Z",
+          },
+        ],
+        legalMoves: ["d2d4"],
+        check: false,
+        serverTime: "2026-07-30T09:01:04.000Z",
+      },
+    });
+    const acknowledgement = toChessMatch(wire({ fen: secondFen, turn: "black", ply: 3 }), {
+      moveSan: ["e4", "e5", "d4"],
+    });
+
+    const acknowledged = mergeChessCommandAcknowledgement(previous, acknowledgement);
+    const positioned = applyPositionFrame(acknowledged, {
+      fen: secondFen,
+      turn: "black",
+      ply: 3,
+      lastMove: { uci: "d2d4", san: "d4" },
+      clocks: { whiteMs: 299_000, blackMs: 298_000 },
+      clockUpdatedAt: "2026-07-30T09:01:06.000Z",
+      status: "active",
+      legalMoves: ["e5d4"],
+      check: false,
+      step: {
+        ply: 3,
+        uci: "d2d4",
+        san: "d4",
+        fen: secondFen,
+        check: false,
+        byPlayer: "0xwhite",
+        clockMsRemaining: 299_000,
+        createdAt: "2026-07-30T09:01:06.000Z",
+      },
+    });
+
+    expect(acknowledged.round?.steps).toHaveLength(3);
+    expect(positioned.round?.steps).toHaveLength(4);
+    expect(positioned.round?.steps.at(-1)?.fen).toBe(secondFen);
+    expect(positioned.round?.legalMoves).toEqual(["e5d4"]);
   });
 
   it("keeps move history while applying the authoritative terminal snapshot", () => {

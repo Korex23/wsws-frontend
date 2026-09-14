@@ -48,6 +48,18 @@ describe("dispatchLichessRoundAction", () => {
     expect(accept.respondToDraw).toHaveBeenCalledWith(true);
   });
 
+  it("does not send draw offers from computer rounds", async () => {
+    const context = actions({
+      match: { drawOffered: null, computer: { level: 20 } },
+    });
+
+    await expect(dispatchLichessRoundAction("draw-yes", undefined, context)).resolves.toBe(true);
+    await expect(dispatchLichessRoundAction("draw-no", undefined, context)).resolves.toBe(true);
+
+    expect(context.offerDraw).not.toHaveBeenCalled();
+    expect(context.respondToDraw).not.toHaveBeenCalled();
+  });
+
   it("forwards takeback and rematch decisions", async () => {
     const context = actions();
 

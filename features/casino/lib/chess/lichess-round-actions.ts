@@ -3,7 +3,7 @@ import type { ChessColor } from "@/features/casino/lib/api/types";
 type ActionResult = Promise<unknown> | unknown;
 
 export interface LichessRoundActionContext {
-  match: { drawOffered: ChessColor | null } | null | undefined;
+  match: { drawOffered: ChessColor | null; computer?: unknown } | null | undefined;
   you: ChessColor | null;
   submitMove(uci: string): ActionResult;
   resign(): ActionResult;
@@ -58,12 +58,14 @@ export async function dispatchLichessRoundAction(
       await actions.abort();
       return true;
     case "draw-yes": {
+      if (actions.match?.computer) return true;
       const offeredByOpponent =
         actions.match?.drawOffered != null && actions.match.drawOffered !== actions.you;
       await (offeredByOpponent ? actions.respondToDraw(true) : actions.offerDraw());
       return true;
     }
     case "draw-no":
+      if (actions.match?.computer) return true;
       await actions.respondToDraw(false);
       return true;
     case "draw-claim":

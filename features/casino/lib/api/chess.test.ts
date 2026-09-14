@@ -36,6 +36,7 @@ import {
   requestComputerHint,
   requestMatchAnalysis,
   saveMatchNote,
+  submitMove,
   undoComputerCoachReview,
   updateCoachProfile,
   upsertMatchComment,
@@ -137,6 +138,50 @@ function cachedMatch(id: string, moves: string[], over: Partial<ChessMatch> = {}
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("round commands", () => {
+  it("submits moves as idempotent, expected-ply commands", async () => {
+    const id = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+    const wire = activeMatch(id, {
+      fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+      turn: "black",
+      ply: 1,
+    });
+    chessClient.chessPost.mockResolvedValue({
+      commandId: "command-1",
+      matchId: id,
+      commandType: "move",
+      status: "applied",
+      data: {
+        match: wire,
+        move: {
+          ply: 1,
+          uci: "e2e4",
+          san: "e4",
+          fenAfter: wire.fen,
+          byPlayer: "0xhost",
+          clockMsRemaining: 294_000,
+          createdAt: "2026-08-01T18:02:00.000Z",
+        },
+      },
+    });
+
+    const match = await submitMove(id, "e2e4", "0xhost", []);
+
+    expect(chessClient.chessPost).toHaveBeenCalledWith(
+      "/round/commands",
+      expect.objectContaining({
+        commandId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+        matchId: id,
+        player: "0xhost",
+        expectedPly: 0,
+        clientSentAtMs: expect.any(Number),
+        command: { type: "move", uci: "e2e4" },
+      })
+    );
+    expect(match.moves).toEqual(["e4"]);
+  });
 });
 
 describe("human challenge creation", () => {
