@@ -20,14 +20,11 @@ export const SECTION_LABEL: Record<SectionId, string> = {
 const PINNED: SectionId = "portfolio";
 const REORDERABLE: SectionId[] = [
   "spot",
-  // Perpetuals are hidden from the nav for now, like earn. The desk stays at
-  // /perps; dropping it here also drops its dashboard brief, its marquee item
-  // and its tab, all of which follow the nav.
-  // "perps",
+  "perps",
   "meme",
-  // TEMPORARY: real assets are hidden from the nav for now, like perps and
-  // earn. The section stays at /rwa; dropping it here also drops its
-  // dashboard brief, its marquee item and its tab, all of which follow the nav.
+  // TEMPORARY: real assets are hidden from the nav for now, like earn. The
+  // section stays at /rwa; dropping it here also drops its dashboard brief, its
+  // marquee item and its tab, all of which follow the nav.
   // "rwa",
   "prediction",
   // Earn is hidden from the nav for now.
@@ -68,8 +65,7 @@ const INTEREST_TO_SECTION: Record<string, SectionId> = {
   // stocks: "rwa",
   // gold: "rwa",
   crypto: "spot",
-  // Perpetuals are hidden from the nav for now; the interest falls back to the default order.
-  // perps: "perps",
+  perps: "perps",
   meme: "meme",
   prediction: "prediction",
   casino: "casino",

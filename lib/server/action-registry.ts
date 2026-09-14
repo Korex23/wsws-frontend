@@ -39,13 +39,16 @@ export interface ActionContract {
 // Alchemy network id -> lowercased address -> the action it stands for.
 export type ActionRegistry = Record<string, Map<string, ActionContract>>;
 
-// Avantis TradingStorage on Base: the perps collateral vault, and the approve
-// spender the open flow targets. Margin out funds a position; a payout comes
-// back on close.
-const PERP_TRADING_STORAGE = "0x8a311D7048c35985aa31C131B9A13e03a5f7422d";
 // The retired, non-upgradeable prediction market that still holds user shares
 // (winners redeem from it directly). Same wording as the current one.
 const LEGACY_PREDICTION = "0xF9A870d3C3c597Fe167a5c8DB8394dec7B2a2Aa5";
+
+// The Base storage address perp margin deposits settled to under the previous
+// (Avantis) engine. The current rail funds HyperCore over CCTP instead, so no
+// NEW transfer lands here — but it stays labelled so a user's HISTORICAL perp
+// margin moves still read as such in the activity feed rather than as a plain,
+// unexplained transfer.
+const PERP_TRADING_STORAGE = "0x8a311D7048c35985aa31C131B9A13e03a5f7422d";
 
 function put(
   map: Map<string, ActionContract>,

@@ -235,12 +235,6 @@ describe("buildDashboardFeed", () => {
       priceUsd: 3000,
       change24h: 1.5,
     });
-    expect(feed.perps?.[0]).toMatchObject({
-      symbol: "BTC/USD",
-      base: "BTC",
-      priceUsd: 65000,
-      maxLeverage: 100,
-    });
     expect(feed.memes).toEqual([
       {
         address: "0xMeme",
@@ -274,7 +268,6 @@ describe("buildDashboardFeed", () => {
     const feed = await buildDashboardFeed();
 
     expect(feed.rwa).toBeNull();
-    expect(feed.perps).toBeNull();
     expect(feed.spot).not.toBeNull();
     expect(feed.memes).not.toBeNull();
   });
@@ -326,19 +319,6 @@ describe("buildDashboardFeed", () => {
     });
     const feed = await buildDashboardFeed();
     expect(feed.memes?.map((m) => m.symbol)).toEqual(["BASECAT"]);
-  });
-
-  it("prices the perps brief from the fallback when only the marks are down", async () => {
-    healthyUpstreams();
-    upstream.wsapiPerpRequest.mockImplementation(async (path: string) =>
-      path === "pairs" ? ok([{ from: "BTC", to: "USD", maxLeverage: 100 }]) : down()
-    );
-    upstream.fetchPrices.mockImplementation(async (symbols: string[]) =>
-      symbols.map((symbol) => ({ symbol, priceUsd: symbol === "BTC" ? 64000 : 1 }))
-    );
-
-    const feed = await buildDashboardFeed();
-    expect(feed.perps?.[0]).toMatchObject({ symbol: "BTC/USD", priceUsd: 64000 });
   });
 
   it("keeps the live chips from the sources that answered", async () => {

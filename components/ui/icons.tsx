@@ -560,6 +560,34 @@ export function DotsIcon({ size = 20, className }: IconProps) {
   );
 }
 
+export function ExpandIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+      <path
+        d="M9 3H4v5M15 3h5v5M9 21H4v-5M15 21h5v-5"
+        stroke={stroke}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function CollapseIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+      <path
+        d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5"
+        stroke={stroke}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export const INTEREST_ICONS: Record<string, (props: IconProps) => React.ReactNode> = {
   "chart-bars": ChartBarsIcon,
   gold: GoldIcon,

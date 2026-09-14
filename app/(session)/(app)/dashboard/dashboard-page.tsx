@@ -8,7 +8,6 @@ import { useAppChrome, useReportActiveSection } from "@/components/layout/app-ch
 import { PortfolioView } from "@/features/portfolio";
 import { SectionOverview } from "@/components/ui/section-overview";
 import { SpotOverview } from "@/features/trade/components/spot-overview";
-import { PerpsOverview } from "@/features/trade/components/perps-overview";
 import { MemeOverview } from "@/features/trade/components/meme-overview";
 import { RwaOverview } from "@/features/rwa/components/rwa-overview";
 import { ExploreBanners } from "@/components/layout/explore-banners";
@@ -48,7 +47,8 @@ const PREVIEW_ROWS = 4;
  * service is, four live rows, and the way in. The order is not fixed here: the
  * nav decides it, so the section a user chose at onboarding still leads.
  */
-const BRIEFED_SECTIONS = ["spot", "perps", "meme", "rwa"] as const;
+// Perps is a routed section (its own /perps desk), not a dashboard brief.
+const BRIEFED_SECTIONS = ["spot", "meme", "rwa"] as const;
 type BriefedSectionId = (typeof BRIEFED_SECTIONS)[number];
 
 function isBriefed(id: SectionId): id is BriefedSectionId {
@@ -57,7 +57,6 @@ function isBriefed(id: SectionId): id is BriefedSectionId {
 
 const BRIEF_HREF: Record<BriefedSectionId, string> = {
   spot: "/spot",
-  perps: "/perps",
   meme: "/meme",
   rwa: "/rwa",
 };
@@ -103,13 +102,11 @@ const SCROLL_SECTIONS: readonly SectionId[] = ["portfolio"];
 // still re-renders on its own data.
 const Portfolio = memo(PortfolioView);
 const Spot = memo(SpotOverview);
-const Perps = memo(PerpsOverview);
 const Meme = memo(MemeOverview);
 const Rwa = memo(RwaOverview);
 
 const BRIEF_BODY: Record<BriefedSectionId, (props: { rows: number }) => React.ReactNode> = {
   spot: Spot,
-  perps: Perps,
   meme: Meme,
   rwa: Rwa,
 };

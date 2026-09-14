@@ -34,15 +34,15 @@ describe("orderedSections", () => {
     expect(new Set(order).size).toBe(order.length);
   });
 
-  it("leaves perpetuals out of the navigation, like earn", () => {
-    // The desk stays reachable at /perps; it is only not offered from the
-    // rail, the tab bar, the marquee or the dashboard briefs for now.
-    expect(orderedSections(null)).not.toContain("perps");
-    expect(orderedSections("perps")).not.toContain("perps");
+  it("includes perpetuals in the navigation", () => {
+    expect(orderedSections(null)).toContain("perps");
   });
 
-  it("falls back to the default order for the perps interest", () => {
-    expect(orderedSections("perps")).toEqual(orderedSections(null));
+  it("leads with perpetuals when that is the chosen interest", () => {
+    const order = orderedSections("perps");
+    expect(order[0]).toBe("portfolio");
+    expect(order[1]).toBe("perps");
+    expect(new Set(order).size).toBe(order.length);
   });
 });
 
