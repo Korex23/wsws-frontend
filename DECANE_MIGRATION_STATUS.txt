@@ -98,3 +98,45 @@ VERIFICATION (per the plan)
 DO NOT deploy this branch until A + B are complete and verified — it is funds-
 handling auth code for 30k users.
 ================================================================================
+
+================================================================================
+UPDATE 05:57 — TYPECHECK CLEAN, BUT NOT RUNNABLE YET
+================================================================================
+npx tsc --noEmit = 0 errors. The structural migration, auth, recovery, i18n,
+core auth libs, the EVM SIGNING SEAM (use-evm-send -> Decane), and the
+prediction markets merge are all done and typecheck.
+
+THE REMAINING BLOCKER (why the app still crashes at runtime):
+48 files still CALL Privy hooks (usePrivy/useWallets/useLogout/useSignMessage),
+but providers.tsx no longer mounts Privy app-wide (only on the sweep surfaces).
+Typecheck passes (Privy is still installed) but these crash at runtime with
+"Cannot read properties of undefined" — e.g. AccountPopover's useLogout.
+
+Privy STAYS for moving money (the sweep) — LegacyPrivyProvider on
+update-balance/move-old-money/reclaim. The 48 below are the DEFAULT app shell
+that must move to Decane.
+
+Split of the 48 (lists in scratchpad take-ref.txt / postfork.txt):
+
+  (A) 24 files the reference branch already converted to Decane — collisions
+      currently at staging's Privy version. Taking the reference versions
+      converts them BUT cascades (+39 errors) because staging's post-fork
+      features are coupled to their staging (Privy) API shapes. So it is NOT a
+      clean bulk swap — each needs its consumers reconciled. Includes the core:
+      sidebar, topbar, use-portfolio, use-auth-session, use-vault-actions,
+      funds screens, use-kash, meme-trade-sheet.
+
+  (B) 24 POST-FORK features not on the reference at all — need net-new Decane
+      conversion (usePrivy/useWallets -> useSocialWallet/useAuthSession):
+      account-popover (the current crash), the whole chess-app (arena, lobby,
+      profile-balance, spectator-betting, leaderboard), arkjet, the sportsbook
+      workspace (bet-slip, tickets, top-nav, use-place-order), hyperliquid
+      (trading, wallet, fund-modal), rwa-ticket, use-user, use-global-balance,
+      category-bet-sidebar, prediction-cashout-tracker.
+
+HONEST ESTIMATE: this is a coupled feature migration, ~1+ more days with the
+feature owners — NOT an overnight finish. Do NOT deploy: it typechecks but does
+not run.
+
+Unrelated local noise seen while testing: Alchemy 429 (dev key rate-limited)
+and backend services not running locally — neither is a migration issue.
