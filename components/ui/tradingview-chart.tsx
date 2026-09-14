@@ -17,7 +17,9 @@ const TV_LOCALE: Record<string, string> = {
 
 interface TradingViewChartProps {
   symbol: string;
-  height?: number;
+  // A number is treated as pixels; a string (e.g. "100%") lets the chart fill
+  // its container. Defaults to a fixed 380px for callers that just drop it in.
+  height?: number | string;
 }
 
 export function TradingViewChart({ symbol, height = 380 }: TradingViewChartProps) {
