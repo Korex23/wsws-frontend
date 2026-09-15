@@ -2,6 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { DecaneKit } from "decane-connect-kit";
+import { useDecaneCredentials } from "@/hooks/use-decane-credentials";
 // Staging (post-Decane-fork) addition: fans Polymarket query invalidations
 // across tabs. Pure query-cache plumbing, no wallet — safe under Decane.
 import { usePredictionQueryBroadcast } from "@/features/prediction/markets/query-broadcast";
@@ -34,8 +35,10 @@ import {
 // Well-formed placeholders let the app build before env vars are set. Decane
 // only talks to its backend when a sign-in is attempted, so mounting the kit
 // with these is inert.
-const DECANE_APP_ID = process.env.NEXT_PUBLIC_DECANE_APP_ID || "wsws-placeholder";
-const DECANE_API_KEY = process.env.NEXT_PUBLIC_DECANE_API_KEY || "dck_test_placeholder";
+// Both now come from the server at runtime (hooks/use-decane-credentials), so
+// the publishable key is not baked into the bundle or its source maps. The app
+// id stays inlined as a fallback: it is an identifier, not a credential.
+const DECANE_APP_ID_FALLBACK = process.env.NEXT_PUBLIC_DECANE_APP_ID || "wsws-placeholder";
 
 // The chains the app holds value on, in Decane's social chain-id format. Keep
 // in sync with EVM_NETWORKS in lib/server/alchemy.ts.
@@ -62,6 +65,10 @@ const DECANE_CHAINS = ["evm:8453", "evm:1", "evm:42161", "evm:10", "evm:137", "s
 export function SessionProviders({ children }: { children: React.ReactNode }) {
   // Cross-tab Polymarket query invalidation (staging addition, post-fork).
   usePredictionQueryBroadcast(useQueryClient());
+  // Fetched, not inlined. Null means the first round trip is still in flight —
+  // the kit cannot mount without a key, and anything below it calls kit hooks,
+  // so nothing renders until it lands.
+  const decane = useDecaneCredentials();
 
   // TODO(decane-migration): staging also mounted <PredictionCashoutTracker/>
   // here. It was written against Privy ("needs Privy and the query client") and
@@ -69,14 +76,16 @@ export function SessionProviders({ children }: { children: React.ReactNode }) {
   // before it can mount — Privy is no longer a provider on this route. Omitted
   // for now so the tree builds on Decane; re-add once adapted.
 
+  if (!decane) return <DecaneBootGate />;
+
   return (
     <DecaneKit
       config={{
-        appId: DECANE_APP_ID,
+        appId: decane.appId || DECANE_APP_ID_FALLBACK,
         mode: "social",
         theme: "dark",
         social: {
-          apiKey: DECANE_API_KEY,
+          apiKey: decane.apiKey,
           authMethods: ["google", "email", "kingschat"],
           chains: DECANE_CHAINS,
           // The kit's own full-screen "Creating your wallet" overlay is off:
@@ -149,4 +158,13 @@ export function SessionProviders({ children }: { children: React.ReactNode }) {
       </NetworkStatusProvider>
     </DecaneKit>
   );
+}
+
+/**
+ * Shown for the one round trip that fetches the Decane key. Deliberately bare:
+ * a spinner here competes with AuthGuard's own loading state a moment later,
+ * and this window is a same-origin fetch, not a network wait worth narrating.
+ */
+function DecaneBootGate() {
+  return <div className="bg-bg min-h-dvh" aria-busy="true" />;
 }
