@@ -116,3 +116,65 @@ describe("markFundsMoved", () => {
     expect(shouldOfferMigration()).toBe(true);
   });
 });
+
+describe("offerMigration on a device with no Privy history", () => {
+  // The case nothing else reaches: a migrated user on a new phone. No `privy:`
+  // keys to find, and /status answers nothing until a mapping exists — so they
+  // sign in, see 0.00, and are offered no way to explain it.
+  const base = { complete: false, localHistory: false, status: undefined };
+
+  it("offers the sweep when the signed-in address had a Privy wallet", () => {
+    expect(offerMigration({ ...base, legacyAccount: true })).toBe(true);
+  });
+
+  it("offers nothing when it did not", () => {
+    expect(offerMigration({ ...base, legacyAccount: false })).toBe(false);
+  });
+
+  // The lookup answers false for an outage too, so it must never be able to
+  // take the offer away from a signal that already earned it.
+  it("cannot suppress the device's own Privy history", () => {
+    expect(offerMigration({ ...base, localHistory: true, legacyAccount: false })).toBe(true);
+  });
+
+  it("cannot suppress the server's legacy-funds report", () => {
+    const status = { hasLegacyFunds: true, pendingOnramps: [] } as never;
+    expect(offerMigration({ ...base, status, legacyAccount: false })).toBe(true);
+  });
+
+  it("stays silent once the migration completed here", () => {
+    expect(offerMigration({ ...base, complete: true, legacyAccount: true })).toBe(false);
+  });
+});
+
+describe("offerMigration once the old wallet is known to be empty", () => {
+  const base = { complete: false, localHistory: true, status: undefined };
+
+  // `privy:` keys outlive a successful sweep, so device history alone would
+  // keep telling a migrated user to migrate. A read that saw every network
+  // return zero settles it.
+  it("retires the offer a stale Privy history would keep alive", () => {
+    expect(offerMigration({ ...base, legacyFundsUsd: 0 })).toBe(false);
+  });
+
+  it("keeps offering while the wallet still holds something", () => {
+    expect(offerMigration({ ...base, legacyFundsUsd: 4.2 })).toBe(true);
+  });
+
+  // The distinction the route works to preserve: a failed or partial read is
+  // null, and null must never take the door away.
+  it("does not retire it on an unreadable balance", () => {
+    expect(offerMigration({ ...base, legacyFundsUsd: null })).toBe(true);
+  });
+
+  // Venues hold money the wallet does not, and the server knows about them.
+  it("lets the server's report outrank an empty wallet", () => {
+    const status = { hasLegacyFunds: true, pendingOnramps: [] } as never;
+    expect(offerMigration({ ...base, status, legacyFundsUsd: 0 })).toBe(true);
+  });
+
+  it("lets a pending onramp outrank an empty wallet", () => {
+    const status = { hasLegacyFunds: false, pendingOnramps: ["order-1"] } as never;
+    expect(offerMigration({ ...base, status, legacyFundsUsd: 0 })).toBe(true);
+  });
+});

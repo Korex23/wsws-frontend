@@ -24,6 +24,7 @@ export function BalanceCardMobile({
   formatMasked,
   onOpenFunds,
   onOpenWithdraw,
+  updateBalanceSlot,
 }: BalanceCardViewProps) {
   const t = useTranslations("balance");
   const tPortfolio = useTranslations("portfolio");
@@ -149,6 +150,9 @@ export function BalanceCardMobile({
               {t("withdraw")}
             </button>
           </div>
+          {/* Its own row beneath the pair, for the same reason as the desktop
+              card: two actions fit that row, three crush it. */}
+          {updateBalanceSlot ? <div className="mt-2 flex">{updateBalanceSlot}</div> : null}
 
           {/* Portfolio Allocation toggle — hidden on mobile for now, at request.
           <button

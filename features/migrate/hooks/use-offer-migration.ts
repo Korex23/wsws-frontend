@@ -1,6 +1,7 @@
 "use client";
 
 import { useMigrationStatus } from "@/features/migrate/hooks/use-migration-status";
+import { useLegacyAccount } from "@/features/migrate/hooks/use-legacy-account";
 import {
   maskBalance,
   offerMigration,
@@ -16,7 +17,16 @@ export function useOfferMigration(): boolean {
   const complete = useMigrationCompleteFlag();
   const localHistory = useLocalPrivyHistory();
   const status = useMigrationStatus();
-  return offerMigration({ complete, localHistory, status: status.data });
+  // Asked only when the cheap signals have not already answered: a device that
+  // remembers Privy, or a server that reports legacy funds, needs no lookup.
+  const legacy = useLegacyAccount();
+  return offerMigration({
+    complete,
+    localHistory,
+    status: status.data,
+    legacyAccount: legacy.has,
+    legacyFundsUsd: legacy.fundsUsd,
+  });
 }
 
 // Whether the balance card should hide the figure. Comes off as soon as a run

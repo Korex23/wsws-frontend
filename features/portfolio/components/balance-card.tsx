@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useMoney } from "@/components/ui/currency-select";
 import { useBalanceVisibility } from "@/components/ui/balance-visibility";
 import { Responsive } from "@/components/ui/responsive";
@@ -16,6 +17,14 @@ interface BalanceCardProps {
   onOpenFunds: () => void;
   onOpenWithdraw: () => void;
   onTakeTour: () => void;
+  /** See BalanceCardViewProps.updateBalanceSlot. */
+  updateBalanceSlot?: ReactNode;
+  /**
+   * Hide the figure because the money is still in the old wallet. Decided by
+   * the route (useMaskBalance) for the same reason the slot is: it is another
+   * feature's rule. Comes off as soon as a sweep lands anything.
+   */
+  maskForMigration?: boolean;
 }
 
 // Owns the data and the rules; the two screens below it only draw. The phone
@@ -23,7 +32,13 @@ interface BalanceCardProps {
 // fighting itself, so each is its own component and this picks between them
 // with CSS. Both are presentational, so mounting both runs no effect twice and
 // costs no extra request.
-export function BalanceCard({ onOpenFunds, onOpenWithdraw, onTakeTour }: BalanceCardProps) {
+export function BalanceCard({
+  onOpenFunds,
+  onOpenWithdraw,
+  onTakeTour,
+  updateBalanceSlot,
+  maskForMigration = false,
+}: BalanceCardProps) {
   const { tokens, loading, refreshing, error } = usePortfolio();
   // The headline figure spans everything the wallet holds today (spot +
   // perps); readyToSpend below stays spot-only on purpose, see its own
@@ -59,12 +74,16 @@ export function BalanceCard({ onOpenFunds, onOpenWithdraw, onTakeTour }: Balance
     errored,
     depositPending,
     withdrawHeld,
-    hidden,
+    // One masking path, not two: the migration hides the figure through the
+    // same switch as the user's own eye toggle, so formatMasked and every
+    // screen that reads `hidden` need no special case.
+    hidden: hidden || maskForMigration,
     onToggleHidden: toggle,
     formatMasked: (amount) => mask(money.format(amount)),
     onOpenFunds,
     onOpenWithdraw,
     onTakeTour,
+    updateBalanceSlot,
   };
 
   // The walkthrough spotlights whichever breakpoint's card is visible: each

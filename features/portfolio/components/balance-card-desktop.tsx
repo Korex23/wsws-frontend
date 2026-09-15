@@ -29,6 +29,7 @@ export function BalanceCardDesktop({
   formatMasked,
   onOpenFunds,
   onOpenWithdraw,
+  updateBalanceSlot,
 }: BalanceCardViewProps) {
   const t = useTranslations("balance");
   const tPortfolio = useTranslations("portfolio");
@@ -199,6 +200,13 @@ export function BalanceCardDesktop({
             {t("withdraw")}
           </button>
         </div>
+        {/* Its own row, not a third pill in the one above: that row is sized
+            for two and a third wrapped it, leaving Add funds beside this and
+            Withdraw stranded on a line of its own. Full width also suits what
+            it says — the balance above is not the whole story yet. */}
+        {updateBalanceSlot ? (
+          <div className="mt-[12.23px] flex w-full max-w-[452px]">{updateBalanceSlot}</div>
+        ) : null}
 
         {depositPending ? (
           <div className="mt-3 flex max-w-[420px] items-start gap-2 px-2 text-[12.5px] leading-[1.5] font-normal text-white/55">

@@ -5,7 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "@/lib/toast";
 import { useAppChrome, useReportActiveSection } from "@/components/layout/app-chrome";
+import dynamic from "next/dynamic";
 import { PortfolioView } from "@/features/portfolio";
+// Deep import, not the @/features/migrate barrel: that barrel re-exports the
+// sweep button, which mounts the whole Privy SDK. This hook is light — a
+// localStorage read, the migration status, and one cached lookup.
+import { useMaskBalance } from "@/features/migrate/hooks/use-offer-migration";
 import { SectionOverview } from "@/components/ui/section-overview";
 import { SpotOverview } from "@/features/trade/components/spot-overview";
 import { PerpsOverview } from "@/features/trade/components/perps-overview";
@@ -124,6 +129,13 @@ const SCROLL_SECTIONS: readonly SectionId[] = ["portfolio"];
 // The briefs stay mounted at once, so memoize them: with a stable row count
 // they skip re-rendering when the page re-renders for a modal open/close. Each
 // still re-renders on its own data.
+// The sweep button mounts LegacyPrivyProvider and reaches four feature
+// barrels, so it loads only for the users who are offered it — it is null for
+// everyone else anyway, and static it would ship to every signed-in route.
+const UpdateBalanceHost = dynamic(() => import("@/components/layout/update-balance-host"), {
+  ssr: false,
+});
+
 const Portfolio = memo(PortfolioView);
 const Spot = memo(SpotOverview);
 const Perps = memo(PerpsOverview);
@@ -145,6 +157,11 @@ export function DashboardPage() {
   const tOverview = useTranslations("overview");
   const tRemit = useTranslations("remitBanner");
   const { nav } = useAppChrome();
+  // Hide the headline figure while the user's money is still in the old
+  // wallet, and show the sweep beside it. Decided here rather than in the
+  // portfolio feature: the rule belongs to the migration, and features never
+  // import each other. Comes off the moment a sweep lands anything.
+  const maskForMigration = useMaskBalance();
   // Which section sits under the header is scroll state, not a route fact, so
   // the rail is told from here while this page is mounted.
   const activeSection = useScrollSpy(SCROLL_SECTIONS);
@@ -312,6 +329,8 @@ export function DashboardPage() {
           onOpenWithdraw={modals.openWithdraw}
           onTakeTour={takeTour}
           crossBorderSlot={<CrossBorderBanner onClick={openCrossBorder} />}
+          updateBalanceSlot={<UpdateBalanceHost />}
+          maskForMigration={maskForMigration}
           onOpenDetail={modals.openDetail}
           onOpenBuy={modals.openBuy}
           onOpenSell={modals.openSell}

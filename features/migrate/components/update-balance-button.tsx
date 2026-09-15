@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { usePrivy } from "@privy-io/react-auth";
 import { LegacyPrivyProvider } from "@/components/providers/legacy-privy-provider";
+import { RefreshIcon } from "@/components/ui/icons";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { toast } from "@/lib/toast";
@@ -190,11 +191,17 @@ function UpdateBalanceInner({ adapters }: { adapters: readonly VenueAdapter[] })
 
   return (
     <>
+      {/* Dressed as Withdraw, because it sits in that row and a third visual
+          language there reads as an advert rather than an action. One node
+          renders into both cards — only one is ever visible — so the phone
+          shape is the base and the desktop one arrives at md, matching
+          balance-card-mobile's `action` and balance-card-desktop's pill. */}
       <button
         onClick={click}
         disabled={busy}
-        className="border-accent/40 bg-accent/15 hover:bg-accent/25 flex-1 cursor-pointer rounded-xl border px-4 py-2.5 font-sans text-[13px] font-semibold whitespace-nowrap text-white disabled:cursor-wait disabled:opacity-60 min-[560px]:flex-none"
+        className="ws-pressable flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-full border-2 border-white bg-white/6 py-[12px] font-sans text-[15px] font-semibold tracking-[-0.15px] whitespace-nowrap text-white transition-opacity active:bg-white/12 disabled:cursor-wait disabled:opacity-40 md:gap-[8px] md:border-[1.53px] md:px-[24px] md:py-[19.88px] md:font-serif md:text-[21px] md:leading-[1.1] md:tracking-[-0.21px]"
       >
+        <RefreshIcon size={15} className="shrink-0 md:size-[26.49px]" />
         {busy ? t("updating") : t("updateBalance")}
       </button>
       {reviewOpen ? (

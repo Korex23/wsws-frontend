@@ -106,11 +106,31 @@ export function offerMigration(input: {
   complete: boolean;
   localHistory: boolean;
   status: MigrationStatus | undefined;
+  /**
+   * The address this browser signed in with belongs to a Privy account that
+   * held an embedded wallet (see useLegacyAccount). The only signal that
+   * reaches a migrated user on a NEW device — no `privy:` keys to find, and no
+   * mapping yet for /status to answer from. It can only turn the offer ON:
+   * false means "no reason to", including when the lookup simply failed.
+   */
+  legacyAccount?: boolean;
+  /**
+   * What that old wallet still holds, or null for "could not read it". A
+   * CONFIDENT zero retires the offer: `privy:` keys outlive a successful
+   * sweep, so a migrated user would otherwise keep being told to migrate.
+   * Null never retires anything — a failed read must not take the door away
+   * from someone whose money is sitting there.
+   */
+  legacyFundsUsd?: number | null;
 }): boolean {
   if (input.complete) return false;
+  // Server truth first: it knows about venues, not just the wallet.
+  if (input.status?.hasLegacyFunds || input.status?.pendingOnramps.length) return true;
+  // Then the probe, which can settle it either way.
+  if (typeof input.legacyFundsUsd === "number") return input.legacyFundsUsd > 0;
   if (input.localHistory) return true;
-  if (!input.status) return false;
-  return input.status.hasLegacyFunds || input.status.pendingOnramps.length > 0;
+  if (input.legacyAccount) return true;
+  return false;
 }
 
 // Whether to hide the balance figure. Only while the old account still holds
