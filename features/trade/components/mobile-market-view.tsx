@@ -627,7 +627,9 @@ export function MobileMarketView({ rwaSlot, onAddFunds }: MobileMarketViewProps)
               data-testid="perps-panel-scroll"
               className="mt-3 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto [&::-webkit-scrollbar]:hidden"
             >
-              <PerpsSection />
+              {/* The scroller above already provides the side gutter; a second
+                  one here cost 16px a side on a phone. */}
+              <PerpsSection gutter={false} />
             </div>
           ) : activeTab === "rwa" ? (
             // The real assets slot is that feature's own phone tab: its list,

@@ -143,7 +143,7 @@ export function HyperliquidAssetPicker({
           className="flex min-w-0 cursor-pointer items-center gap-2 text-left disabled:cursor-default"
         >
           {compact ? (
-            <div className="flex items-center gap-1.5 font-sans text-[17px] font-semibold whitespace-nowrap">
+            <div className="flex items-center gap-1.5 font-sans text-[15px] font-semibold whitespace-nowrap sm:text-[17px]">
               {asset ? hlPairLabel(asset.symbol) : loading ? "Loading…" : "No markets"}
               {assets.length > 0 ? (
                 <span aria-hidden className="text-white/40">
@@ -153,7 +153,7 @@ export function HyperliquidAssetPicker({
             </div>
           ) : (
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 font-sans text-[16px] font-semibold">
+              <div className="flex items-center gap-1.5 font-sans text-[14px] font-semibold sm:text-[16px]">
                 {asset ? hlPairLabel(asset.symbol) : loading ? "Loading markets…" : "No markets"}
                 {assets.length > 0 ? (
                   <span aria-hidden className="text-white/40">
@@ -161,7 +161,7 @@ export function HyperliquidAssetPicker({
                   </span>
                 ) : null}
               </div>
-              <div className="truncate text-xs font-normal text-white/50">
+              <div className="truncate text-[11px] font-normal text-white/50 sm:text-xs">
                 {asset ? `${asset.maxLeverage}x max leverage` : "—"}
               </div>
             </div>
@@ -169,7 +169,7 @@ export function HyperliquidAssetPicker({
         </button>
         {compact ? null : (
           <div className="ml-auto text-right">
-            <FlashPrice value={mark} className="ws-display tnum block text-[19px]">
+            <FlashPrice value={mark} className="ws-display tnum block text-[16px] sm:text-[19px]">
               {mark > 0 ? formatUsd(mark) : "—"}
             </FlashPrice>
           </div>
