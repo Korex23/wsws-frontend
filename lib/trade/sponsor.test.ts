@@ -171,7 +171,12 @@ async function send(calls = [{ to: WALLET, data: "0x" as const, value: 0n }]) {
 const methodsAt = (calls: Recorded[], path: string) =>
   calls.filter((c) => c.url.includes(path)).map((c) => c.method);
 
-describe("sendSponsoredEvmCalls round trips", () => {
+// Each case drives a whole sponsored send — several mocked round trips and a
+// fake-clock receipt poll drained to settlement. That is comfortably under a
+// second alone, and past vitest's 5s default on a loaded machine, where it
+// failed on the clock rather than on an assertion. The work is the test's, not
+// a hang: the ceiling is raised rather than the coverage cut.
+describe("sendSponsoredEvmCalls round trips", { timeout: 30_000 }, () => {
   beforeEach(() => {
     vi.resetModules();
     vi.useFakeTimers();
