@@ -7,7 +7,7 @@
 import { encodeErc20Transfer } from "@/lib/deposit";
 import { getSponsoredEvmChainByNetwork } from "@/lib/trade/sponsored-evm";
 import type { EvmBatchCall, LegacySigner, SettleOutcome } from "@/lib/migration/types";
-import type { ChainSweep } from "@/features/migrate/lib/plan";
+import type { ChainSweep, SweepAsset } from "@/features/migrate/lib/plan";
 
 // Either may be absent: a session can hold an EVM address and no Solana one,
 // or the reverse. Each chain below needs only its own, so a missing address
@@ -42,24 +42,57 @@ export async function runSweep(
       }
       // Bound here so the narrowing survives into the closure below.
       const evmDestination = destinations.evm;
+      // The planner only emits evm-batch chains for sponsored networks, so
+      // the registry lookup is the chain-id source of truth.
+      const chainId = getSponsoredEvmChainByNetwork(chain.network)?.chainId;
+      if (!chainId) {
+        for (const id of ids) {
+          outcomes.set(id, {
+            ok: false,
+            error: `No chain id for network ${chain.network}`,
+            retryable: false,
+          });
+        }
+        continue;
+      }
+
+      const callFor = (a: SweepAsset): EvmBatchCall =>
+        a.tokenAddress === null
+          ? { to: evmDestination as `0x${string}`, value: a.amount }
+          : {
+              to: a.tokenAddress as `0x${string}`,
+              data: encodeErc20Transfer(evmDestination, a.amount),
+            };
+
       try {
-        // The planner only emits evm-batch chains for sponsored networks, so
-        // the registry lookup is the chain-id source of truth.
-        const chainId = getSponsoredEvmChainByNetwork(chain.network)?.chainId;
-        if (!chainId) throw new Error(`No chain id for network ${chain.network}`);
-        const calls: EvmBatchCall[] = chain.assets.map((a) =>
-          a.tokenAddress === null
-            ? { to: evmDestination as `0x${string}`, value: a.amount }
-            : {
-                to: a.tokenAddress as `0x${string}`,
-                data: encodeErc20Transfer(evmDestination, a.amount),
-              }
-        );
-        const hash = await signer.sendBatch(calls, chainId);
+        const hash = await signer.sendBatch(chain.assets.map(callFor), chainId);
         for (const id of ids) outcomes.set(id, { ok: true, txHashes: [hash] });
       } catch (error) {
-        for (const id of ids) {
-          outcomes.set(id, { ok: false, error: errorMessage(error), retryable: true });
+        // The batch is ATOMIC: one call reverting takes every other transfer
+        // down with it. A wallet holding real money beside a dust or hostile
+        // token therefore moved nothing at all — the token could be paused,
+        // blacklisting, fee-on-transfer, or simply have a balance the
+        // portfolio read before it changed, and the user's USDC was hostage
+        // to it either way.
+        //
+        // These transfers are independent of each other; nothing here needs
+        // atomicity. So a failed batch is retried one asset at a time, and
+        // what can move, moves.
+        console.warn(
+          `[migrate] batch of ${chain.assets.length} reverted on ${chain.network}; retrying individually`,
+          error
+        );
+        for (const asset of chain.assets) {
+          try {
+            const hash = await signer.sendBatch([callFor(asset)], chainId);
+            outcomes.set(asset.id, { ok: true, txHashes: [hash] });
+          } catch (individual) {
+            outcomes.set(asset.id, {
+              ok: false,
+              error: errorMessage(individual),
+              retryable: true,
+            });
+          }
         }
       }
       continue;

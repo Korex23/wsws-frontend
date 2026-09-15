@@ -67,3 +67,60 @@ describe("runSweep when a destination address is missing", () => {
     expect(s.sendBatch).not.toHaveBeenCalled();
   });
 });
+
+describe("when one token in the batch reverts", () => {
+  // The batch is atomic, so a single hostile or stale token takes every other
+  // transfer down with it. Seen in the wild: a wallet holding 1 USDC beside
+  // eight dust meme tokens moved NOTHING, because one of them reverted.
+  const usdc = asset("usdc", "base-mainnet", USDC_BASE);
+  const dust = [1, 2, 3].map((i) => asset(`dust-${i}`, "base-mainnet", `0xdead${i}`));
+  const chain: ChainSweep = {
+    network: "base-mainnet",
+    kind: "evm-batch",
+    assets: [usdc, ...dust],
+  };
+
+  it("retries one at a time so the good assets still move", async () => {
+    const sendBatch = vi.fn(async (calls: unknown[]) => {
+      // The whole batch reverts; a single call for the real token succeeds.
+      if (calls.length > 1) throw new Error("execution reverted");
+      return "0xhash" as `0x${string}`;
+    });
+    const s = { ...signer(), sendBatch } as unknown as LegacySigner;
+
+    const out = await runSweep([chain], { evm: NEW_EVM, solana: null }, s);
+
+    expect(out.get("usdc")).toEqual({ ok: true, txHashes: ["0xhash"] });
+    // One failed attempt, then one per asset.
+    expect(sendBatch).toHaveBeenCalledTimes(1 + chain.assets.length);
+  });
+
+  it("fails only the asset that actually reverts", async () => {
+    const sendBatch = vi.fn(async (calls: { to: string }[]) => {
+      if (calls.length > 1) throw new Error("execution reverted");
+      if (calls[0]?.to === "0xdead2") throw new Error("token is paused");
+      return "0xhash" as `0x${string}`;
+    });
+    const s = { ...signer(), sendBatch } as unknown as LegacySigner;
+
+    const out = await runSweep([chain], { evm: NEW_EVM, solana: null }, s);
+
+    expect(out.get("usdc")?.ok).toBe(true);
+    expect(out.get("dust-1")?.ok).toBe(true);
+    expect(out.get("dust-3")?.ok).toBe(true);
+    expect(out.get("dust-2")).toMatchObject({ ok: false, retryable: true });
+  });
+
+  it("reports every asset failed when they all do", async () => {
+    const s = {
+      ...signer(),
+      sendBatch: vi.fn(async () => {
+        throw new Error("execution reverted");
+      }),
+    } as unknown as LegacySigner;
+
+    const out = await runSweep([chain], { evm: NEW_EVM, solana: null }, s);
+
+    for (const a of chain.assets) expect(out.get(a.id)?.ok).toBe(false);
+  });
+});
