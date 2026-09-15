@@ -31,11 +31,16 @@ vi.mock("@/hooks/use-auth-session", () => ({
 }));
 // One Decane wallet signs for both chains; the ownership proof is a message
 // signature, so that is all this needs to stub.
+// `uid` is the subject the trade service links a wallet to, and the linked
+// cache is keyed on it; the fixture below writes entries under the same id.
+const UID = "u-1111";
+const TOKEN = `h.${btoa(JSON.stringify({ uid: UID })).replace(/=+$/, "")}.s`;
 vi.mock("decane-connect-kit", () => ({
   useSocialWallet: () => ({
     isUnlocked: true,
     unlock: vi.fn(async () => {}),
     signMessage: vi.fn(async () => "0xsig"),
+    getAccessToken: () => TOKEN,
   }),
 }));
 vi.mock("@/lib/decane", () => ({ ensureUnlocked: vi.fn(async () => {}) }));
@@ -118,7 +123,10 @@ const quote = {
 describe("useMemeTrade on Base when the service records a delivered trade as failed", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:${WALLET.toLowerCase()}`])
+    );
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue(delivered(USDC, 1_960_000n));
@@ -224,7 +232,10 @@ describe("useMemeTrade on Base when the service refuses the second registration"
 
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:${WALLET.toLowerCase()}`])
+    );
     api.quoteSwap.mockResolvedValue(twoCalls);
     api.registerSubmission
       .mockResolvedValueOnce({ swapId: "swap-1", status: "SUBMITTED", callIndex: 0 })
@@ -307,7 +318,10 @@ describe("useMemeTrade on Base when the service refuses the second registration"
 describe("useMemeTrade status polling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:${WALLET.toLowerCase()}`])
+    );
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue({ hash: "0xhash", logs: [] });
@@ -408,7 +422,10 @@ describe("useMemeTrade status polling", () => {
 describe("useMemeTrade on Base when only a user-operation hash comes back", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:${WALLET.toLowerCase()}`])
+    );
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockRejectedValue(new SubmittedEvmOperationError("0xuop"));
@@ -463,7 +480,10 @@ describe("tradeRef", () => {
 describe("useMemeTrade quote retries", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:${WALLET.toLowerCase()}`])
+    );
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue({ hash: "0xhash", logs: [] });
     api.fetchSwapStatus.mockResolvedValue({ swapId: "swap-1", status: "CONFIRMED", updatedAt: "" });
@@ -673,7 +693,10 @@ describe("useMemeTrade on Solana", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`solana:${SOL_WALLET}`]));
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:solana:${SOL_WALLET}`])
+    );
     solana.send.mockResolvedValue("5igSignature");
     api.registerSolanaSubmission.mockResolvedValue({ swapId: "sol-1", status: "SUBMITTED" });
     api.fetchSwapStatus.mockResolvedValue({ swapId: "sol-1", status: "CONFIRMED", updatedAt: "" });
@@ -721,7 +744,10 @@ describe("useMemeTrade refreshes the service portfolio", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:${WALLET.toLowerCase()}`])
+    );
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue(delivered(USDC, 1_960_000n));
@@ -770,7 +796,10 @@ describe("useMemeTrade refreshes the service portfolio", () => {
 
   it("invalidates on a CONFIRMED Solana swap too", async () => {
     const SOL_WALLET = "So1WalletCaseSensitive11111111111111111111";
-    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`solana:${SOL_WALLET}`]));
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:solana:${SOL_WALLET}`])
+    );
     solana.send.mockResolvedValue("5igSignature");
     api.quoteSolanaSwap.mockResolvedValue({
       swapId: "sol-1",
@@ -792,5 +821,60 @@ describe("useMemeTrade refreshes the service portfolio", () => {
     });
     expect(result.current.phase).toBe("confirmed");
     expect(invalidate).toHaveBeenCalledWith(PORTFOLIO);
+  });
+});
+
+describe("the wallet-link cache is keyed by identity", () => {
+  // v2 keyed on the wallet alone, so an entry said "linked" without saying to
+  // whom. A second identity on the same device then skipped the link it
+  // actually needed, and the quote came back WALLET_OWNERSHIP_MISMATCH:
+  // "Wallet is not linked to the authenticated identity."
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Call history accumulates across tests in this file; these assertions are
+    // about whether THIS test signed, so the counters start clean.
+    api.createWalletChallenge.mockClear();
+    api.verifyWallet.mockClear();
+    api.createWalletChallenge.mockResolvedValue({ challengeId: "c1", message: "sign me" });
+    api.verifyWallet.mockResolvedValue({ ok: true });
+    api.quoteSwap.mockResolvedValue(quote);
+    api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
+    api.fetchSwapStatus.mockResolvedValue({ status: "CONFIRMED", swapId: "swap-1" });
+    chain.evmSend.mockResolvedValue({ hash: "0xhash", receipt: { logs: [] } });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("links again when the cached entry belongs to another identity", async () => {
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`someone-else:${WALLET.toLowerCase()}`])
+    );
+
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
+    await act(async () => {
+      void result.current
+        .trade({ side: "SELL", tokenAddress: "0xc0ffee", amount: "1", chainId: 8453 })
+        .catch(() => {});
+      await vi.runAllTimersAsync();
+    });
+
+    expect(api.createWalletChallenge).toHaveBeenCalled();
+  });
+
+  it("trusts a cached entry for this identity and skips the signature", async () => {
+    window.localStorage.setItem(
+      "wsws.meme-linked.v3",
+      JSON.stringify([`${UID}:${WALLET.toLowerCase()}`])
+    );
+
+    const { result } = renderHook(() => useMemeTrade(), { wrapper: tradeWrapper });
+    await act(async () => {
+      void result.current
+        .trade({ side: "SELL", tokenAddress: "0xc0ffee", amount: "1", chainId: 8453 })
+        .catch(() => {});
+      await vi.runAllTimersAsync();
+    });
+
+    expect(api.createWalletChallenge).not.toHaveBeenCalled();
   });
 });

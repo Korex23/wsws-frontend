@@ -105,9 +105,29 @@ export type TradePhase =
   | "pending"
   | "failed";
 
-// v2: entries went from "userId:wallet" to the wallet alone when auth moved
-// off Privy, which had the only user id.
-const LINKED_KEY = "wsws.meme-linked.v2";
+// v3. v2 keyed entries on the wallet alone, on the mistaken belief that only
+// Privy had a user id. Decane's token carries `uid`, and that is exactly the
+// subject the trade service stamps into the challenge and matches in
+// assertOwnership — so a wallet-only key claims "linked" without saying to
+// whom, and a second identity on the same device skips the link it needs.
+const LINKED_KEY = "wsws.meme-linked.v3";
+
+// The subject the trade service links a wallet to: the Decane token's `uid`.
+// Read for the cache key only — the server verifies the token itself and this
+// never trusts the contents.
+function decaneUserId(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
+      uid?: unknown;
+    };
+    return typeof json.uid === "string" ? json.uid : null;
+  } catch {
+    return null;
+  }
+}
 // The service's verification usually lands within a few seconds of the
 // receipt: look early, then back off so a slow one is not asked every four
 // seconds for as long as it takes.
@@ -224,13 +244,16 @@ export function useMemeTrade() {
   const ensureLinked = useCallback(
     async (chainId: number) => {
       if (!wallet) throw new Error("Sign in first.");
+      // No subject means no safe way to say who a cached entry belongs to, so
+      // the link is simply re-run rather than trusted.
+      const subject = decaneUserId(socialWallet.getAccessToken?.() ?? null);
       if (chainId === SOLANA_CHAIN_ID) {
         // The Solana sibling: the same challenge shape, signed as raw bytes
         // by the embedded Solana wallet, and sent back as base58. The address
         // is never lowercased, on the wire or in the cache key.
         if (!solanaWallet) throw new Error("Sign in first.");
-        const key = `solana:${solanaWallet}`;
-        if (linkedCache().has(key)) return;
+        const key = subject ? `${subject}:solana:${solanaWallet}` : null;
+        if (key && linkedCache().has(key)) return;
         setPhase("linking");
         const challenge = await createSolanaWalletChallenge(solanaWallet);
         await ensureUnlocked(socialWallet);
@@ -238,19 +261,19 @@ export function useMemeTrade() {
         // the wire form verifySolanaWallet expects.
         const signature = await socialWallet.signMessage("solana:mainnet", challenge.message);
         await verifySolanaWallet(challenge.challengeId, signature);
-        markLinked(key);
+        if (key) markLinked(key);
         return;
       }
       if (!wallet) throw new Error("Sign in first.");
-      const key = `${wallet.toLowerCase()}`;
-      if (linkedCache().has(key)) return;
+      const key = subject ? `${subject}:${wallet.toLowerCase()}` : null;
+      if (key && linkedCache().has(key)) return;
       setPhase("linking");
       const challenge = await createWalletChallenge(wallet);
       await ensureUnlocked(socialWallet);
       // Meme trades run on Base, so the ownership proof signs there too.
       const signature = await socialWallet.signMessage("evm:8453", challenge.message);
       await verifyWallet(challenge.challengeId, signature);
-      markLinked(key);
+      if (key) markLinked(key);
     },
     [wallet, solanaWallet, socialWallet]
   );
