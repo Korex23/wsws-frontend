@@ -147,34 +147,50 @@ describe("offerMigration on a device with no Privy history", () => {
   });
 });
 
-describe("offerMigration once the old wallet is known to be empty", () => {
+describe("offerMigration once the account is linked", () => {
   const base = { complete: false, localHistory: true, status: undefined };
 
-  // `privy:` keys outlive a successful sweep, so device history alone would
-  // keep telling a migrated user to migrate. A read that saw every network
-  // return zero settles it.
-  it("retires the offer a stale Privy history would keep alive", () => {
-    expect(offerMigration({ ...base, legacyFundsUsd: 0 })).toBe(false);
+  // Linking is what the offer is FOR, so a linked account has nothing left to
+  // ask for — the ledgers re-key themselves from the mapping.
+  it("stops offering once the mapping exists", () => {
+    const status = { linked: true, hasLegacyFunds: false, pendingOnramps: [] } as never;
+    expect(offerMigration({ ...base, status })).toBe(false);
   });
 
-  it("keeps offering while the wallet still holds something", () => {
-    expect(offerMigration({ ...base, legacyFundsUsd: 4.2 })).toBe(true);
+  // The case this rewrite exists for. An empty wallet used to retire the
+  // offer, which silenced it for exactly the users with the most to lose: the
+  // re-key carries a profile, followers, posts and ledgers that no balance can
+  // see.
+  it("still offers to an unlinked user whose wallet is empty", () => {
+    const status = { linked: false, hasLegacyFunds: false, pendingOnramps: [] } as never;
+    expect(offerMigration({ ...base, status, legacyAccount: true })).toBe(true);
   });
 
-  // The distinction the route works to preserve: a failed or partial read is
-  // null, and null must never take the door away.
-  it("does not retire it on an unreadable balance", () => {
-    expect(offerMigration({ ...base, legacyFundsUsd: null })).toBe(true);
+  it("offers on the directory alone, with no device history and no service", () => {
+    expect(
+      offerMigration({
+        complete: false,
+        localHistory: false,
+        status: undefined,
+        legacyAccount: true,
+      })
+    ).toBe(true);
   });
 
-  // Venues hold money the wallet does not, and the server knows about them.
-  it("lets the server's report outrank an empty wallet", () => {
-    const status = { hasLegacyFunds: true, pendingOnramps: [] } as never;
-    expect(offerMigration({ ...base, status, legacyFundsUsd: 0 })).toBe(true);
+  it("stays silent when nothing says this user is legacy", () => {
+    expect(
+      offerMigration({
+        complete: false,
+        localHistory: false,
+        status: undefined,
+        legacyAccount: false,
+      })
+    ).toBe(false);
   });
 
-  it("lets a pending onramp outrank an empty wallet", () => {
-    const status = { hasLegacyFunds: false, pendingOnramps: ["order-1"] } as never;
-    expect(offerMigration({ ...base, status, legacyFundsUsd: 0 })).toBe(true);
+  // Linked outranks every "still legacy" signal: privy keys outlive a link.
+  it("lets linked outrank stale device history", () => {
+    const status = { linked: true, hasLegacyFunds: false, pendingOnramps: [] } as never;
+    expect(offerMigration({ ...base, status, legacyAccount: true })).toBe(false);
   });
 });

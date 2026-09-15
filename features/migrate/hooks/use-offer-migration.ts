@@ -10,31 +10,30 @@ import {
   useMigrationCompleteFlag,
 } from "@/features/migrate/lib/visibility";
 
-// Whether the balance card shows Update Balance and masks the balance: the
-// device's own Privy history, or the server saying the old wallet still holds
-// money, unless the migration already completed here.
+// Whether to offer the move to Market 2.0, and mask the balance while it is
+// pending. The test is "is this account still on the old identity", not "is
+// there money in the old wallet": the re-key carries the profile, followers,
+// posts, chess ledgers, kash points and tier, none of which a balance can see.
+// A user with $0 and four years of history has the most to lose by never
+// linking.
 export function useOfferMigration(): boolean {
   const complete = useMigrationCompleteFlag();
   const localHistory = useLocalPrivyHistory();
   const status = useMigrationStatus();
-  // Asked only when the cheap signals have not already answered: a device that
-  // remembers Privy, or a server that reports legacy funds, needs no lookup.
+  // Does this identity belong to a legacy account at all. The wallet balance it
+  // also returns is deliberately unused here — see the note above.
   const legacy = useLegacyAccount();
   const offer = offerMigration({
     complete,
     localHistory,
     status: status.data,
     legacyAccount: legacy.has,
-    legacyFundsUsd: legacy.fundsUsd,
   });
-  // Why, not just whether: the signals disagree often enough that "it did not
-  // show" is otherwise impossible to diagnose.
   console.log(
-    `[migrate] offer Update Balance: ${offer ? "YES" : "no"}` +
-      ` (migration complete here: ${complete}, privy keys on device: ${localHistory},` +
-      ` server reports funds: ${status.data?.hasLegacyFunds ?? "unknown"},` +
-      ` directory: ${legacy.has ? "found" : "no account"},` +
-      ` old wallet: ${legacy.fundsUsd === null ? "unreadable" : `$${legacy.fundsUsd.toFixed(2)}`})`
+    `[migrate] offer migrate-to-2.0: ${offer ? "YES" : "no"}` +
+      ` [already linked: ${status.data?.linked ?? "unknown"}, done on this device: ${complete},` +
+      ` privy keys here: ${localHistory}, service reports funds: ${status.data?.hasLegacyFunds ?? "unknown"},` +
+      ` directory: ${legacy.has ? "legacy account found" : "no legacy account"}]`
   );
   return offer;
 }

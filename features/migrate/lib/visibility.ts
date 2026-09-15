@@ -107,27 +107,28 @@ export function offerMigration(input: {
   localHistory: boolean;
   status: MigrationStatus | undefined;
   /**
-   * The address this browser signed in with belongs to a Privy account that
-   * held an embedded wallet (see useLegacyAccount). The only signal that
-   * reaches a migrated user on a NEW device — no `privy:` keys to find, and no
-   * mapping yet for /status to answer from. It can only turn the offer ON:
-   * false means "no reason to", including when the lookup simply failed.
+   * The signed-in identity belongs to a legacy account — see useLegacyAccount.
+   * Whether that account's WALLET holds anything is deliberately not part of
+   * this decision.
    */
   legacyAccount?: boolean;
-  /**
-   * What that old wallet still holds, or null for "could not read it". A
-   * CONFIDENT zero retires the offer: `privy:` keys outlive a successful
-   * sweep, so a migrated user would otherwise keep being told to migrate.
-   * Null never retires anything — a failed read must not take the door away
-   * from someone whose money is sitting there.
-   */
-  legacyFundsUsd?: number | null;
 }): boolean {
+  // Already linked: the mapping exists, the ledgers re-key themselves, and
+  // there is nothing left to ask the user for. `linked` is the whole test,
+  // because linking is what the offer is FOR.
+  if (input.status?.linked) return false;
+  // Marked done on this device, for a user the service cannot answer about
+  // (it is not deployed, or they were never mapped).
   if (input.complete) return false;
-  // Server truth first: it knows about venues, not just the wallet.
+
+  // Anything below means "still on the old identity".
+  //
+  // An empty wallet is NOT a reason to stay quiet. The sweep moves tokens; the
+  // re-key moves the profile, the followers, the posts, the chess ledgers, the
+  // kash points and tier — none of which a balance can see. A user with $0 and
+  // four years of history has the most to lose by never linking, and used to
+  // be the one this stayed silent for.
   if (input.status?.hasLegacyFunds || input.status?.pendingOnramps.length) return true;
-  // Then the probe, which can settle it either way.
-  if (typeof input.legacyFundsUsd === "number") return input.legacyFundsUsd > 0;
   if (input.localHistory) return true;
   if (input.legacyAccount) return true;
   return false;

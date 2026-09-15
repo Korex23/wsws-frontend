@@ -3114,10 +3114,10 @@
     "bugReportReply": "Merci pour ce signalement détaillé ! Notre équipe d'ingénieurs examine le problème. Vous pouvez coller des logs supplémentaires sous forme de `bloc de code`."
   },
   "migrate": {
-    "updateBalance": "Mettre à jour le solde",
-    "updating": "Mise à jour de votre solde…",
-    "updateDone": "Solde mis à jour. Vos actifs sont maintenant dans votre nouveau portefeuille.",
-    "updateNothing": "Tout est en ordre. Il ne restait rien à transférer.",
+    "updateBalance": "Passer à Market 2.0",
+    "updating": "Transfert de votre compte…",
+    "updateDone": "Terminé. Votre portefeuille, vos soldes et votre historique sont sur Market 2.0.",
+    "updateNothing": "Tout est prêt — votre compte est sur Market 2.0.",
     "updateFailed": "Certains transferts ne sont pas arrivés ({message}). Appuyez de nouveau sur Mettre à jour le solde.",
     "updateNotReady": "Votre portefeuille n'est pas encore prêt. Réessayez dans un instant.",
     "updateSkipped": "Solde mis à jour. {count, plural, one {# actif est resté} other {# actifs sont restés}} sur des réseaux non pris en charge dans votre ancien portefeuille ; contactez le support pour les transférer.",

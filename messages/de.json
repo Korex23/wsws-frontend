@@ -3114,10 +3114,10 @@
     "bugReportReply": "Vielen Dank für den Hinweis und die Details! Unser Frontend-Team untersucht das Problem bereits. Zusätzliche Logs können Sie gerne als `Codeblock` einfügen."
   },
   "migrate": {
-    "updateBalance": "Guthaben aktualisieren",
-    "updating": "Dein Guthaben wird aktualisiert…",
-    "updateDone": "Guthaben aktualisiert. Deine Assets sind jetzt in deiner neuen Wallet.",
-    "updateNothing": "Alles erledigt. Es gab nichts mehr zu übertragen.",
+    "updateBalance": "Zu Market 2.0 wechseln",
+    "updating": "Dein Konto wird übertragen…",
+    "updateDone": "Fertig. Wallet, Guthaben und Verlauf sind auf Market 2.0.",
+    "updateNothing": "Alles erledigt — dein Konto ist auf Market 2.0.",
     "updateFailed": "Einige Transfers sind nicht angekommen ({message}). Tippe erneut auf Guthaben aktualisieren.",
     "updateNotReady": "Deine Wallet ist noch nicht bereit. Versuche es gleich noch einmal.",
     "updateSkipped": "Guthaben aktualisiert. {count, plural, one {# Asset} other {# Assets}} auf nicht unterstützten Netzwerken blieben in deiner alten Wallet; wende dich an den Support.",

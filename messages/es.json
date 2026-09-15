@@ -3114,10 +3114,10 @@
     "bugReportReply": "¡Muchas gracias por el informe! Nuestro equipo de frontend está investigando la incidencia. Puedes adjuntar registros adicionales como `bloque de código`."
   },
   "migrate": {
-    "updateBalance": "Actualizar saldo",
-    "updating": "Actualizando tu saldo…",
-    "updateDone": "Saldo actualizado. Tus activos ya están en tu nueva billetera.",
-    "updateNothing": "Todo listo. No quedaba nada por mover.",
+    "updateBalance": "Pasar a Market 2.0",
+    "updating": "Moviendo tu cuenta…",
+    "updateDone": "Listo. Tu billetera, saldos e historial están en Market 2.0.",
+    "updateNothing": "Todo listo: tu cuenta está en Market 2.0.",
     "updateFailed": "Algunas transferencias no llegaron ({message}). Pulsa Actualizar saldo para reintentar.",
     "updateNotReady": "Tu billetera aún no está lista. Inténtalo en un momento.",
     "updateSkipped": "Saldo actualizado. {count, plural, one {# activo se quedó} other {# activos se quedaron}} en redes no compatibles en tu billetera antigua; contacta con soporte para moverlos.",

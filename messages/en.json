@@ -3114,10 +3114,10 @@
     "bugReportReply": "Thank you for the report and details! Our frontend engineering team is looking into this glitch. If you have extra logs or console messages, you can paste them as a `code block`."
   },
   "migrate": {
-    "updateBalance": "Update Balance",
-    "updating": "Updating your balance…",
-    "updateDone": "Balance updated. Your assets are now in your upgraded wallet.",
-    "updateNothing": "You're all set. There was nothing left to move.",
+    "updateBalance": "Move to Market 2.0",
+    "updating": "Moving your account…",
+    "updateDone": "Moved. Your wallet, balances and history are on Market 2.0.",
+    "updateNothing": "You're all set — your account is on Market 2.0.",
     "updateFailed": "Some transfers didn't land ({message}). Tap Update Balance to retry.",
     "updateNotReady": "Your wallet isn't ready yet. Try again in a moment.",
     "updateSkipped": "Balance updated. {count, plural, one {# asset} other {# assets}} on unsupported networks stayed in your old wallet; contact support to move them.",

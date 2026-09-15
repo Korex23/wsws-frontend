@@ -3114,10 +3114,10 @@
     "bugReportReply": "Obrigado pelo relatório detalhado! A nossa equipa de frontend está a investigar o problema. Pode colar registos adicionais como um `bloco de código`."
   },
   "migrate": {
-    "updateBalance": "Atualizar saldo",
-    "updating": "Atualizando seu saldo…",
-    "updateDone": "Saldo atualizado. Seus ativos já estão na sua nova carteira.",
-    "updateNothing": "Tudo certo. Não restava nada para mover.",
+    "updateBalance": "Mudar para o Market 2.0",
+    "updating": "A mover a sua conta…",
+    "updateDone": "Pronto. A sua carteira, saldos e histórico estão no Market 2.0.",
+    "updateNothing": "Tudo pronto — a sua conta está no Market 2.0.",
     "updateFailed": "Algumas transferências não chegaram ({message}). Toque em Atualizar saldo para tentar de novo.",
     "updateNotReady": "Sua carteira ainda não está pronta. Tente novamente em instantes.",
     "updateSkipped": "Saldo atualizado. {count, plural, one {# ativo ficou} other {# ativos ficaram}} em redes não suportadas na sua carteira antiga; fale com o suporte para movê-los.",
