@@ -106,8 +106,16 @@ export function SocialButtons() {
         <GoogleLogo />
         {t("continueGoogle")}
       </button>
-      <button className={BUTTON} disabled={kingschatLoading} onClick={kingschatSignIn}>
+      {/* KingsChat is built but not open to users yet. Shown rather than
+          hidden, so the method people are waiting for is visibly on the way,
+          and disabled so nobody starts a flow that cannot finish. The handler
+          stays wired — a disabled button never fires it — so turning this back
+          on is deleting `disabled` and the badge, nothing more. */}
+      <button className={BUTTON} disabled aria-disabled="true" onClick={kingschatSignIn}>
         {kingschatLoading ? t("kingschatWaiting") : t("continueKingschat")}
+        <span className="rounded-full bg-white/12 px-2 py-0.5 text-[11.5px] font-semibold text-white/70">
+          {t("kingschatSoon")}
+        </span>
       </button>
     </div>
   );
