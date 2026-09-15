@@ -77,7 +77,8 @@ export function SpotOrderModeToggle({ mode, onModeChange, className }: SpotOrder
             // Nothing here is height-constrained, so a taller string in
             // another locale still grows the control rather than being cut.
             className={
-              "ws-discovery-title cursor-pointer rounded-xl px-[18px] py-[6.75px] text-[15.5px] leading-none whitespace-nowrap transition-colors " +
+              "ws-discovery-title cursor-pointer rounded-xl px-[12px] py-[5.5px] text-[13px] leading-none whitespace-nowrap transition-colors " +
+              "sm:px-[18px] sm:py-[6.75px] sm:text-[15.5px] " +
               "focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 " +
               "focus-visible:ring-offset-black focus-visible:outline-none " +
               (on ? "bg-surface-strong text-white" : "text-white/50 hover:text-white/80")

@@ -453,15 +453,20 @@ export function PerpOrderTicket({
             for it scrolled to a ref that was never attached to anything. It
             opened nothing and it moved nothing. A badge states the market,
             which is all this pill ever did. */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-[13.5px]">
+        {/* The narrowest row on the desk: at 390px the pill, the change and
+            the Limit/Market toggle have to share about 320px. Sizing them down
+            is most of the fix, but a row that can only ever fit is better than
+            one that happens to: the toggle never shrinks, and the cluster
+            beside it gives up its own width first. */}
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-[13.5px]">
             <SpotTokenBadge symbol={pair} />
-            <span className="ws-discovery-title text-[13px] whitespace-nowrap sm:text-[15px]">
+            <span className="ws-discovery-title truncate text-[13px] sm:text-[15px]">
               <span className="sr-only">{tSpot("change24h")}</span>
               <span className={CHANGE_TONE[changeDirection]}>{change24h}</span>
             </span>
           </div>
-          <SpotOrderModeToggle mode={mode} onModeChange={onModeChange} />
+          <SpotOrderModeToggle mode={mode} onModeChange={onModeChange} className="shrink-0" />
         </div>
 
         <PriceCard

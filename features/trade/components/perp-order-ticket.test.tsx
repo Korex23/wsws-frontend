@@ -1017,3 +1017,27 @@ describe("PerpOrderTicket at phone width", () => {
     expect(price).toHaveClass("text-[13px]", "sm:text-[15px]");
   });
 });
+
+// The top strip is the narrowest row on the desk: at 390px the pill, the 24h
+// change and the Limit/Market toggle share roughly 320px, and the toggle used
+// to be cut off at the screen edge. Type sizes are covered where those
+// components live; what is locked here is that the row cannot clip the toggle
+// whatever the pair or locale makes the cluster beside it.
+describe("PerpOrderTicket top strip", () => {
+  it("gives the order mode toggle a width it never has to yield", () => {
+    renderTicket({ initialQuantity: "500" });
+
+    const toggle = screen.getByRole("group", { name: "Order type" });
+
+    expect(toggle).toHaveClass("shrink-0");
+  });
+
+  it("lets the change reading give up width before the row overruns", () => {
+    renderTicket({ initialQuantity: "500" });
+
+    const change = screen.getByText("-2.20%").parentElement as HTMLElement;
+
+    expect(change).toHaveClass("truncate");
+    expect(change.parentElement).toHaveClass("min-w-0");
+  });
+});

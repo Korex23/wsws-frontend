@@ -6,6 +6,7 @@ import { SpotOrderModeToggle } from "@/features/trade/components/spot-order-mode
 import {
   SpotPairHeader,
   SpotPairSelector,
+  SpotTokenBadge,
   type SpotPairHeaderProps,
 } from "@/features/trade/components/spot-pair-header";
 
@@ -55,13 +56,18 @@ function expectIconsInheritColour(container: HTMLElement) {
 // so both are held to them here.
 function expectPillShape(pill: HTMLElement) {
   for (const shape of [
-    "h-[40.5px]",
+    // The design's measurements, which the pill keeps from sm up. Below that
+    // it draws a step smaller so the perps ticket's top strip fits a phone.
+    "sm:h-[40.5px]",
+    "sm:px-[11px]",
+    "sm:text-[15px]",
+    "h-[34px]",
+    "px-[9px]",
+    "text-[13px]",
     "rounded-2xl",
-    "px-[11px]",
     "gap-[5.5px]",
     "border-[1.686px]",
     "ws-discovery-title",
-    "text-[15px]",
     "text-grey-100",
   ]) {
     expect(pill).toHaveClass(shape);
@@ -291,5 +297,31 @@ describe("SpotPairHeader chart disclosure", () => {
     // 11.2425 is the glyph's own box: its arms span 8.994px of that, with the
     // rest taken by the stroke the icon draws around them.
     expect(chevron).toHaveAttribute("width", "11.2425");
+  });
+});
+
+// At 390px the ticket's top strip runs pill + change + this toggle across one
+// row. Drawn at its desk size the row overran the card and the Market segment
+// was cut off at the screen edge. Both the segment type and the track's
+// padding now step down below sm, restored from 640px up.
+describe("SpotOrderModeToggle at phone width", () => {
+  it("draws its segments a step smaller below sm", () => {
+    renderWithIntl(<SpotOrderModeToggle mode="market" onModeChange={vi.fn()} />);
+
+    const market = screen.getByRole("button", { name: "Market" });
+
+    expect(market).toHaveClass("text-[13px]", "sm:text-[15.5px]");
+    expect(market).toHaveClass("px-[12px]", "sm:px-[18px]");
+  });
+});
+
+describe("TokenBadge at phone width", () => {
+  it("draws the market pill a step smaller below sm", () => {
+    renderWithIntl(<SpotTokenBadge symbol="BTC-USDC" />);
+
+    const pill = screen.getByText("BTC-USDC");
+
+    expect(pill).toHaveClass("text-[13px]", "sm:text-[15px]");
+    expect(pill).toHaveClass("h-[34px]", "sm:h-[40.5px]");
   });
 });
