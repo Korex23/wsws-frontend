@@ -10,7 +10,7 @@ import { PortfolioView } from "@/features/portfolio";
 // Deep import, not the @/features/migrate barrel: that barrel re-exports the
 // sweep button, which mounts the whole Privy SDK. This hook is light — a
 // localStorage read, the migration status, and one cached lookup.
-import { useMaskBalance } from "@/features/migrate/hooks/use-offer-migration";
+import { useMaskBalance, useOfferMigration } from "@/features/migrate/hooks/use-offer-migration";
 import { SectionOverview } from "@/components/ui/section-overview";
 import { SpotOverview } from "@/features/trade/components/spot-overview";
 import { PerpsOverview } from "@/features/trade/components/perps-overview";
@@ -161,6 +161,12 @@ export function DashboardPage() {
   // wallet, and show the sweep beside it. Decided here rather than in the
   // portfolio feature: the rule belongs to the migration, and features never
   // import each other. Comes off the moment a sweep lands anything.
+  // Whether this user has anything to move. The button checks it too and
+  // renders null when false — but next/dynamic fetches a chunk as soon as its
+  // host mounts, so an ungated host downloads the Privy SDK for every visitor
+  // to render nothing. Gated here, only the users being offered the sweep pay
+  // for it.
+  const offerMigration = useOfferMigration();
   const maskForMigration = useMaskBalance();
   // Which section sits under the header is scroll state, not a route fact, so
   // the rail is told from here while this page is mounted.
@@ -329,7 +335,7 @@ export function DashboardPage() {
           onOpenWithdraw={modals.openWithdraw}
           onTakeTour={takeTour}
           crossBorderSlot={<CrossBorderBanner onClick={openCrossBorder} />}
-          updateBalanceSlot={<UpdateBalanceHost />}
+          updateBalanceSlot={offerMigration ? <UpdateBalanceHost /> : null}
           maskForMigration={maskForMigration}
           onOpenDetail={modals.openDetail}
           onOpenBuy={modals.openBuy}
