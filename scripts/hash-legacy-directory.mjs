@@ -1,34 +1,53 @@
 #!/usr/bin/env node
 /**
- * Turns a Privy export into the legacy directory, hashing the emails.
+ * Turns a Privy export into the legacy directory, hashing the identifiers.
  *
  *   node scripts/hash-legacy-directory.mjs privy-export.csv > legacy-directory.csv
  *
- * In:   email,evm,solana          (header optional, column order detected)
- * Out:  sha256_email,evm,solana
+ * Out: sha256_identifier,evm,solana
  *
- * The point is that the output carries no readable email, so it is safe to
- * paste into a Google Sheet, publish as CSV, commit, or leak — while the
- * lookup still works, because the server hashes the address it is given and
- * matches that. The input file is never written anywhere; keep it off the
- * repo and delete it when you are done.
+ * The output carries nothing readable, so it is safe to paste into a Google
+ * Sheet, publish as CSV, commit, or leak — while the lookup still works,
+ * because the server hashes whatever identifier it is given and matches that.
+ * The input is never written anywhere; keep it off the repo and delete it when
+ * you are done.
  *
- * Nothing is printed to stdout but the output CSV, so it can be piped. Every
- * message, count and warning goes to stderr — and no email ever appears in
- * either, which is the whole reason this is a script and not a paste into a
- * chat window.
+ * ONE ROW PER IDENTIFIER, not per user. A user with an email and an X account
+ * gets two rows carrying the same wallets, because the browser asking later
+ * may know either one. Not every legacy user has an address at all: Privy
+ * allowed signing in with Twitter, and those accounts carry a handle and
+ * nothing else — which is why Decane grew an X provider, and why an
+ * email-only directory would strand every one of them.
+ *
+ * X accounts are keyed on the numeric id, never the @handle: a handle can be
+ * released by its owner and registered by somebody else, and keying on one
+ * would point a stranger at this wallet. The id is also the same value on both
+ * sides — Privy's twitter subject IS X's user id — so the halves join without
+ * anything being inferred.
+ *
+ * Columns are found by HEADER NAME, because an X id is bare digits and cannot
+ * be told from any other number by shape. Emails and wallets fall back to
+ * shape detection when a header does not name them. Run with --inspect to see
+ * what was matched before trusting a run.
+ *
+ * Nothing but the output CSV goes to stdout, so it can be piped. Every count
+ * and warning goes to stderr, and no identifier appears on either — which is
+ * the whole reason this is a script and not a paste into a chat window.
  */
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-const file = process.argv[2];
+const args = process.argv.slice(2);
+const file = args.find((a) => !a.startsWith("--"));
+const inspect = args.includes("--inspect");
+
 if (!file) {
-  console.error("usage: node scripts/hash-legacy-directory.mjs <privy-export.csv>");
+  console.error("usage: node scripts/hash-legacy-directory.mjs <privy-export.csv> [--inspect]");
   process.exit(2);
 }
 
-const hash = (email) => createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
+const hash = (value) => createHash("sha256").update(value.trim().toLowerCase()).digest("hex");
 
 // Split on commas outside quotes: an export can carry a quoted display name.
 function cells(line) {
@@ -50,45 +69,120 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const EVM = /^0x[0-9a-fA-F]{40}$/;
 // Base58, and long enough not to catch a stray word.
 const SOLANA = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const X_ID = /^\d{1,32}$/;
+
+// Header names seen across Privy exports, normalised to letters only.
+const HEADERS = {
+  email: [/^email/, /emailaddress/],
+  // `subject` is Privy's name for the provider's own id.
+  xId: [/^(twitter|x)(subject|id|userid)$/, /^(twitter|x)accountsubject$/],
+  evm: [/^(evm|ethereum|eth)/, /walletaddress/],
+  solana: [/^solana/, /^sol(wallet|address)/],
+};
+
+const norm = (h) => h.toLowerCase().replace(/[^a-z]/g, "");
+
+function findColumns(header) {
+  const found = {};
+  header.forEach((raw, i) => {
+    const h = norm(raw);
+    for (const [key, patterns] of Object.entries(HEADERS)) {
+      if (found[key] === undefined && patterns.some((p) => p.test(h))) found[key] = i;
+    }
+  });
+  return found;
+}
 
 const lines = readFileSync(file, "utf8").split(/\r?\n/);
 
-let written = 0;
+// A header is a first non-empty row that carries no email and no wallet — i.e.
+// nothing that looks like data.
+let columns = {};
+let start = 0;
+for (let i = 0; i < lines.length; i += 1) {
+  if (!lines[i].trim()) continue;
+  const row = cells(lines[i]);
+  const looksLikeData = row.some((c) => EMAIL.test(c) || EVM.test(c) || SOLANA.test(c));
+  if (!looksLikeData) {
+    columns = findColumns(row);
+    start = i + 1;
+  }
+  break;
+}
+
+if (inspect) {
+  console.error("columns matched by header:", JSON.stringify(columns));
+}
+
+let users = 0;
+let rows = 0;
+let withEmail = 0;
+let withX = 0;
 let skipped = 0;
 const seen = new Set();
+const out = [];
 
-console.log("sha256_email,evm,solana");
-
-for (const line of lines) {
+for (let i = start; i < lines.length; i += 1) {
+  const line = lines[i];
   if (!line.trim()) continue;
   const parts = cells(line);
 
-  // Columns are found by shape, not position: exports vary, and a header row
-  // fails every test below and is skipped without needing to be recognised.
-  const email = parts.find((c) => EMAIL.test(c));
-  if (!email) {
-    skipped += 1;
-    continue;
-  }
-  const evm = parts.find((c) => EVM.test(c)) ?? "";
-  const solana = parts.find((c) => SOLANA.test(c) && c !== evm) ?? "";
+  const at = (key, test) => {
+    const idx = columns[key];
+    const named = idx !== undefined ? parts[idx] : undefined;
+    if (named && (!test || test.test(named))) return named;
+    // No header for it, or the named cell was empty: fall back to shape, which
+    // works for emails and wallets and cannot work for a bare numeric id.
+    return test ? parts.find((c) => test.test(c)) : undefined;
+  };
 
-  // A member with no wallet on either chain never held money here, so the
-  // lookup would answer "account, but nothing to move" — a dead end with a
-  // frightening label. Left out.
+  const email = at("email", EMAIL);
+  const evm = at("evm", EVM) ?? "";
+  const solana = at("solana", SOLANA) ?? "";
+  // Only ever read from a named column: any other number in the row would
+  // otherwise be taken for an X id and written as somebody's identifier.
+  const xId =
+    columns.xId !== undefined && X_ID.test(parts[columns.xId] ?? "")
+      ? parts[columns.xId]
+      : undefined;
+
+  // A user with no wallet on either chain never held money here, so the lookup
+  // would answer "account, but nothing to move" — a dead end with a
+  // frightening label.
   if (!evm && !solana) {
     skipped += 1;
     continue;
   }
+  if (!email && !xId) {
+    skipped += 1;
+    continue;
+  }
 
-  const key = hash(email);
-  if (seen.has(key)) continue;
-  seen.add(key);
+  users += 1;
+  if (email) withEmail += 1;
+  if (xId) withX += 1;
 
-  console.log(`${key},${evm},${solana}`);
-  written += 1;
+  // One row per identifier: the browser asking later may know either.
+  for (const identifier of [email, xId ? `x:${xId}` : undefined]) {
+    if (!identifier) continue;
+    const key = hash(identifier);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(`${key},${evm},${solana}`);
+    rows += 1;
+  }
 }
 
-console.error(`wrote ${written} rows`);
-if (skipped) console.error(`skipped ${skipped} (header, no email, or no wallet on either chain)`);
-console.error("the output contains no email addresses; delete the input when you are done");
+console.log("sha256_identifier,evm,solana");
+for (const row of out) console.log(row);
+
+console.error(`${users} users -> ${rows} rows (${withEmail} with an email, ${withX} with an X id)`);
+if (skipped) console.error(`skipped ${skipped} (no identifier, or no wallet on either chain)`);
+if (withX === 0 && columns.xId === undefined) {
+  console.error(
+    "WARNING: no X id column was matched. Legacy users who signed in with Twitter\n" +
+      "         have no email, so they will be missing from this directory entirely.\n" +
+      "         Re-run with --inspect to see which columns were found."
+  );
+}
+console.error("the output contains no identifiers; delete the input when you are done");

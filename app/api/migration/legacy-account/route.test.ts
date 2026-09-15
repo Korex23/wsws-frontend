@@ -2,18 +2,26 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { NextRequest } from "next/server";
 
 const auth = vi.hoisted(() => ({ verifyRequest: vi.fn() }));
-const privy = vi.hoisted(() => ({ getByEmailAddress: vi.fn() }));
+const privy = vi.hoisted(() => ({ getByEmailAddress: vi.fn(), getByTwitterSubject: vi.fn() }));
 
 vi.mock("@/lib/server/auth", () => ({ verifyRequest: auth.verifyRequest }));
 const alchemy = vi.hoisted(() => ({ fetchPortfolio: vi.fn() }));
 vi.mock("@/lib/server/alchemy", () => ({ fetchPortfolio: alchemy.fetchPortfolio }));
 
-const directory = vi.hoisted(() => ({ lookupLegacyEmail: vi.fn() }));
-vi.mock("@/lib/server/legacy-directory", () => ({
-  lookupLegacyEmail: directory.lookupLegacyEmail,
+const directory = vi.hoisted(() => ({ lookupLegacyIdentifiers: vi.fn() }));
+vi.mock("@/lib/server/legacy-directory", async (importOriginal) => ({
+  // The real normalisers: only the lookup is stubbed, so the identifiers the
+  // route builds are the ones it would really build.
+  ...(await importOriginal<typeof import("@/lib/server/legacy-directory")>()),
+  lookupLegacyIdentifiers: directory.lookupLegacyIdentifiers,
 }));
 vi.mock("@/lib/server/privy", () => ({
-  getPrivyClient: () => ({ users: () => ({ getByEmailAddress: privy.getByEmailAddress }) }),
+  getPrivyClient: () => ({
+    users: () => ({
+      getByEmailAddress: privy.getByEmailAddress,
+      getByTwitterSubject: privy.getByTwitterSubject,
+    }),
+  }),
 }));
 
 const { POST } = await import("@/app/api/migration/legacy-account/route");
@@ -27,9 +35,10 @@ const walletUser = {
 beforeEach(() => {
   auth.verifyRequest.mockReset();
   privy.getByEmailAddress.mockReset();
+  privy.getByTwitterSubject.mockReset();
   auth.verifyRequest.mockResolvedValue({ provider: "decane", userId: "u1" });
   // Unknown by default, so the existing cases exercise the Privy fallback.
-  directory.lookupLegacyEmail.mockResolvedValue({ known: null, entry: null });
+  directory.lookupLegacyIdentifiers.mockResolvedValue({ known: null, entry: null });
 });
 
 describe("POST /api/migration/legacy-account", () => {
@@ -132,7 +141,7 @@ describe("the directory comes first", () => {
   beforeEach(() => alchemy.fetchPortfolio.mockReset());
 
   it("answers from the snapshot without calling Privy at all", async () => {
-    directory.lookupLegacyEmail.mockResolvedValue({
+    directory.lookupLegacyIdentifiers.mockResolvedValue({
       known: true,
       entry: { evm: "0xabc", solana: null },
     });
@@ -147,7 +156,7 @@ describe("the directory comes first", () => {
   });
 
   it("trusts a definite no from the snapshot", async () => {
-    directory.lookupLegacyEmail.mockResolvedValue({ known: false, entry: null });
+    directory.lookupLegacyIdentifiers.mockResolvedValue({ known: false, entry: null });
 
     await expect((await POST(req({ email: "a@b.com" }))).json()).resolves.toEqual({
       hasLegacyAccount: false,
@@ -159,7 +168,7 @@ describe("the directory comes first", () => {
   // Unreadable is not "no": falling through is what stops a missing sheet from
   // telling every user they have nothing.
   it("falls through to Privy when the snapshot cannot be read", async () => {
-    directory.lookupLegacyEmail.mockResolvedValue({ known: null, entry: null });
+    directory.lookupLegacyIdentifiers.mockResolvedValue({ known: null, entry: null });
     privy.getByEmailAddress.mockResolvedValue(walletUser);
     alchemy.fetchPortfolio.mockResolvedValue({ totalUsd: 7, tokens: [] });
 
@@ -168,5 +177,58 @@ describe("the directory comes first", () => {
       legacyFundsUsd: 7,
     });
     expect(privy.getByEmailAddress).toHaveBeenCalled();
+  });
+});
+
+describe("a legacy user who never had an email", () => {
+  // Privy allowed signing in with Twitter, and those accounts carry a handle
+  // and nothing else. Asking only for an email would strand every one of them.
+  beforeEach(() => {
+    alchemy.fetchPortfolio.mockReset();
+    // Call history accumulates across tests in this file, and these assertions
+    // are about what THIS test asked for.
+    directory.lookupLegacyIdentifiers.mockReset();
+    directory.lookupLegacyIdentifiers.mockResolvedValue({ known: null, entry: null });
+  });
+
+  it("looks the user up by their X id", async () => {
+    directory.lookupLegacyIdentifiers.mockResolvedValue({
+      known: true,
+      entry: { evm: "0xabc", solana: null },
+    });
+    alchemy.fetchPortfolio.mockResolvedValue({ totalUsd: 5, tokens: [] });
+
+    await expect((await POST(req({ xId: "1234567890" }))).json()).resolves.toEqual({
+      hasLegacyAccount: true,
+      legacyFundsUsd: 5,
+    });
+    // Namespaced, so an X id cannot collide with anything else in the file.
+    expect(directory.lookupLegacyIdentifiers).toHaveBeenCalledWith(["x:1234567890"]);
+  });
+
+  it("asks Privy by twitter subject when the snapshot cannot be read", async () => {
+    privy.getByTwitterSubject.mockResolvedValue(walletUser);
+    alchemy.fetchPortfolio.mockResolvedValue({ totalUsd: 1, tokens: [] });
+
+    await expect((await POST(req({ xId: "1234567890" }))).json()).resolves.toMatchObject({
+      hasLegacyAccount: true,
+    });
+    expect(privy.getByTwitterSubject).toHaveBeenCalledWith({ subject: "1234567890" });
+    expect(privy.getByEmailAddress).not.toHaveBeenCalled();
+  });
+
+  it("sends both identifiers when it knows both", async () => {
+    await POST(req({ email: "a@b.com", xId: "42" }));
+    expect(directory.lookupLegacyIdentifiers).toHaveBeenCalledWith(["a@b.com", "x:42"]);
+  });
+
+  // An X id is digits. Anything else is not one, and would only ever miss —
+  // but it must not reach a lookup as if it were an identifier.
+  it("refuses a malformed X id", async () => {
+    await expect((await POST(req({ xId: "not-an-id" }))).json()).resolves.toEqual({
+      hasLegacyAccount: false,
+      legacyFundsUsd: null,
+    });
+    expect(directory.lookupLegacyIdentifiers).not.toHaveBeenCalled();
   });
 });

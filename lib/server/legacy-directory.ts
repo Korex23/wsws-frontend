@@ -72,8 +72,18 @@ let table: Map<string, LegacyDirectoryEntry> | null = null;
 let loadedAt = 0;
 let loading: Promise<Map<string, LegacyDirectoryEntry> | null> | null = null;
 
-export function hashEmail(email: string): string {
-  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
+export function hashIdentifier(identifier: string): string {
+  return createHash("sha256").update(identifier.trim().toLowerCase()).digest("hex");
+}
+
+/** The stored form of an email. */
+export function emailIdentifier(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/** The stored form of an X account: its numeric id, never the @handle. */
+export function xIdentifier(userId: string): string {
+  return `x:${userId.trim()}`;
 }
 
 // Tolerant on purpose: a hand-exported sheet arrives with a header row, stray
@@ -158,12 +168,27 @@ async function directory(): Promise<Map<string, LegacyDirectoryEntry> | null> {
   return (await refresh()) ?? table;
 }
 
-/** Was this address one of ours, and at which wallets? */
-export async function lookupLegacyEmail(email: string): Promise<LegacyLookup> {
+/**
+ * Was any of these identifiers one of ours, and at which wallets?
+ *
+ * Several because a caller knows different things about different users: an
+ * email for a Google sign-in, an X id for an X one, sometimes both. The first
+ * hit wins and the rest are not consulted.
+ *
+ * `known: null` means the directory could not be read — NOT that nobody
+ * matched. Callers must fall through rather than answer "no".
+ */
+export async function lookupLegacyIdentifiers(
+  identifiers: readonly string[]
+): Promise<LegacyLookup> {
   const rows = await directory();
   if (!rows) return { known: null, entry: null };
-  const entry = rows.get(hashEmail(email)) ?? null;
-  return { known: entry !== null, entry };
+  for (const identifier of identifiers) {
+    if (!identifier) continue;
+    const entry = rows.get(hashIdentifier(identifier));
+    if (entry) return { known: true, entry };
+  }
+  return { known: false, entry: null };
 }
 
 /** Test seam: forget what was loaded. */

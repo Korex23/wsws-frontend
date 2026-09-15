@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  hashEmail,
-  lookupLegacyEmail,
+  emailIdentifier,
+  hashIdentifier,
+  lookupLegacyIdentifiers,
   parseLegacyDirectory,
   resetLegacyDirectory,
+  xIdentifier,
 } from "@/lib/server/legacy-directory";
 
 const EMAIL = "Korex@Example.com";
-const HASH = hashEmail(EMAIL);
+const HASH = hashIdentifier(emailIdentifier(EMAIL));
 
 beforeEach(() => {
   resetLegacyDirectory();
@@ -37,7 +39,7 @@ describe("parseLegacyDirectory", () => {
   });
 });
 
-describe("lookupLegacyEmail", () => {
+describe("lookupLegacyIdentifiers", () => {
   const serve = (csv: string, ok = true) =>
     vi.stubGlobal(
       "fetch",
@@ -48,7 +50,7 @@ describe("lookupLegacyEmail", () => {
     vi.stubEnv("LEGACY_DIRECTORY_URL", "https://sheet.example/csv");
     serve(`${HASH},0xabc,SoL1`);
 
-    await expect(lookupLegacyEmail("korex@example.com")).resolves.toEqual({
+    await expect(lookupLegacyIdentifiers([emailIdentifier("korex@example.com")])).resolves.toEqual({
       known: true,
       entry: { evm: "0xabc", solana: "SoL1" },
     });
@@ -58,7 +60,7 @@ describe("lookupLegacyEmail", () => {
     vi.stubEnv("LEGACY_DIRECTORY_URL", "https://sheet.example/csv");
     serve(`${HASH},0xabc,SoL1`);
 
-    await expect(lookupLegacyEmail("someone@else.com")).resolves.toEqual({
+    await expect(lookupLegacyIdentifiers([emailIdentifier("someone@else.com")])).resolves.toEqual({
       known: false,
       entry: null,
     });
@@ -69,7 +71,7 @@ describe("lookupLegacyEmail", () => {
     vi.stubEnv("LEGACY_DIRECTORY_URL", "https://sheet.example/csv");
     serve("", false);
 
-    await expect(lookupLegacyEmail("korex@example.com")).resolves.toEqual({
+    await expect(lookupLegacyIdentifiers([emailIdentifier("korex@example.com")])).resolves.toEqual({
       known: null,
       entry: null,
     });
@@ -77,7 +79,7 @@ describe("lookupLegacyEmail", () => {
 
   it("answers unknown when there is no source at all", async () => {
     // No URL, and the bundled file does not exist in the test tree.
-    await expect(lookupLegacyEmail("korex@example.com")).resolves.toEqual({
+    await expect(lookupLegacyIdentifiers([emailIdentifier("korex@example.com")])).resolves.toEqual({
       known: null,
       entry: null,
     });
@@ -88,9 +90,9 @@ describe("lookupLegacyEmail", () => {
     const fetchMock = vi.fn(async () => new Response(`${HASH},0xabc,SoL1`, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await lookupLegacyEmail("korex@example.com");
-    await lookupLegacyEmail("another@example.com");
-    await lookupLegacyEmail("third@example.com");
+    await lookupLegacyIdentifiers([emailIdentifier("korex@example.com")]);
+    await lookupLegacyIdentifiers([emailIdentifier("another@example.com")]);
+    await lookupLegacyIdentifiers([emailIdentifier("third@example.com")]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -100,7 +102,7 @@ describe("lookupLegacyEmail", () => {
     const fetchMock = vi.fn(async () => new Response(`${HASH},0xabc,SoL1`, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await lookupLegacyEmail(EMAIL);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit | undefined];
     expect(url).not.toContain("korex");
@@ -116,25 +118,25 @@ describe("refreshing on a one-minute window", () => {
 
   it("serves the copy it has while the stale one is refetched", async () => {
     vi.useFakeTimers();
-    const other = hashEmail("added@later.com");
+    const other = hashIdentifier("added@later.com");
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(csv(HASH), { status: 200 }))
       .mockResolvedValueOnce(new Response(`${csv(HASH)}\n${csv(other)}`, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await lookupLegacyEmail(EMAIL);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     // Inside the window: no second read.
     vi.setSystemTime(Date.now() + 30_000);
-    await lookupLegacyEmail(EMAIL);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     // Past it: the answer still comes from the copy in hand — the request does
     // not wait on the sheet — and a refresh is kicked off behind it.
     vi.setSystemTime(Date.now() + 61_000);
-    await expect(lookupLegacyEmail("added@later.com")).resolves.toEqual({
+    await expect(lookupLegacyIdentifiers([emailIdentifier("added@later.com")])).resolves.toEqual({
       known: false,
       entry: null,
     });
@@ -142,7 +144,7 @@ describe("refreshing on a one-minute window", () => {
 
     // Once that lands, the new row is there.
     await vi.waitFor(async () => {
-      const found = await lookupLegacyEmail("added@later.com");
+      const found = await lookupLegacyIdentifiers([emailIdentifier("added@later.com")]);
       expect(found.known).toBe(true);
     });
   });
@@ -155,13 +157,13 @@ describe("refreshing on a one-minute window", () => {
       .mockResolvedValueOnce(new Response("", { status: 500 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await lookupLegacyEmail(EMAIL);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
     vi.setSystemTime(Date.now() + 61_000);
-    await lookupLegacyEmail(EMAIL);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
     // A blip must not turn a known member into an unknown.
-    await expect(lookupLegacyEmail(EMAIL)).resolves.toEqual({
+    await expect(lookupLegacyIdentifiers([emailIdentifier(EMAIL)])).resolves.toEqual({
       known: true,
       entry: { evm: "0xabc", solana: "SoL1" },
     });
@@ -176,9 +178,9 @@ describe("tuning the window without a deploy", () => {
     const fetchMock = vi.fn(async () => new Response(`${HASH},0xabc,SoL1`, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await lookupLegacyEmail(EMAIL);
-    await lookupLegacyEmail(EMAIL);
-    await lookupLegacyEmail(EMAIL);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -188,8 +190,8 @@ describe("tuning the window without a deploy", () => {
     const fetchMock = vi.fn(async () => new Response(`${HASH},0xabc,SoL1`, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await lookupLegacyEmail(EMAIL);
-    await lookupLegacyEmail(EMAIL);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
+    await lookupLegacyIdentifiers([emailIdentifier(EMAIL)]);
 
     // Reused, not refetched — a typo in an env var must not turn every lookup
     // into a download.
@@ -208,7 +210,10 @@ describe("a source that parses to nothing", () => {
       "fetch",
       vi.fn(async () => new Response("<!DOCTYPE html><html>…</html>", { status: 200 }))
     );
-    await expect(lookupLegacyEmail(EMAIL)).resolves.toEqual({ known: null, entry: null });
+    await expect(lookupLegacyIdentifiers([emailIdentifier(EMAIL)])).resolves.toEqual({
+      known: null,
+      entry: null,
+    });
   });
 
   it("treats an empty file the same way", async () => {
@@ -216,6 +221,63 @@ describe("a source that parses to nothing", () => {
       "fetch",
       vi.fn(async () => new Response("sha256_email,evm,solana\n", { status: 200 }))
     );
-    await expect(lookupLegacyEmail(EMAIL)).resolves.toEqual({ known: null, entry: null });
+    await expect(lookupLegacyIdentifiers([emailIdentifier(EMAIL)])).resolves.toEqual({
+      known: null,
+      entry: null,
+    });
+  });
+});
+
+describe("a legacy user who never had an email", () => {
+  // Privy allowed signing in with Twitter, and those accounts carry a handle
+  // and nothing else. An email-only directory answers "no legacy account" for
+  // every one of them and strands their money — which is the whole reason
+  // Decane grew an X provider.
+  const X_ID = "1234567890";
+  const X_HASH = hashIdentifier(xIdentifier(X_ID));
+
+  beforeEach(() => vi.stubEnv("LEGACY_DIRECTORY_URL", "https://sheet.example/csv"));
+
+  it("finds them by their X id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(`${X_HASH},0xabc,SoL1`, { status: 200 }))
+    );
+    await expect(lookupLegacyIdentifiers([xIdentifier(X_ID)])).resolves.toEqual({
+      known: true,
+      entry: { evm: "0xabc", solana: "SoL1" },
+    });
+  });
+
+  it("takes the first identifier that hits, whichever it is", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(`${X_HASH},0xabc,SoL1`, { status: 200 }))
+    );
+    // An email that is not in the directory, and an X id that is.
+    await expect(
+      lookupLegacyIdentifiers([emailIdentifier("nobody@example.com"), xIdentifier(X_ID)])
+    ).resolves.toMatchObject({ known: true });
+  });
+
+  it("says no only when none of them match", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(`${X_HASH},0xabc,SoL1`, { status: 200 }))
+    );
+    await expect(
+      lookupLegacyIdentifiers([emailIdentifier("nobody@example.com"), xIdentifier("999")])
+    ).resolves.toEqual({ known: false, entry: null });
+  });
+
+  it("ignores an empty identifier rather than matching on it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(`${X_HASH},0xabc,SoL1`, { status: 200 }))
+    );
+    await expect(lookupLegacyIdentifiers(["", ""])).resolves.toEqual({
+      known: false,
+      entry: null,
+    });
   });
 });

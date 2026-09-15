@@ -31,15 +31,27 @@ let cached: LegacyAccount | null = null;
 let inFlight: Promise<LegacyAccount> | null = null;
 
 async function ask(): Promise<LegacyAccount> {
-  // Display-only, self-reported, and unverifiable — see lib/display-profile.
-  // Good enough to decide whether to show a button; never enough to key
-  // anything on, which is why the answer only ever reveals a button.
-  const email = readDisplayProfile()?.email;
-  if (!email) return UNKNOWN;
+  // Whatever this browser knows about who signed in. Self-reported and
+  // unverifiable — see lib/display-profile — so it is good enough to decide
+  // whether to show a button and never enough to key anything on.
+  //
+  // Both, because not every legacy user has an address: Privy allowed signing
+  // in with Twitter, and those accounts carry a handle and nothing else.
+  // Asking only for an email would strand every one of them.
+  const profile = readDisplayProfile();
+  const email = profile?.email;
+  const xId = profile?.providerSubject;
+  if (!email && !xId) return UNKNOWN;
   try {
     const res = await apiFetch(
       "/api/migration/legacy-account",
-      { method: "POST", body: JSON.stringify({ email }) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...(email ? { email } : {}),
+          ...(xId ? { xId } : {}),
+        }),
+      },
       { requireAuth: true }
     );
     if (!res.ok) return UNKNOWN;

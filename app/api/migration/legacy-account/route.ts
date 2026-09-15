@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyRequest } from "@/lib/server/auth";
 import { getPrivyClient } from "@/lib/server/privy";
 import { fetchPortfolio } from "@/lib/server/alchemy";
-import { lookupLegacyEmail } from "@/lib/server/legacy-directory";
+import {
+  emailIdentifier,
+  lookupLegacyIdentifiers,
+  xIdentifier,
+} from "@/lib/server/legacy-directory";
 
 // Does the address the caller signed in with belong to a Privy account that
 // held an embedded wallet? One boolean, and it decides one thing: whether the
@@ -70,29 +74,44 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let address: string | null = null;
+  // Whatever the caller can say about themselves. Not every legacy user has an
+  // address: Privy allowed signing in with Twitter, and those accounts carry a
+  // handle and nothing else — which is the whole reason Decane grew an X
+  // provider. Asking only for an email would strand every one of them.
+  let email: string | null = null;
+  let xId: string | null = null;
   try {
-    const body = (await req.json()) as { email?: unknown };
-    if (typeof body.email === "string") address = body.email.trim().toLowerCase();
+    const body = (await req.json()) as { email?: unknown; xId?: unknown };
+    if (typeof body.email === "string") email = emailIdentifier(body.email);
+    if (typeof body.xId === "string") xId = body.xId.trim();
   } catch {
-    // No body, or not JSON. Falls through to the empty-address answer below.
+    // No body, or not JSON. Falls through to the nothing-to-go-on answer below.
   }
-  // Never let an empty or absurd value reach Privy as a query.
-  if (!address || address.length > 320 || !address.includes("@")) return answer(false);
+
+  // Bounded and shaped, so nothing absurd reaches a lookup.
+  if (email && (email.length > 320 || !email.includes("@"))) email = null;
+  // X ids are numeric. Anything else is not one, and would only ever miss.
+  if (xId && !/^\d{1,32}$/.test(xId)) xId = null;
+  if (!email && !xId) return answer(false);
 
   // The directory first: a snapshot of who held a Privy account, which needs
   // no Privy call and keeps answering after Privy is switched off. Membership
   // cannot go stale — the population is closed — so a snapshot is as correct
   // as a live lookup. `known: null` means it could not be read at all, which
   // falls through to Privy rather than answering no.
-  const directory = await lookupLegacyEmail(address);
+  const identifiers = [...(email ? [email] : []), ...(xId ? [xIdentifier(xId)] : [])];
+  const directory = await lookupLegacyIdentifiers(identifiers);
   if (directory.known === true && directory.entry) {
     return answer(true, await fundsAt(directory.entry.evm, directory.entry.solana));
   }
   if (directory.known === false) return answer(false);
 
   try {
-    const user = await getPrivyClient().users().getByEmailAddress({ address });
+    // Privy can be asked either way, and an X user has no address to ask with.
+    const users = getPrivyClient().users();
+    const user = email
+      ? await users.getByEmailAddress({ address: email })
+      : await users.getByTwitterSubject({ subject: xId! });
     // An account with no embedded wallet never held money here, so offering
     // the sweep to it would be a dead end with a scary label. The server SDK
     // speaks snake_case, unlike lib/user's client-side helper.
