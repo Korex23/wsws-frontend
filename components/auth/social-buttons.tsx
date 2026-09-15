@@ -7,6 +7,17 @@ import { recordAuthMethod } from "@/lib/analytics/auth-method";
 import { rememberPending } from "@/lib/last-auth-method";
 import { toast } from "@/lib/toast";
 
+// The X wordmark. Inline rather than hosted: a sign-in button that waits on a
+// third party's CDN is one that sometimes renders empty. currentColor so it
+// follows the button's text.
+function XLogo({ size = 17 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
 function GoogleLogo() {
   return (
     <svg width="19" height="19" viewBox="0 0 24 24">
@@ -44,6 +55,8 @@ export function SocialButtons() {
     googleLoading,
     signInWithKingsChat,
     kingschatLoading,
+    signInWithX,
+    xLoading,
     canUsePasskey,
     signInWithPasskey,
   } = useSocialAuth();
@@ -80,6 +93,20 @@ export function SocialButtons() {
   // KingsChat opens a consent popup that resolves in place (unlike Google's
   // full-page redirect), so the click handler awaits it and surfaces failures
   // as a toast. The kit invokes the popup synchronously, so no work precedes it.
+  // X is a full-page redirect like Google, not a popup like KingsChat: the
+  // browser leaves and the promise never resolves, so there is nothing to
+  // clear on the way out.
+  const xSignIn = async () => {
+    try {
+      recordAuthMethod("x");
+      rememberPending("x");
+      await signInWithX();
+    } catch (err) {
+      console.error("X login failed:", err);
+      toast.error(t("oauthError"));
+    }
+  };
+
   const kingschatSignIn = async () => {
     try {
       recordAuthMethod("kingschat");
@@ -105,6 +132,10 @@ export function SocialButtons() {
       <button className={BUTTON} disabled={googleLoading} onClick={signIn}>
         <GoogleLogo />
         {t("continueGoogle")}
+      </button>
+      <button className={BUTTON} disabled={xLoading} onClick={xSignIn}>
+        <XLogo />
+        {t("continueX")}
       </button>
       {/* KingsChat is built but not open to users yet. Shown rather than
           hidden, so the method people are waiting for is visibly on the way,

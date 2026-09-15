@@ -98,7 +98,7 @@ export function SessionProviders({ children }: { children: React.ReactNode }) {
         theme: "dark",
         social: {
           apiKey: decane.apiKey,
-          authMethods: ["google", "email", "kingschat"],
+          authMethods: ["google", "email", "kingschat", "x"],
           chains: DECANE_CHAINS,
           // The kit's own full-screen "Creating your wallet" overlay is off:
           // the sign-in page shows its branded busy panel for the creating

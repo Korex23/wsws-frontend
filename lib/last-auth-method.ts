@@ -16,12 +16,16 @@ import { useSyncExternalStore } from "react";
 // that one is a one-shot in-memory channel owned by AnalyticsIdentity, and
 // folding the two together would have this module consume its value.
 
-export type LastAuthMethod = "google" | "kingschat" | "email" | "passkey";
+export type LastAuthMethod = "google" | "kingschat" | "email" | "passkey" | "x";
 
 const KEY = "ws.lastAuthMethod";
 
 const isMethod = (value: string | null): value is LastAuthMethod =>
-  value === "google" || value === "kingschat" || value === "email" || value === "passkey";
+  value === "google" ||
+  value === "kingschat" ||
+  value === "email" ||
+  value === "passkey" ||
+  value === "x";
 
 let pending: LastAuthMethod | null = null;
 
