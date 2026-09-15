@@ -5,6 +5,13 @@ const auth = vi.hoisted(() => ({ verifyRequest: vi.fn() }));
 const privy = vi.hoisted(() => ({ getByEmailAddress: vi.fn() }));
 
 vi.mock("@/lib/server/auth", () => ({ verifyRequest: auth.verifyRequest }));
+const alchemy = vi.hoisted(() => ({ fetchPortfolio: vi.fn() }));
+vi.mock("@/lib/server/alchemy", () => ({ fetchPortfolio: alchemy.fetchPortfolio }));
+
+const directory = vi.hoisted(() => ({ lookupLegacyEmail: vi.fn() }));
+vi.mock("@/lib/server/legacy-directory", () => ({
+  lookupLegacyEmail: directory.lookupLegacyEmail,
+}));
 vi.mock("@/lib/server/privy", () => ({
   getPrivyClient: () => ({ users: () => ({ getByEmailAddress: privy.getByEmailAddress }) }),
 }));
@@ -21,6 +28,8 @@ beforeEach(() => {
   auth.verifyRequest.mockReset();
   privy.getByEmailAddress.mockReset();
   auth.verifyRequest.mockResolvedValue({ provider: "decane", userId: "u1" });
+  // Unknown by default, so the existing cases exercise the Privy fallback.
+  directory.lookupLegacyEmail.mockResolvedValue({ known: null, entry: null });
 });
 
 describe("POST /api/migration/legacy-account", () => {
@@ -73,9 +82,6 @@ describe("POST /api/migration/legacy-account", () => {
 });
 
 describe("the balance behind the offer", () => {
-  const alchemy = vi.hoisted(() => ({ fetchPortfolio: vi.fn() }));
-  vi.mock("@/lib/server/alchemy", () => ({ fetchPortfolio: alchemy.fetchPortfolio }));
-
   beforeEach(() => {
     alchemy.fetchPortfolio.mockReset();
     privy.getByEmailAddress.mockResolvedValue(walletUser);
@@ -119,5 +125,48 @@ describe("the balance behind the offer", () => {
       hasLegacyAccount: true,
       legacyFundsUsd: null,
     });
+  });
+});
+
+describe("the directory comes first", () => {
+  beforeEach(() => alchemy.fetchPortfolio.mockReset());
+
+  it("answers from the snapshot without calling Privy at all", async () => {
+    directory.lookupLegacyEmail.mockResolvedValue({
+      known: true,
+      entry: { evm: "0xabc", solana: null },
+    });
+    alchemy.fetchPortfolio.mockResolvedValue({ totalUsd: 3, tokens: [] });
+
+    await expect((await POST(req({ email: "a@b.com" }))).json()).resolves.toEqual({
+      hasLegacyAccount: true,
+      legacyFundsUsd: 3,
+    });
+    // The point of the snapshot: it keeps answering after Privy is gone.
+    expect(privy.getByEmailAddress).not.toHaveBeenCalled();
+  });
+
+  it("trusts a definite no from the snapshot", async () => {
+    directory.lookupLegacyEmail.mockResolvedValue({ known: false, entry: null });
+
+    await expect((await POST(req({ email: "a@b.com" }))).json()).resolves.toEqual({
+      hasLegacyAccount: false,
+      legacyFundsUsd: null,
+    });
+    expect(privy.getByEmailAddress).not.toHaveBeenCalled();
+  });
+
+  // Unreadable is not "no": falling through is what stops a missing sheet from
+  // telling every user they have nothing.
+  it("falls through to Privy when the snapshot cannot be read", async () => {
+    directory.lookupLegacyEmail.mockResolvedValue({ known: null, entry: null });
+    privy.getByEmailAddress.mockResolvedValue(walletUser);
+    alchemy.fetchPortfolio.mockResolvedValue({ totalUsd: 7, tokens: [] });
+
+    await expect((await POST(req({ email: "a@b.com" }))).json()).resolves.toEqual({
+      hasLegacyAccount: true,
+      legacyFundsUsd: 7,
+    });
+    expect(privy.getByEmailAddress).toHaveBeenCalled();
   });
 });

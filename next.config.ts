@@ -108,6 +108,13 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
+  // The legacy directory is read with a constructed path, which the tracer
+  // cannot follow — without this the file is simply absent from the serverless
+  // bundle and every lookup silently answers "unknown". Only matters when
+  // LEGACY_DIRECTORY_URL is unset and the bundled file is the source.
+  outputFileTracingIncludes: {
+    "/api/migration/legacy-account": ["./config/legacy-directory.csv"],
+  },
   experimental: {
     turbopackFileSystemCacheForDev: true,
     // Import only the referenced members of these barrel packages instead of the

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyRequest } from "@/lib/server/auth";
 import { getPrivyClient } from "@/lib/server/privy";
 import { fetchPortfolio } from "@/lib/server/alchemy";
+import { lookupLegacyEmail } from "@/lib/server/legacy-directory";
 
 // Does the address the caller signed in with belong to a Privy account that
 // held an embedded wallet? One boolean, and it decides one thing: whether the
@@ -43,6 +44,21 @@ function answer(hasLegacyAccount: boolean, legacyFundsUsd: number | null = null)
   );
 }
 
+/**
+ * What those wallets still hold, or null for "could not read it". Only a read
+ * where every network answered is believed: Portfolio.missing means the total
+ * is a floor, and a floor of zero is not an empty wallet.
+ */
+async function fundsAt(evm?: string | null, solana?: string | null): Promise<number | null> {
+  if (!evm && !solana) return null;
+  try {
+    const portfolio = await fetchPortfolio(evm ?? undefined, solana ?? undefined);
+    return portfolio.missing?.length ? null : portfolio.totalUsd;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   // A verified session, so this is not an open lookup. The session's identity
   // is not compared to the address — it cannot be — it only gates the call.
@@ -64,6 +80,17 @@ export async function POST(req: NextRequest) {
   // Never let an empty or absurd value reach Privy as a query.
   if (!address || address.length > 320 || !address.includes("@")) return answer(false);
 
+  // The directory first: a snapshot of who held a Privy account, which needs
+  // no Privy call and keeps answering after Privy is switched off. Membership
+  // cannot go stale — the population is closed — so a snapshot is as correct
+  // as a live lookup. `known: null` means it could not be read at all, which
+  // falls through to Privy rather than answering no.
+  const directory = await lookupLegacyEmail(address);
+  if (directory.known === true && directory.entry) {
+    return answer(true, await fundsAt(directory.entry.evm, directory.entry.solana));
+  }
+  if (directory.known === false) return answer(false);
+
   try {
     const user = await getPrivyClient().users().getByEmailAddress({ address });
     // An account with no embedded wallet never held money here, so offering
@@ -83,17 +110,7 @@ export async function POST(req: NextRequest) {
     const solana = wallet("solana");
     if (!evm && !solana) return answer(false);
 
-    // What that wallet still holds. Read here rather than trusted from the
-    // browser, and only believed when every network answered: Portfolio.missing
-    // means the total is a floor, and a floor of zero is not an empty wallet.
-    let legacyFundsUsd: number | null = null;
-    try {
-      const portfolio = await fetchPortfolio(evm, solana);
-      if (!portfolio.missing?.length) legacyFundsUsd = portfolio.totalUsd;
-    } catch {
-      // Unknown, which is not the same as empty. Left null on purpose.
-    }
-    return answer(true, legacyFundsUsd);
+    return answer(true, await fundsAt(evm, solana));
   } catch {
     // No such user is the ordinary case and Privy reports it as an error. A
     // genuine outage lands here too, and both answer the same way on purpose:
