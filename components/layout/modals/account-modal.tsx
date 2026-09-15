@@ -13,7 +13,6 @@ import { HelpIcon, LockIcon, PasskeyIcon, SignOutIcon } from "@/components/ui/ic
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { useDevicePasskey } from "@/hooks/use-device-passkey";
 import { useUnlockPassword } from "@/hooks/use-unlock-password";
-import { WalletAddresses } from "@/components/layout/modals/wallet-addresses";
 
 interface AccountModalProps {
   onClose: () => void;
@@ -67,10 +66,6 @@ export function AccountModal({ onClose }: AccountModalProps) {
           ) : null}
         </div>
       </div>
-      {/* The addresses come FIRST of the sections: this sheet is opened from
-          the wallet line in the header, so the address is what the reader came
-          for — settings are what they scroll past on the way. */}
-      <WalletAddresses />
 
       {/* Language lives here on a phone, where the header has no room for it.
           The desktop header still carries its own picker. */}

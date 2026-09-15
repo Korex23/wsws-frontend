@@ -256,28 +256,26 @@ describe("Sidebar", () => {
   });
 
   /**
-   * The account footer's second line is the wallet that holds the money, the
-   * same line the topbar shows, truncated by the same helper. It used to be
-   * the email, which disagreed with the head on screen and rendered empty for
-   * anyone who signed in with a wallet or a phone number.
+   * The account footer names the person and nothing else. It carried the
+   * wallet address under the name; an address is an identifier a reader can
+   * be asked to hand over, and the chrome put it on screen on every page
+   * whether or not it was wanted. The deposit screen is where an address is
+   * shown now, because that is the one place it is needed.
    */
-  it("shows the truncated wallet address under the name in the account footer", () => {
+  it("shows no wallet address under the name in the account footer", () => {
     privyUser = walletOnlyUser;
     renderSidebar();
-    expect(screen.getByText("0x759f…c61c")).toBeInTheDocument();
+    expect(screen.queryByText("0x759f…c61c")).not.toBeInTheDocument();
   });
 
-  // A wallet-only sign-in has no email at all, so the old second line was a
-  // blank row of dead space under the name. The address fills it instead.
-  it("renders no blank second line for a wallet-only account with no email", () => {
+  // The name is the whole footer: nothing takes the second line's place, so
+  // there is no blank row of dead space under it either.
+  it("renders the name alone, with no second line", () => {
     privyUser = walletOnlyUser;
     renderSidebar();
     const lines = screen.getByText("World Street user").parentElement;
     if (lines === null) throw new Error("the account footer rendered no name line");
-    expect([...lines.children].map((el) => el.textContent)).toEqual([
-      "World Street user",
-      "0x759f…c61c",
-    ]);
+    expect([...lines.children].map((el) => el.textContent)).toEqual(["World Street user"]);
   });
 
   // No wallet, no second line: an empty element in its place is the same dead

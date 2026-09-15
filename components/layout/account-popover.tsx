@@ -11,7 +11,6 @@ import { InviteFriendsModal } from "@/features/referrals";
 import { MoveOldMoneyButton, MoveOldMoneySheet } from "@/features/migrate";
 import { MIGRATION_ADAPTERS } from "@/components/layout/migration-adapters";
 import { HelpIcon, SignOutIcon } from "@/components/ui/icons";
-import { WalletAddresses } from "@/components/layout/modals/wallet-addresses";
 import { toast } from "@/lib/toast";
 
 const SUPPORT_FORM_URL = "https://forms.gle/T5DLdFCAbRsVrzU97";
@@ -150,11 +149,6 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
                   {profile.email}
                 </div>
               </div>
-            </div>
-
-            {/* Wallets */}
-            <div className="border-t border-white/8 pt-2">
-              <WalletAddresses />
             </div>
 
             {/* Quick Actions */}

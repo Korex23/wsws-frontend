@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ChickenDifficulty, ChickenSession } from "@/features/casino/lib/api/arkjet";
 import { useChicken } from "@/features/casino/hooks/use-chicken";
+import { ArkjetCashier } from "../arkjet/arkjet-cashier";
 import { ChickenCharacter, type ChickenAnimation } from "./chicken-character";
 import styles from "./chicken.module.css";
 
@@ -37,6 +38,13 @@ interface ResultBanner {
   detail?: string;
 }
 
+interface CrossingTraffic {
+  collision: boolean;
+  key: string;
+  step: number;
+  texture: string;
+}
+
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
@@ -44,6 +52,12 @@ function delay(milliseconds: number) {
 function money(value: string | null | undefined, currency: string) {
   const parsed = Number(value ?? 0);
   return `${Number.isFinite(parsed) ? parsed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value} ${currency}`;
+}
+
+function collisionPlaneTexture(resultHash: string) {
+  const hashPrefix = resultHash.replace(/^0x/, "").slice(0, 8);
+  const hashValue = Number.parseInt(hashPrefix, 16);
+  return PLANES[(Number.isFinite(hashValue) ? hashValue : 0) % PLANES.length];
 }
 
 function LanePlane() {
@@ -94,6 +108,7 @@ export function ChickenSection() {
   const [difficulty, setDifficulty] = useState<ChickenDifficulty>("medium");
   const [amount, setAmount] = useState("10.00");
   const [notice, setNotice] = useState<string | null>(null);
+  const [cashierOpen, setCashierOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [chickenEntered, setChickenEntered] = useState(false);
@@ -102,6 +117,7 @@ export function ChickenSection() {
   const [visualSessionId, setVisualSessionId] = useState<string | null>(null);
   const [phase, setPhase] = useState<VisualPhase>("setup");
   const [resultBanner, setResultBanner] = useState<ResultBanner | null>(null);
+  const [crossingTraffic, setCrossingTraffic] = useState<CrossingTraffic | null>(null);
   const animationSequence = useRef(0);
   const interactionLocked = useRef(false);
   const session = game.session;
@@ -194,6 +210,7 @@ export function ChickenSection() {
     if (animationSequence.current !== sequence) return;
 
     setPhase(terminalPhase === "lost" ? "lost-reset" : "won-reset");
+    setCrossingTraffic(null);
     setVisualStep(0);
     await delay(WORLD_RESET_MS);
     if (animationSequence.current !== sequence) return;
@@ -216,6 +233,12 @@ export function ChickenSection() {
     if (!outcome) throw new Error("The Chicken step result is missing");
 
     setVisualSessionId(updated.sessionId);
+    setCrossingTraffic({
+      collision: !outcome.won,
+      key: `${updated.sessionId}-${outcome.resultHash}`,
+      step: outcome.step,
+      texture: collisionPlaneTexture(outcome.resultHash),
+    });
     setPhase("walking");
     setVisualStep(outcome.step);
 
@@ -240,6 +263,8 @@ export function ChickenSection() {
       return;
     }
 
+    setCrossingTraffic(null);
+
     if (updated.status === "active") {
       setPhase("waiting");
       return;
@@ -261,6 +286,7 @@ export function ChickenSection() {
     setNotice(null);
     setResultBanner(null);
     if (freshRound) {
+      setCrossingTraffic(null);
       setVisualSessionId(null);
       setVisualStep(0);
       setRevealedStep(0);
@@ -272,6 +298,7 @@ export function ChickenSection() {
       if (animationSequence.current === sequence) await animateResolvedStep(updated, sequence);
     } catch (error) {
       if (animationSequence.current !== sequence) return;
+      setCrossingTraffic(null);
       setNotice(error instanceof Error ? error.message : "Something went wrong");
       setPhase(visualStep > 0 ? "waiting" : "ready");
     } finally {
@@ -284,6 +311,7 @@ export function ChickenSection() {
     interactionLocked.current = true;
     const sequence = ++animationSequence.current;
     setNotice(null);
+    setCrossingTraffic(null);
     try {
       const updated = await operation();
       if (animationSequence.current !== sequence) return;
@@ -316,10 +344,25 @@ export function ChickenSection() {
           alt="Pilot Chicken"
         />
         <div className={styles.headerRight}>
-          <div className={styles.balance}>
-            <span>{game.authenticated ? (game.balance?.available ?? "0.00") : "0.00"}</span>
-            <span>{currency}</span>
-          </div>
+          <button
+            type="button"
+            className={styles.balance}
+            aria-label={game.authenticated ? "Open Chicken Cross balance" : "Sign in to add funds"}
+            onClick={() => {
+              setHistoryOpen(false);
+              setMenuOpen(false);
+              if (game.authenticated) setCashierOpen(true);
+              else game.login();
+            }}
+          >
+            <span className={styles.balanceAmount}>
+              {game.authenticated ? (game.balance?.available ?? "0.00") : "0.00"}
+            </span>
+            <span className={styles.balanceCurrency}>{currency}</span>
+            <span className={styles.balanceAdd} aria-hidden="true">
+              +
+            </span>
+          </button>
           <button
             type="button"
             className={styles.circleButton}
@@ -393,14 +436,11 @@ export function ChickenSection() {
               {ladder.map((hundredths, index) => {
                 const step = index + 1;
                 const result = visibleSteps.find((item) => item.step === step);
-                const boundary = visualSession?.liquidityCrashStep === step;
                 const cleared = Boolean(result?.won);
                 const isCurrent = currentWonStep === step;
+                const traffic = crossingTraffic?.step === step ? crossingTraffic : null;
                 return (
-                  <div
-                    className={`${styles.roadLane} ${boundary ? styles.liquidityLane : ""}`}
-                    key={`${stageDifficulty}-${step}`}
-                  >
+                  <div className={styles.roadLane} key={`${stageDifficulty}-${step}`}>
                     <div className={styles.checkpoint}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -418,8 +458,19 @@ export function ChickenSection() {
                         <span>{(hundredths / 100).toFixed(2)}x</span>
                       </div>
                     ) : null}
-                    {boundary ? <span className={styles.liquidityTag}>LIMIT</span> : null}
-                    <LanePlane />
+                    {traffic ? (
+                      traffic.collision ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={traffic.key}
+                          className={`${styles.plane} ${styles.collisionPlane}`}
+                          src={`${ASSET}/img/${traffic.texture}@2x.png`}
+                          alt=""
+                        />
+                      ) : null
+                    ) : (
+                      <LanePlane />
+                    )}
                   </div>
                 );
               })}
@@ -514,7 +565,7 @@ export function ChickenSection() {
             <span className={styles.menuRow}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={`${ASSET}/icons/icon-free-bets.svg`} alt="" />
-              Free Bets
+              Free Tickets
             </span>
             <button
               type="button"
@@ -562,10 +613,10 @@ export function ChickenSection() {
         <div className={styles.betWrapper}>
           <div className={styles.tabs}>
             <button type="button" className={styles.activeTab}>
-              Bet
+              Ticket
             </button>
             <button type="button" disabled>
-              Free Bet
+              Free Ticket
             </button>
           </div>
           <div className={styles.betHalf}>
@@ -632,7 +683,9 @@ export function ChickenSection() {
                     void executeStep(() => game.start({ amount, currency, difficulty }), true);
                   }}
                 >
-                  <span>{game.pending ? "WAIT..." : game.authenticated ? "BET" : "SIGN IN"}</span>
+                  <span>
+                    {game.pending ? "WAIT..." : game.authenticated ? "SUBMIT" : "SIGN IN"}
+                  </span>
                   <span>{money(amount, currency)}</span>
                 </button>
               ) : (
@@ -661,6 +714,16 @@ export function ChickenSection() {
           </div>
         </div>
       </section>
+
+      {cashierOpen ? (
+        <ArkjetCashier
+          balance={game.balance}
+          minimumAmount={game.risk?.minimumBet ?? "10.00"}
+          productName="Chicken Cross"
+          tone="chicken"
+          onClose={() => setCashierOpen(false)}
+        />
+      ) : null}
     </main>
   );
 }

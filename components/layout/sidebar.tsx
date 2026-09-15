@@ -200,11 +200,6 @@ export function Sidebar({ items, activeSection, onNavigate, open, onClose }: Sid
               <span className="block truncate font-sans text-[13px] font-medium text-white">
                 {profile.name}
               </span>
-              {address ? (
-                <span className="tnum block truncate text-xs font-normal text-white/50">
-                  {truncateAddress(address)}
-                </span>
-              ) : null}
             </span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path

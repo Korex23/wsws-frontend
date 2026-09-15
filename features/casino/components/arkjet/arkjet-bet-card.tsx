@@ -30,7 +30,7 @@ function arkjetError(error: unknown, fallback: string): string {
       ? (error as { code?: unknown }).code
       : null;
   if (code === "PLAYER_BALANCE_INSUFFICIENT") {
-    return "Your Arkjet balance is too low for that bet. Add funds or choose a smaller amount.";
+    return "Your Arkjet balance is too low for that ticket. Add funds or choose a smaller amount.";
   }
   return friendlyError(error, fallback);
 }
@@ -89,22 +89,22 @@ export function ArkjetBetCard({
 
   let action = "Wait for next round";
   let actionKind: "place" | "cancel" | "cashout" | "login" | "none" = "none";
-  let status = "Bets open during the committed phase";
+  let status = "Tickets open during the committed phase";
 
   if (!authReady) {
     action = "Preparing account…";
     status = "Checking your session";
   } else if (!authenticated) {
-    action = "Sign in to bet";
+    action = "Sign in to submit";
     actionKind = "login";
     status = "Sign in to view your Arkjet balance";
   } else if (!wageringEnabled) {
-    action = "Betting unavailable";
+    action = "Tickets unavailable";
     status = "Live wagering is currently disabled";
   } else if (activeBet) {
     status = `${activeBet.amount} ${activeBet.currency} accepted · max ${activeBet.maximumCashoutMultiplier}x`;
     if (round.status === "COMMITTED") {
-      action = "Cancel Bet";
+      action = "Cancel Ticket";
       actionKind = "cancel";
     } else if (
       round.status === "RUNNING" &&
@@ -118,12 +118,12 @@ export function ArkjetBetCard({
     } else if (round.status === "RUNNING") {
       action = "Cashout unavailable";
     } else if (round.status === "LOCKED") {
-      action = "Bet locked";
+      action = "Ticket locked";
     } else {
-      action = "Settling bet…";
+      action = "Settling ticket…";
     }
   } else if (round.status === "COMMITTED") {
-    action = mode === "auto" ? "Place Auto Bet" : "Bet";
+    action = mode === "auto" ? "Submit Auto Ticket" : "Submit Ticket";
     actionKind = canSubmitAmount ? "place" : "none";
     status =
       mode === "auto"
@@ -143,18 +143,18 @@ export function ArkjetBetCard({
     }
 
     if (actionKind === "cancel" && activeBet) {
-      const toastId = toast.loading("Cancelling Arkjet bet…");
+      const toastId = toast.loading("Cancelling Arkjet ticket…");
       try {
         await onCancel(activeBet.betId);
-        toast.success("Arkjet bet cancelled.", { id: toastId });
+        toast.success("Arkjet ticket cancelled.", { id: toastId });
       } catch (error) {
-        toast.error(arkjetError(error, "Could not cancel that Arkjet bet."), { id: toastId });
+        toast.error(arkjetError(error, "Could not cancel that Arkjet ticket."), { id: toastId });
       }
       return;
     }
 
     if (actionKind === "cashout" && activeBet) {
-      const toastId = toast.loading("Cashing out Arkjet bet…");
+      const toastId = toast.loading("Cashing out Arkjet ticket…");
       try {
         const settled = await onCashout(activeBet.betId);
         toast.success(
@@ -164,7 +164,7 @@ export function ArkjetBetCard({
           { id: toastId }
         );
       } catch (error) {
-        toast.error(arkjetError(error, "Could not cash out that Arkjet bet."), { id: toastId });
+        toast.error(arkjetError(error, "Could not cash out that Arkjet ticket."), { id: toastId });
       }
       return;
     }
@@ -176,7 +176,7 @@ export function ArkjetBetCard({
       idempotency.current = { fingerprint, key: crypto.randomUUID() };
     }
 
-    const toastId = toast.loading("Placing Arkjet bet…");
+    const toastId = toast.loading("Submitting Arkjet ticket…");
     try {
       await onPlace({
         roundId: round.roundId,
@@ -187,9 +187,9 @@ export function ArkjetBetCard({
         idempotencyKey: idempotency.current.key,
       });
       idempotency.current = null;
-      toast.success(`Bet ${amount} ${currency} accepted.`, { id: toastId });
+      toast.success(`Ticket for ${amount} ${currency} accepted.`, { id: toastId });
     } catch (error) {
-      toast.error(arkjetError(error, "Could not place that Arkjet bet."), { id: toastId });
+      toast.error(arkjetError(error, "Could not submit that Arkjet ticket."), { id: toastId });
     }
   }
 
@@ -202,7 +202,7 @@ export function ArkjetBetCard({
           disabled={Boolean(activeBet) || busy}
           onClick={() => setMode("bet")}
         >
-          Bet
+          Ticket
         </button>
         <button
           type="button"
@@ -220,14 +220,14 @@ export function ArkjetBetCard({
             <button
               type="button"
               className={styles.stepButton}
-              aria-label={`Decrease bet ${slot}`}
+              aria-label={`Decrease ticket ${slot}`}
               disabled={Boolean(activeBet) || busy}
               onClick={() => setAmount(Math.max(minimum, numericAmount - minimum).toFixed(2))}
             >
               −
             </button>
             <input
-              aria-label={`Bet ${slot} amount`}
+              aria-label={`Ticket ${slot} amount`}
               value={activeBet?.amount ?? amount}
               inputMode="decimal"
               className={styles.amountInput}
@@ -237,7 +237,7 @@ export function ArkjetBetCard({
             <button
               type="button"
               className={styles.stepButton}
-              aria-label={`Increase bet ${slot}`}
+              aria-label={`Increase ticket ${slot}`}
               disabled={Boolean(activeBet) || busy}
               onClick={() => setAmount((numericAmount + minimum).toFixed(2))}
             >

@@ -48,10 +48,6 @@ vi.mock("@/features/referrals", () => ({
   InviteFriendsModal: () => null,
 }));
 
-vi.mock("@/components/layout/modals/wallet-addresses", () => ({
-  WalletAddresses: () => <div data-testid="wallet-addresses" />,
-}));
-
 describe("AccountPopover", () => {
   it("renders nothing when closed", () => {
     const triggerRef = { current: document.createElement("button") };

@@ -1,5 +1,6 @@
 .page {
   min-height: 100vh;
+  min-height: 100dvh;
   background: #0d0e10;
   color: #f4f4f5;
   font-family: var(--font-body), sans-serif;
@@ -20,8 +21,13 @@
 .brandWrap,
 .topActions {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 10px;
+}
+
+.topActions {
+  flex: 0 1 auto;
 }
 
 .backButton,
@@ -47,13 +53,48 @@
   display: grid;
   height: 34px;
   width: 34px;
+  flex: 0 0 34px;
   place-items: center;
   border-radius: 11px;
-  background: linear-gradient(145deg, #f51f32, #8d0713);
-  box-shadow: 0 0 18px rgb(232 24 39 / 24%);
-  font-family: var(--font-display), sans-serif;
-  font-size: 17px;
-  font-weight: 900;
+  border: 1px solid rgb(255 255 255 / 9%);
+  background:
+    radial-gradient(circle at 28% 22%, rgb(255 255 255 / 20%), transparent 28%),
+    linear-gradient(145deg, #fb2c42, #a40918 72%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 16%),
+    0 0 18px rgb(232 24 39 / 24%);
+}
+
+.brandLogo {
+  width: 27px;
+  height: 27px;
+  overflow: visible;
+  color: #fff;
+  filter: drop-shadow(0 2px 3px rgb(72 0 8 / 45%));
+}
+
+.brandJet,
+.brandSpark {
+  fill: currentColor;
+}
+
+.brandOrbit {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  opacity: 0.68;
+}
+
+.menuBrandMark {
+  height: 28px;
+  width: 28px;
+  flex-basis: 28px;
+  border-radius: 9px;
+}
+
+.menuBrandMark .brandLogo {
+  height: 22px;
+  width: 22px;
 }
 
 .brandName {
@@ -75,6 +116,7 @@
 .balanceButton {
   display: flex;
   min-width: 116px;
+  max-width: min(190px, 42vw);
   flex-direction: column;
   align-items: flex-end;
   border: 1px solid transparent;
@@ -90,10 +132,14 @@
 }
 
 .balanceButton small {
+  max-width: 100%;
+  overflow: hidden;
   margin-top: 1px;
   color: #6f7178;
   font-size: 9px;
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cashierOverlay {
@@ -116,6 +162,20 @@
   background: radial-gradient(circle at 85% 0%, rgb(239 31 49 / 14%), transparent 34%), #17181a;
   box-shadow: 0 28px 90px rgb(0 0 0 / 72%);
   padding: 20px;
+}
+
+.cashierDialogChicken {
+  background: radial-gradient(circle at 85% 0%, rgb(40 184 88 / 16%), transparent 34%), #17181a;
+}
+
+.cashierDialogChicken .cashierEyebrow,
+.cashierDialogChicken .cashierAmountLabel button {
+  color: #52cf79;
+}
+
+.cashierDialogChicken .cashierSubmit {
+  background: linear-gradient(180deg, #2bc05d, #208e45);
+  box-shadow: 0 10px 28px rgb(32 151 72 / 24%);
 }
 
 .cashierHeader,
@@ -528,7 +588,13 @@
   min-width: 0;
   flex: 1;
   gap: 13px;
-  overflow: hidden;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.multiplierList::-webkit-scrollbar {
+  display: none;
 }
 
 .historyMultiplier {
@@ -1552,9 +1618,17 @@
 }
 
 @media (max-width: 880px) {
+  .topbar {
+    position: sticky;
+    top: 0;
+    min-height: 52px;
+  }
+
   .layout {
     display: flex;
     flex-direction: column;
+    gap: 6px;
+    min-height: calc(100dvh - 52px);
     padding: 5px;
   }
 
@@ -1564,22 +1638,80 @@
 
   .leftRail {
     order: 2;
-    min-height: 420px;
+    min-height: 0;
+  }
+
+  .activityRail {
+    position: relative;
+    inset: auto;
+    order: 3;
+    width: 100%;
+    height: min(430px, 64dvh);
+    min-height: 340px;
+    box-shadow: none;
+  }
+
+  .railColumns {
+    display: none;
+  }
+
+  .railRows {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 8px 9px;
+    scroll-padding-inline: 8px;
+    scroll-snap-type: x proximity;
+    scrollbar-color: #34363b transparent;
+    scrollbar-width: thin;
+  }
+
+  .railRow {
+    width: min(260px, 78vw);
+    flex: 0 0 min(260px, 78vw);
+    margin-bottom: 0;
+    scroll-snap-align: start;
   }
 
   .board {
-    height: 52vw;
+    height: clamp(330px, 58vw, 470px);
     min-height: 330px;
   }
 
   .controlsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .betBody {
     grid-template-columns: 1fr;
+  }
+
+  .betTabs {
+    width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  .controlsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .betBody {
+    grid-template-columns: minmax(128px, 0.85fr) minmax(148px, 1.15fr);
+  }
+
+  .betTabs {
+    width: min(260px, 74%);
   }
 }
 
 @media (max-width: 520px) {
   .topbar {
-    padding: 0 8px;
+    gap: 6px;
+    padding: 0 7px;
+    padding-top: env(safe-area-inset-top);
   }
 
   .brandName {
@@ -1587,8 +1719,33 @@
   }
 
   .balanceButton {
-    min-width: 90px;
+    min-width: 0;
+    max-width: 112px;
     padding-inline: 3px;
+  }
+
+  .brandWrap,
+  .topActions {
+    gap: 6px;
+  }
+
+  .backButton,
+  .iconButton {
+    height: 32px;
+    width: 32px;
+    flex: 0 0 32px;
+  }
+
+  .brandMark {
+    height: 32px;
+    width: 32px;
+    flex-basis: 32px;
+    border-radius: 10px;
+  }
+
+  .brandLogo {
+    height: 25px;
+    width: 25px;
   }
 
   .balance {
@@ -1606,7 +1763,7 @@
 
   .cashierDialog {
     width: 100%;
-    max-height: 88vh;
+    max-height: 88dvh;
     border-right: 0;
     border-bottom: 0;
     border-left: 0;
@@ -1615,12 +1772,74 @@
   }
 
   .board {
-    height: 390px;
+    height: clamp(300px, 92vw, 390px);
+    min-height: 300px;
+    border-radius: 16px;
   }
 
   .multiplierDisplay {
-    font-size: 68px;
+    font-size: clamp(54px, 18vw, 68px);
     letter-spacing: -3px;
+  }
+
+  .betBody {
+    grid-template-columns: minmax(120px, 0.85fr) minmax(140px, 1.15fr);
+  }
+
+  .betTabs {
+    width: min(240px, 76%);
+  }
+
+  .betCard {
+    padding: 8px 9px 10px;
+  }
+
+  .betAction {
+    min-height: 76px;
+    font-size: 17px;
+  }
+
+  .multiplierBar {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .railSummary {
+    margin-bottom: 7px;
+  }
+
+  .activityRail {
+    height: min(390px, 62dvh);
+    min-height: 320px;
+  }
+
+  .waitingText,
+  .cancelledState,
+  .flewAway {
+    font-size: clamp(18px, 6vw, 25px);
+  }
+
+  .waitingProp {
+    height: 68px;
+    width: 68px;
+  }
+
+  .fairDialog {
+    max-height: 88dvh;
+  }
+
+  .fairStats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 360px) {
+  .balanceButton small {
+    display: none;
+  }
+
+  .balanceButton {
+    max-width: 82px;
   }
 
   .betBody {
@@ -1629,10 +1848,6 @@
 
   .betTabs {
     width: 100%;
-  }
-
-  .fairStats {
-    grid-template-columns: 1fr;
   }
 }
 

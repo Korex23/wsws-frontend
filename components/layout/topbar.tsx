@@ -69,11 +69,13 @@ export function Topbar({ onOpenAccount }: TopbarProps) {
   // right colour before the SVG loads.
   return (
     <div className="bg-topbar relative z-[2] flex items-center gap-3 border-b border-white/7 bg-[url('/rollout/chrome/topbar-starburst.svg')] bg-cover bg-center bg-no-repeat px-4 py-3.5 sm:px-5 md:h-[79px] md:border-b-0 md:px-5 md:py-[15px]">
-      {/* Who you are signed in as, and the wallet that holds the money. Tapping
-          it opens the account modal. The desktop head carries the name and the
-          address on every screen, which is what the design repeats across all
-          seven. The phone keeps its own rule: name and address on home, the
-          centred MARKET wordmark everywhere else. */}
+      {/* Who you are signed in as. Tapping it opens the account modal.
+          The desktop head carries the
+          name on every screen, which is what the design repeats across all
+          seven. The phone keeps its own rule: the name on home, the centred
+          MARKET wordmark everywhere else. The wallet address is deliberately
+          absent from the chrome entirely; the deposit screen is where an
+          address is shown, because that is where one is needed. */}
       <button
         type="button"
         data-tour="profile"
@@ -86,7 +88,6 @@ export function Topbar({ onOpenAccount }: TopbarProps) {
           <span className="block truncate font-sans text-[14px] font-semibold text-white md:font-serif md:text-[15px] md:leading-[17.4px] md:tracking-[-0.15px]">
             {profile.name}
           </span>
-          {/* Wallet address hidden on mobile — visible in the sidebar */}
         </span>
       </button>
       {isHome ? null : (
