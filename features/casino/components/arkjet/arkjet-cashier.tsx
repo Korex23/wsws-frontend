@@ -23,6 +23,8 @@ interface ArkjetCashierProps {
   balance: ArkjetBalance | null;
   minimumAmount: string;
   onClose: () => void;
+  productName?: string;
+  tone?: "arkjet" | "chicken";
 }
 
 const DECIMAL = /^\d*\.?\d*$/;
@@ -34,7 +36,13 @@ function money(value: string, currency: string): string {
   return `${Number.isFinite(parsed) ? parsed.toLocaleString(undefined, { maximumFractionDigits: 2 }) : value} ${currency}`;
 }
 
-export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashierProps) {
+export function ArkjetCashier({
+  balance,
+  minimumAmount,
+  onClose,
+  productName = "Arkjet",
+  tone = "arkjet",
+}: ArkjetCashierProps) {
   const funding = useArkjetFunding();
   const portfolio = usePortfolio();
   const [mode, setMode] = useState<CashierMode>("deposit");
@@ -129,7 +137,7 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
       const result = await funding.deposit(depositUsdc);
       void portfolio.refetchFresh(SCOPE);
       if (result.credited) {
-        toast.success(`${money(result.credited, config.currency)} added to Arkjet.`, {
+        toast.success(`${money(result.credited, config.currency)} added to ${productName}.`, {
           id: toastId,
         });
         setAmount("");
@@ -138,7 +146,7 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
         setAwaitingCredit(true);
       }
     } catch (error) {
-      toast.error(friendlyError(error, "The Arkjet deposit could not be completed."), {
+      toast.error(friendlyError(error, `The ${productName} deposit could not be completed.`), {
         id: toastId,
       });
     }
@@ -146,7 +154,7 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
 
   const withdraw = async () => {
     if (!normalized || !config) return;
-    const toastId = toast.loading("Reserving your Arkjet balance for payout…");
+    const toastId = toast.loading(`Reserving your ${productName} balance for payout…`);
     try {
       const result = await funding.withdraw(normalized);
       toast.success(
@@ -158,7 +166,7 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
       setAmount("");
       void portfolio.refetchFresh(SCOPE);
     } catch (error) {
-      toast.error(friendlyError(error, "The Arkjet withdrawal could not be completed."), {
+      toast.error(friendlyError(error, `The ${productName} withdrawal could not be completed.`), {
         id: toastId,
       });
     }
@@ -171,15 +179,15 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <section
-        className={styles.cashierDialog}
+        className={`${styles.cashierDialog} ${tone === "chicken" ? styles.cashierDialogChicken : ""}`}
         role="dialog"
         aria-modal="true"
-        aria-label="Arkjet balance"
+        aria-label={`${productName} balance`}
       >
         <div className={styles.cashierHeader}>
           <div>
-            <span className={styles.cashierEyebrow}>PRIVY WALLET + ARKJET LEDGER</span>
-            <h2>Arkjet balance</h2>
+            <span className={styles.cashierEyebrow}>PRIVY WALLET + ARKADE BALANCE</span>
+            <h2>{productName} balance</h2>
           </div>
           <button
             type="button"
@@ -195,8 +203,8 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
           <div className={styles.cashierUnavailable}>Loading wallet funding…</div>
         ) : !funding.configured || !config ? (
           <div className={styles.cashierUnavailable}>
-            Wallet funding is disabled on this deployment. Arkjet will not move funds until the
-            vault and conversion rate are configured.
+            Wallet funding is disabled on this deployment. {productName} will not move funds until
+            the vault and conversion rate are configured.
           </div>
         ) : (
           <>
@@ -214,7 +222,7 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
             </div>
 
             <div className={styles.cashierBuckets}>
-              <span>Locked in bets: {money(balance?.locked ?? "0", config.currency)}</span>
+              <span>Locked in tickets: {money(balance?.locked ?? "0", config.currency)}</span>
               <span>
                 Pending payout: {money(balance?.pendingWithdrawal ?? "0", config.currency)}
               </span>
@@ -271,7 +279,7 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
             ) : null}
             {overBalance ? (
               <div className={styles.cashierError}>
-                That is more than your playable Arkjet balance.
+                That is more than your playable {productName} balance.
               </div>
             ) : null}
             {mode === "withdraw" && !config.withdrawalsEnabled ? (
@@ -281,8 +289,8 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
             ) : null}
             {awaitingCredit ? (
               <div className={styles.cashierPending}>
-                The USDC transfer succeeded. Arkjet is waiting for {config.requiredConfirmations}{" "}
-                Base confirmation(s) before crediting the ledger.
+                The USDC transfer succeeded. {productName} is waiting for{" "}
+                {config.requiredConfirmations} Base confirmation(s) before crediting the balance.
               </div>
             ) : null}
 

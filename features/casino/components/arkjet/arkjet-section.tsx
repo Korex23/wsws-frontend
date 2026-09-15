@@ -13,6 +13,19 @@ import styles from "./arkjet.module.css";
 
 type RailTab = "all" | "previous" | "top";
 
+function ArkjetLogo() {
+  return (
+    <svg className={styles.brandLogo} viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      <path className={styles.brandOrbit} d="M6.5 28.4c4.7 6.4 16.7 8.4 25.8 1.9" pathLength="1" />
+      <path
+        className={styles.brandJet}
+        d="M32.8 6.9c-2-.3-4 .4-5.4 1.8l-7.2 7.2-8.1-1.9-2.4 2.4 6.2 4.1-3.9 3.9-4.4-.6-1.7 1.7 5.6 2.9 2.9 5.6 1.7-1.7-.6-4.4 3.9-3.9 4.1 6.2 2.4-2.4-1.9-8.1 7.2-7.2a6.2 6.2 0 0 0 1.7-5.4Z"
+      />
+      <circle className={styles.brandSpark} cx="7" cy="31.8" r="1.4" />
+    </svg>
+  );
+}
+
 function orderedRounds(rounds: ArkjetRound[], tab: RailTab): ArkjetRound[] {
   const completed = rounds.filter((round) => round.crashMultiplier);
   if (tab === "top") {
@@ -57,7 +70,7 @@ function LeftRail({
             className={`${styles.tab} ${tab === item ? styles.tabActive : ""}`}
             onClick={() => setTab(item)}
           >
-            {item === "all" ? "All Bets" : item === "previous" ? "Previous" : "Top"}
+            {item === "all" ? "All Tickets" : item === "previous" ? "Previous" : "Top"}
           </button>
         ))}
       </div>
@@ -136,7 +149,9 @@ function SettingsMenu({
     <div className={styles.menu}>
       <div className={styles.menuProfile}>
         <div className={styles.brandWrap}>
-          <span className={styles.avatar}>A</span>
+          <span className={`${styles.brandMark} ${styles.menuBrandMark}`}>
+            <ArkjetLogo />
+          </span>
           <strong>Arkjet player</strong>
         </div>
         <span className={styles.balance}>Settings</span>
@@ -150,10 +165,10 @@ function SettingsMenu({
         <Toggle enabled={animation} />
       </button>
       <button type="button" className={styles.menuRow}>
-        <span>☆ Free Bets</span>
+        <span>☆ Free Tickets</span>
       </button>
       <button type="button" className={styles.menuRow}>
-        <span>↶ My Bet History</span>
+        <span>↶ My Ticket History</span>
       </button>
       <button type="button" className={styles.menuRow}>
         <span>▣ Game Limits</span>
@@ -236,7 +251,7 @@ export function ArkjetSection() {
       <main className={`${styles.page} ${styles.unavailable}`}>
         <div>
           <h1 className={styles.fairTitle}>Arkjet is between flights</h1>
-          <p className={styles.summaryMeta}>No bet was accepted and no balance was charged.</p>
+          <p className={styles.summaryMeta}>No ticket was accepted and no balance was charged.</p>
           <button type="button" className={styles.menuRow} onClick={() => void arkjet.refresh()}>
             Try again
           </button>
@@ -275,7 +290,9 @@ export function ArkjetSection() {
           <Link href="/casino" className={styles.backButton} aria-label="Back to Arkade">
             ‹
           </Link>
-          <span className={styles.brandMark}>A</span>
+          <span className={styles.brandMark}>
+            <ArkjetLogo />
+          </span>
           <span className={styles.brandName}>Arkjet</span>
         </div>
         <div className={styles.topActions}>
@@ -372,8 +389,8 @@ export function ArkjetSection() {
           </div>
           {!wageringEnabled ? (
             <div className={styles.wagerNotice}>
-              Live rounds and proofs are active. Bet placement remains locked until Arkjet wagering
-              and settlement are enabled.
+              Live rounds and proofs are active. Ticket submission remains locked until Arkjet
+              wagering and settlement are enabled.
             </div>
           ) : null}
         </section>

@@ -51,20 +51,44 @@
   align-items: center;
   height: 32px;
   margin-right: 8px;
+  border: 0;
   padding: 0 12px;
   border-radius: 64px;
   background: #1f1f1f;
+  color: inherit;
+  cursor: pointer;
   font-size: 14px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  transition: background 140ms ease;
 }
-.balance span:first-child {
+.balance:hover {
+  background: #292929;
+}
+.balance:focus-visible {
+  outline: 2px solid #36c466;
+  outline-offset: 2px;
+}
+.balanceAmount {
   color: #7a7a7a;
   margin-right: 4px;
 }
-.balance span:last-child {
+.balanceCurrency {
   color: #525252;
   font-weight: 500;
+}
+.balanceAdd {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: #28b858;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
 }
 .circleButton {
   display: grid;
@@ -211,9 +235,6 @@
   inset: 0;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.025), transparent);
 }
-.liquidityLane {
-  box-shadow: inset 0 0 0 2px rgba(251, 174, 75, 0.82);
-}
 .checkpoint {
   position: absolute;
   z-index: 2;
@@ -272,15 +293,6 @@
   -webkit-text-stroke: 1px #1b1920;
   text-shadow: 0 2px 0 #1b1920;
 }
-.liquidityTag {
-  position: absolute;
-  z-index: 3;
-  right: 4px;
-  bottom: 5px;
-  color: #fbae4b;
-  font-size: 8px;
-  font-weight: 800;
-}
 .plane {
   position: absolute;
   z-index: 2;
@@ -292,6 +304,9 @@
   object-fit: contain;
   filter: drop-shadow(0 7px 4px rgba(0, 0, 0, 0.3));
   animation: planePass 0.5s linear both;
+}
+.collisionPlane {
+  z-index: 6;
 }
 @keyframes planePass {
   from {
