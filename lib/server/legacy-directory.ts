@@ -81,9 +81,26 @@ export function emailIdentifier(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/** The stored form of an X account: its numeric id, never the @handle. */
+/** The stored form of an X account keyed by its numeric id. */
 export function xIdentifier(userId: string): string {
   return `x:${userId.trim()}`;
+}
+
+/**
+ * The stored form of an X account keyed by its @handle.
+ *
+ * Weaker than the numeric id and used because the Privy export carries only
+ * handles. A handle can be released by its owner and registered by somebody
+ * else, so this can match the wrong person — but what that person then gets is
+ * an offer to migrate, not the money: the sweep signs with the OLD Privy
+ * account, which needs the original owner's credentials. So the exposure is
+ * "this handle had an account, at these public on-chain addresses", never
+ * access to it.
+ *
+ * Namespaced apart from the id form so the two can never be confused.
+ */
+export function xHandleIdentifier(handle: string): string {
+  return `x:@${handle.trim().replace(/^@/, "").toLowerCase()}`;
 }
 
 // Tolerant on purpose: a hand-exported sheet arrives with a header row, stray

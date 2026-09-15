@@ -5,6 +5,7 @@ import {
   lookupLegacyIdentifiers,
   parseLegacyDirectory,
   resetLegacyDirectory,
+  xHandleIdentifier,
   xIdentifier,
 } from "@/lib/server/legacy-directory";
 
@@ -279,5 +280,21 @@ describe("a legacy user who never had an email", () => {
       known: false,
       entry: null,
     });
+  });
+});
+
+describe("keying an X account on its handle", () => {
+  // The Privy export carries handles, not numeric ids, so this is the form
+  // that actually matches for an X user today.
+  it("normalises the handle it is given", () => {
+    const canonical = xHandleIdentifier("korex");
+    expect(xHandleIdentifier("@korex")).toBe(canonical);
+    expect(xHandleIdentifier("  @KOREX ")).toBe(canonical);
+    expect(canonical).toBe("x:@korex");
+  });
+
+  // Namespaced apart so a handle and an id can never be taken for each other.
+  it("cannot collide with the id form", () => {
+    expect(xHandleIdentifier("1234567890")).not.toBe(xIdentifier("1234567890"));
   });
 });

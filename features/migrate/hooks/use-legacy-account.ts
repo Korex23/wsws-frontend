@@ -41,7 +41,10 @@ async function ask(): Promise<LegacyAccount> {
   const profile = readDisplayProfile();
   const email = profile?.email;
   const xId = profile?.providerSubject;
-  if (!email && !xId) return UNKNOWN;
+  // The handle as well as the id: the Privy export carries only handles, so
+  // for an X user it is the one that actually matches.
+  const xHandle = profile?.username;
+  if (!email && !xId && !xHandle) return UNKNOWN;
   try {
     const res = await apiFetch(
       "/api/migration/legacy-account",
@@ -50,6 +53,7 @@ async function ask(): Promise<LegacyAccount> {
         body: JSON.stringify({
           ...(email ? { email } : {}),
           ...(xId ? { xId } : {}),
+          ...(xHandle ? { xHandle } : {}),
         }),
       },
       { requireAuth: true }

@@ -5,6 +5,7 @@ import { fetchPortfolio } from "@/lib/server/alchemy";
 import {
   emailIdentifier,
   lookupLegacyIdentifiers,
+  xHandleIdentifier,
   xIdentifier,
 } from "@/lib/server/legacy-directory";
 
@@ -80,10 +81,12 @@ export async function POST(req: NextRequest) {
   // provider. Asking only for an email would strand every one of them.
   let email: string | null = null;
   let xId: string | null = null;
+  let xHandle: string | null = null;
   try {
-    const body = (await req.json()) as { email?: unknown; xId?: unknown };
+    const body = (await req.json()) as { email?: unknown; xId?: unknown; xHandle?: unknown };
     if (typeof body.email === "string") email = emailIdentifier(body.email);
     if (typeof body.xId === "string") xId = body.xId.trim();
+    if (typeof body.xHandle === "string") xHandle = body.xHandle.trim().replace(/^@/, "");
   } catch {
     // No body, or not JSON. Falls through to the nothing-to-go-on answer below.
   }
@@ -92,7 +95,9 @@ export async function POST(req: NextRequest) {
   if (email && (email.length > 320 || !email.includes("@"))) email = null;
   // X ids are numeric. Anything else is not one, and would only ever miss.
   if (xId && !/^\d{1,32}$/.test(xId)) xId = null;
-  if (!email && !xId) return answer(false);
+  // X handles are 1-15 of [A-Za-z0-9_]. Anything else is not one.
+  if (xHandle && !/^[A-Za-z0-9_]{1,15}$/.test(xHandle)) xHandle = null;
+  if (!email && !xId && !xHandle) return answer(false);
 
   // The directory first: a snapshot of who held a Privy account, which needs
   // no Privy call and keeps answering after Privy is switched off. Membership
@@ -111,7 +116,9 @@ export async function POST(req: NextRequest) {
     const users = getPrivyClient().users();
     const user = email
       ? await users.getByEmailAddress({ address: email })
-      : await users.getByTwitterSubject({ subject: xId! });
+      : xId
+        ? await users.getByTwitterSubject({ subject: xId })
+        : await users.getByTwitterUsername({ username: xHandle! });
     // An account with no embedded wallet never held money here, so offering
     // the sweep to it would be a dead end with a scary label. The server SDK
     // speaks snake_case, unlike lib/user's client-side helper.

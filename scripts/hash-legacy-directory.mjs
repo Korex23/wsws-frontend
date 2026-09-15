@@ -70,23 +70,33 @@ const EVM = /^0x[0-9a-fA-F]{40}$/;
 // Base58, and long enough not to catch a stray word.
 const SOLANA = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const X_ID = /^\d{1,32}$/;
+// An X handle: 1-15 of letters, digits and underscore.
+const X_HANDLE = /^[A-Za-z0-9_]{1,15}$/;
 
 // Header names seen across Privy exports, normalised to letters only.
+// Several columns can carry an email — a Privy export has both "Email" and
+// "Google email", and one user in the wild has two different ones — so emails
+// are collected from EVERY matching column rather than the first.
 const HEADERS = {
-  email: [/^email/, /emailaddress/],
-  // `subject` is Privy's name for the provider's own id.
+  email: [/^email/, /emailaddress/, /googleemail/, /^(login|primary)email/],
+  // `subject` is Privy's name for the provider's own id. Stronger than a
+  // handle, and absent from some exports.
   xId: [/^(twitter|x)(subject|id|userid)$/, /^(twitter|x)accountsubject$/],
+  xHandle: [/^(twitter|x)(username|handle)$/, /^(twitter|x)screenname$/],
   evm: [/^(evm|ethereum|eth)/, /walletaddress/],
-  solana: [/^solana/, /^sol(wallet|address)/],
+  solana: [/^(solana|svm)/, /^sol(wallet|address)/],
 };
 
 const norm = (h) => h.toLowerCase().replace(/[^a-z]/g, "");
 
+// Emails collect every matching column; everything else takes the first.
 function findColumns(header) {
-  const found = {};
+  const found = { email: [] };
   header.forEach((raw, i) => {
     const h = norm(raw);
+    if (HEADERS.email.some((p) => p.test(h))) found.email.push(i);
     for (const [key, patterns] of Object.entries(HEADERS)) {
+      if (key === "email") continue;
       if (found[key] === undefined && patterns.some((p) => p.test(h))) found[key] = i;
     }
   });
@@ -132,11 +142,25 @@ for (let i = start; i < lines.length; i += 1) {
     const named = idx !== undefined ? parts[idx] : undefined;
     if (named && (!test || test.test(named))) return named;
     // No header for it, or the named cell was empty: fall back to shape, which
-    // works for emails and wallets and cannot work for a bare numeric id.
+    // works for wallets and cannot work for a bare id or handle.
     return test ? parts.find((c) => test.test(c)) : undefined;
   };
 
-  const email = at("email", EMAIL);
+  // Every email column, deduped: "Email" and "Google email" are usually the
+  // same address, and occasionally are not.
+  const emails = [
+    ...new Set(
+      (columns.email ?? [])
+        .map((i) => parts[i])
+        .filter((c) => c && EMAIL.test(c))
+        .map((c) => c.trim().toLowerCase())
+    ),
+  ];
+  if (emails.length === 0) {
+    const loose = parts.find((c) => EMAIL.test(c));
+    if (loose) emails.push(loose.trim().toLowerCase());
+  }
+
   const evm = at("evm", EVM) ?? "";
   const solana = at("solana", SOLANA) ?? "";
   // Only ever read from a named column: any other number in the row would
@@ -145,6 +169,10 @@ for (let i = start; i < lines.length; i += 1) {
     columns.xId !== undefined && X_ID.test(parts[columns.xId] ?? "")
       ? parts[columns.xId]
       : undefined;
+  const rawHandle = columns.xHandle !== undefined ? (parts[columns.xHandle] ?? "") : "";
+  const xHandle = X_HANDLE.test(rawHandle.replace(/^@/, ""))
+    ? rawHandle.replace(/^@/, "")
+    : undefined;
 
   // A user with no wallet on either chain never held money here, so the lookup
   // would answer "account, but nothing to move" — a dead end with a
@@ -153,17 +181,23 @@ for (let i = start; i < lines.length; i += 1) {
     skipped += 1;
     continue;
   }
-  if (!email && !xId) {
+  if (emails.length === 0 && !xId && !xHandle) {
     skipped += 1;
     continue;
   }
 
   users += 1;
-  if (email) withEmail += 1;
-  if (xId) withX += 1;
+  if (emails.length) withEmail += 1;
+  if (xId || xHandle) withX += 1;
 
-  // One row per identifier: the browser asking later may know either.
-  for (const identifier of [email, xId ? `x:${xId}` : undefined]) {
+  // One row per identifier: the browser asking later may know any of them.
+  // The id and the handle are both written where both exist, so a later
+  // export that gains ids keeps working without a re-key.
+  for (const identifier of [
+    ...emails,
+    xId ? `x:${xId}` : undefined,
+    xHandle ? `x:@${xHandle.toLowerCase()}` : undefined,
+  ]) {
     if (!identifier) continue;
     const key = hash(identifier);
     if (seen.has(key)) continue;
@@ -178,7 +212,7 @@ for (const row of out) console.log(row);
 
 console.error(`${users} users -> ${rows} rows (${withEmail} with an email, ${withX} with an X id)`);
 if (skipped) console.error(`skipped ${skipped} (no identifier, or no wallet on either chain)`);
-if (withX === 0 && columns.xId === undefined) {
+if (withX === 0 && columns.xId === undefined && columns.xHandle === undefined) {
   console.error(
     "WARNING: no X id column was matched. Legacy users who signed in with Twitter\n" +
       "         have no email, so they will be missing from this directory entirely.\n" +
