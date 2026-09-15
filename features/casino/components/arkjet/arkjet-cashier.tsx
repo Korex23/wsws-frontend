@@ -123,7 +123,7 @@ export function ArkjetCashier({ balance, minimumAmount, onClose }: ArkjetCashier
 
   const deposit = async () => {
     if (!normalized || !config) return;
-    const toastId = toast.loading("Sending Base USDC from your Privy wallet…");
+    const toastId = toast.loading("Sending USDC from your balance...");
     setAwaitingCredit(false);
     try {
       const result = await funding.deposit(depositUsdc);
