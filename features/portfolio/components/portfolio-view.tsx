@@ -54,7 +54,6 @@ import {
   selectHoldings,
   withoutServiceKnownMemes,
 } from "@/features/portfolio/lib/holdings";
-import { MemePositions } from "@/features/portfolio/components/meme-positions";
 import { useMemePortfolio } from "@/features/portfolio/hooks/use-meme-portfolio";
 import { canSellAsset } from "@/lib/sell";
 import { isPolymarketCollateral } from "@/lib/polymarket/config";
@@ -405,13 +404,9 @@ export function PortfolioView({
         </PromoRail>
       </div>
 
-      {/* Memecoins: positions, P&L and activity from the trade service, on the
-          desk and the phone alike (the section lays itself out for both). Sell
-          goes up through onOpenMemeSell to the app's modal host, which owns the
-          trade sheet; this feature never imports trade. */}
-      <div className="mt-[18px]">
-        <MemePositions onSell={onOpenMemeSell} />
-      </div>
+      {/* Memecoins live behind the balance card's coins button now, as the
+          Memecoins view of the holdings sheet (holdings-modal.tsx), not as a
+          section of this page. */}
 
       {/* Commented out for now, at explicit request — cross-border is still
           just a "coming soon" announcement banner, not a live flow. */}

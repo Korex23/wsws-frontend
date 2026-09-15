@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@/messages/en.json";
@@ -134,6 +134,22 @@ describe("SpotDesktopView columns", () => {
     expect(deskGrid()).toHaveClass("items-stretch");
     const panel = screen.getByRole("grid").parentElement?.parentElement;
     expect(panel).toHaveClass("self-stretch");
+  });
+});
+
+describe("SpotDesktopView chart", () => {
+  // The ticket opens on the chart for the token it trades. This market has no
+  // chart id, so the open panel says so rather than drawing an empty frame.
+  it("opens the ticket on the chart, and folds it away when asked", () => {
+    renderDesk();
+    const disclosure = within(ticket()).getByRole("button", { name: /View Chart/ });
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(
+      within(ticket()).getByText("No chart for T0 yet. You can still trade it.")
+    ).toBeInTheDocument();
+
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
   });
 });
 

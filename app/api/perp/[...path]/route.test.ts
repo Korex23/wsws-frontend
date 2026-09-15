@@ -115,12 +115,58 @@ describe("address-scoped reads", () => {
     expect(res.status).toBe(404);
     expect(wsapiPerpRequest).not.toHaveBeenCalled();
   });
+});
 
-  it("hides a deposit address from a request with no session", async () => {
-    verifyRequest.mockResolvedValue(null);
-    const path = `funding/deposit-address/${WALLET}`;
+// The funding rail is CCTP (llms.txt §6a). The Dextopus deposit-address rail
+// it replaced is no longer something the browser can reach.
+describe("the CCTP deposit rail", () => {
+  it("serves the deposit fee mode", async () => {
+    const res = await GET(get("ark/deposit/cctp/config"), ctx("ark/deposit/cctp/config"));
+    expect(res.status).toBe(200);
+    expect(wsapiPerpRequest).toHaveBeenCalledWith(
+      "ark/deposit/cctp/config",
+      expect.objectContaining({ method: "GET", revalidate: undefined })
+    );
+  });
+
+  it("serves a burn's status, never from a cache", async () => {
+    const path = `ark/deposit/cctp/status/0x${"ab".repeat(32)}`;
     const res = await GET(get(path), ctx(path));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(wsapiPerpRequest).toHaveBeenCalledWith(
+      path,
+      expect.objectContaining({ revalidate: undefined })
+    );
+  });
+
+  it("records a burn only for a signed-in session", async () => {
+    verifyRequest.mockResolvedValue(null);
+    const res = await POST(
+      post("ark/deposit/cctp/record", { walletId: "w1", burnTxHash: "0x1", amountUsdc: "10" }),
+      ctx("ark/deposit/cctp/record")
+    );
+    expect(res.status).toBe(401);
+    expect(wsapiPerpRequest).not.toHaveBeenCalled();
+  });
+
+  it("forwards a signed-in session's record", async () => {
+    const body = { walletId: "w1", burnTxHash: `0x${"ab".repeat(32)}`, amountUsdc: "10" };
+    const res = await POST(post("ark/deposit/cctp/record", body), ctx("ark/deposit/cctp/record"));
+    expect(res.status).toBe(200);
+    expect(wsapiPerpRequest).toHaveBeenCalledWith(
+      "ark/deposit/cctp/record",
+      expect.objectContaining({ method: "POST", body })
+    );
+  });
+
+  it("no longer offers the Dextopus deposit address or its status", async () => {
+    for (const path of [
+      `funding/deposit-address/${WALLET}`,
+      `funding/deposit-status/0x${"ab".repeat(32)}`,
+    ]) {
+      const res = await GET(get(path), ctx(path));
+      expect(res.status).toBe(404);
+    }
     expect(wsapiPerpRequest).not.toHaveBeenCalled();
   });
 });

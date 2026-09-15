@@ -20,6 +20,7 @@ import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { MemeSellPanel } from "@/features/trade/components/meme-sell-panel";
 import { MemeSettlementTracker } from "@/features/trade/components/meme-settlement-tracker";
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
+import { useCatalogLookahead } from "@/features/trade/hooks/use-catalog-lookahead";
 import {
   useMemeCatalog,
   useMemeSearch,
@@ -78,9 +79,9 @@ const USD_DECIMALS = 6;
 const CHART_DRAW_HEIGHT = 186;
 const CHART_AREA_HEIGHT = 248;
 
-// The chart pulls lightweight-charts (~168KB) and the panel starts collapsed,
-// so the bundle only arrives once someone opens "View Chart". Same reason the
-// spot desk and the modal host load their charts this way.
+// The chart pulls lightweight-charts (~168KB), so it loads as its own chunk
+// after the desk rather than inside the page's first bundle. The spot desk and
+// the modal host load their charts the same way.
 const AssetChart = dynamic(() => import("@/components/ui/asset-chart").then((m) => m.AssetChart), {
   ssr: false,
 });
@@ -421,7 +422,9 @@ function MemeDesk() {
   const [listPageSize, setListPageSize] = useState(MEME_LIST_PAGE_SIZE);
   const [picked, setPicked] = useState<MemeToken | null>(null);
   const [side, setSide] = useState<MemeTradeSide>("BUY");
-  const [chartOpen, setChartOpen] = useState(false);
+  // The rail opens on the chart: the price is what someone checks before a
+  // trade. Closing it still unmounts the chart (see MemeDeskChart).
+  const [chartOpen, setChartOpen] = useState(true);
   const [metricsOpen, setMetricsOpen] = useState(false);
   const [amount, setAmount] = useState("");
   // A Solana order is finished in the sheet; see runTrade below.
@@ -449,8 +452,8 @@ function MemeDesk() {
   const selected = listed && freshRead && sameCoin(freshRead, listed) ? freshRead : listed;
 
   // A new search or a new view is a different list, so the page someone was on
-  // says nothing about where to open it. "Load more" appends to the same list,
-  // so it keeps the page.
+  // says nothing about where to open it. A page loaded ahead appends to the
+  // same list, so it keeps the page.
   const listKey = `${view}|${query}`;
   const [pagedList, setPagedList] = useState(listKey);
   if (listKey !== pagedList) {
@@ -466,6 +469,31 @@ function MemeDesk() {
   const pageCount = Math.max(1, Math.ceil(rows.length / listPageSize));
   const page = Math.min(Math.max(1, requestedPage), pageCount);
   const pageRows = rows.slice((page - 1) * listPageSize, page * listPageSize);
+
+  // No "Load more": the next server page is fetched in the background while
+  // the reader is within a few pages of the end of what has loaded, so the
+  // numbered bar always has pages ahead to show. A search is its own complete
+  // list, so the catalogue is left alone while one is showing.
+  const catalogPaging = !search.active;
+  const lookahead = useCatalogLookahead({
+    enabled: catalogPaging,
+    pagesAhead: pageCount - page,
+    loaded: catalog.loaded,
+    shownCount: catalog.shownCount,
+    hasMore: catalog.hasMore,
+    isLoading: catalog.isLoading,
+    isLoadingMore: catalog.isLoadingMore,
+    failed: catalog.loadMoreFailed,
+    loadMore: catalog.loadMore,
+  });
+
+  function changePage(next: number) {
+    setRequestedPage(next);
+    // Past the last loaded page is the reader asking for rows that are not
+    // here yet. The lookahead may have paused on a run of empty server pages,
+    // so this asks outright; the page shows once its rows arrive.
+    if (next > pageCount && catalogPaging) lookahead.requestMore();
+  }
 
   const debouncedAmount = useDebouncedValue(amount, PREVIEW_DEBOUNCE_MS);
   const buying = side === "BUY";
@@ -635,12 +663,15 @@ function MemeDesk() {
         onRetry={search.active ? () => setQuery("") : () => void catalog.refetch()}
         page={page}
         pageCount={pageCount}
-        onPageChange={setRequestedPage}
+        onPageChange={changePage}
+        pageMore={catalogPaging && catalog.hasMore}
+        pageLoadingMore={catalogPaging && catalog.isLoadingMore}
         onPageSizeChange={setListPageSize}
         listControls={<MemeViewSwitch value={view} onChange={setView} />}
         listStatus={
-          // The count and "Load more" describe the catalogue; a search replaces
-          // it, so they step aside while one is showing.
+          // The count describes the catalogue; a search replaces it, so it
+          // steps aside while one is showing. Pages load ahead on their own, so
+          // the strip only offers a retry, for a page that failed.
           search.active ? null : (
             <MemeCatalogMore
               loaded={catalog.loaded}
@@ -649,7 +680,8 @@ function MemeDesk() {
               hasMore={catalog.hasMore}
               loadingMore={catalog.isLoadingMore}
               failed={catalog.loadMoreFailed}
-              onLoadMore={catalog.loadMore}
+              onLoadMore={lookahead.requestMore}
+              autoLoads
             />
           )
         }

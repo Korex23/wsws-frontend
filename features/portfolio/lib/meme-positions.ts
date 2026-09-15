@@ -1,6 +1,7 @@
 import { signOf } from "@/lib/meme/decimal";
 import type {
   MemeToken,
+  PortfolioChain,
   PortfolioPosition,
   TradeActivity,
   TradeActivityStatus,
@@ -39,6 +40,20 @@ export function positionToMemeToken(position: PortfolioPosition): MemeToken {
     sellEnabled: position.sellEnabled,
     warnings: position.warnings,
   };
+}
+
+/**
+ * The logo to draw for a memecoin. The service's own URL when it sent one,
+ * otherwise the app's token-logo route, which looks the contract up the way
+ * every other held asset's logo is found. The route's chain names match the
+ * service's ("base", "solana"), and a Solana mint is passed exactly as written.
+ */
+export function memeLogoUrl(
+  chain: PortfolioChain,
+  address: string,
+  serviceLogo: string | null
+): string {
+  return serviceLogo ?? `/api/token-logo/${chain}/${encodeURIComponent(address)}`;
 }
 
 /** The colour of a signed figure: green up, red down, neutral for zero or none. */

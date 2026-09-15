@@ -37,9 +37,9 @@ import { usePortfolio } from "@/hooks/use-portfolio";
 import { formatCompactUsd, formatUsd, fromBaseUnits, toBaseUnits } from "@/lib/trade/math";
 import type { SellPayload } from "@/lib/modal-types";
 
-// Dynamic: the chart pulls lightweight-charts (~168KB) and the panel starts
-// collapsed, so the bundle only arrives once someone opens "View Chart". The
-// same reason the modal host and the pro desk load their charts this way.
+// Dynamic: the chart pulls lightweight-charts (~168KB), so it loads as its own
+// chunk after the desk rather than inside the page's first bundle. The modal
+// host and the pro desk load their charts the same way.
 const AssetChart = dynamic(() => import("@/components/ui/asset-chart").then((m) => m.AssetChart), {
   ssr: false,
 });
@@ -197,7 +197,8 @@ export function SpotDesktopView({ onAddFunds }: SpotDesktopViewProps = {}) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [requestedPage, setRequestedPage] = useState(1);
-  const [chartExpanded, setChartExpanded] = useState(false);
+  // The ticket opens on the chart: the price is in view before a trade.
+  const [chartExpanded, setChartExpanded] = useState(true);
   const [amount, setAmount] = useState("");
   const [side, setSide] = useState<SpotSide>("buy");
   // Clearing on a side change is not cosmetic: the legs are denominated in
@@ -579,8 +580,9 @@ const SKELETON_FILL = "animate-pulse rounded bg-white/6";
 // wins), which is why copying it, and not a pixel figure, keeps the two in step
 // when the table's type changes again.
 //
-// The chart is not drawn here: it starts collapsed, so the real desk has none
-// on arrival either.
+// The ticket opens on its chart, so the placeholder holds the chart's room
+// too: the drawing area and the range row above it, as the memecoin desk
+// measures them (186px of drawing to 248px of area, a 62px range row).
 //
 // The row count is the same fitted count the real table pages at, and the same
 // ref reads it: only one of the two panels is ever mounted, so one measurement
@@ -665,6 +667,7 @@ function DeskSkeleton({
       </div>
       <div className={`${TICKET_PANEL} gap-4`}>
         <div className="h-[40px] animate-pulse rounded-2xl bg-white/6" />
+        <div className="rounded-card h-[262px] animate-pulse bg-white/6" />
         <div className="rounded-card h-[104px] animate-pulse bg-white/6" />
         <div className="rounded-card h-[92px] animate-pulse bg-white/6" />
         <div className="rounded-card mt-auto h-[76px] animate-pulse bg-white/6" />

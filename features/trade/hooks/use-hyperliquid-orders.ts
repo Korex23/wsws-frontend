@@ -4,11 +4,11 @@ import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listOrders } from "@/features/trade/lib/hyperliquid-api";
 import type { HlOrderRow } from "@/features/trade/lib/hyperliquid-types";
+import { ordersRefetchInterval } from "@/features/trade/lib/perps-polling";
 
-// No background poll — same reasoning as use-hyperliquid-positions.ts:
-// every action this app takes (place, cancel, close, TP/SL) already
-// refetches explicitly, and refetchOnWindowFocus/refetchOnReconnect
-// (lib/query-client.ts) still catch anything that changed externally.
+// Every order the wallet has, resting or not. Each action the desk takes
+// refetches this; the background poll only watches for a resting order that
+// fills or is cancelled with no click here, and only while one rests.
 const SETTLE_POLL_MS = 3_000;
 const SETTLE_MAX_ATTEMPTS = 10;
 
@@ -21,9 +21,7 @@ export function useHyperliquidOrders(walletId: string | null, enabled = true) {
     queryKey: ["hl-orders", walletId],
     queryFn: () => listOrders(walletId as string),
     enabled: enabled && walletId != null,
-    // Same rationale as the positions poll: reconciliation resolves stale
-    // orders server-side and the panel must notice without a click.
-    refetchInterval: 15_000,
+    refetchInterval: (query) => ordersRefetchInterval(query.state.data),
   });
 
   // Mirrors use-hyperliquid-positions.ts's waitForChange — listOrders returns

@@ -81,7 +81,8 @@ export function MemeBoard() {
   const [picked, setPicked] = useState<MemeToken | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
-  const [chartOpen, setChartOpen] = useState(false);
+  // The ticket opens on the chart, as on the desk: the price is in view first.
+  const [chartOpen, setChartOpen] = useState(true);
   const [metricsOpen, setMetricsOpen] = useState(false);
   const [amount, setAmount] = useState("");
   // A Solana order is finished in the sheet; see runTrade below.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePrivy } from "@privy-io/react-auth";
 import { useHyperliquidWallet } from "@/features/trade/hooks/use-hyperliquid-wallet";
 import {
@@ -11,12 +12,15 @@ import {
 import { useHyperliquidPositions } from "@/features/trade/hooks/use-hyperliquid-positions";
 import { useHyperliquidOrders } from "@/features/trade/hooks/use-hyperliquid-orders";
 import { useHyperliquidActions } from "@/features/trade/lib/hyperliquid-actions";
+import { isRestingOrder } from "@/features/trade/lib/hyperliquid-types";
+import { perpsBalanceQueryKey } from "@/hooks/use-global-balance";
 
 // Everything both the simple and pro Hyperliquid views need: wallet identity,
 // funding, market data, positions/orders, and the write actions — one call
 // instead of each view independently wiring the same eight hooks.
 export function useHyperliquidTrading() {
   const { authenticated } = usePrivy();
+  const queryClient = useQueryClient();
   const { walletId, address, loading: walletLoading, error: walletError } = useHyperliquidWallet();
   const { assets, loading: assetsLoading } = useHyperliquidAssets();
   const { prices } = useHyperliquidPrices(authenticated);
@@ -25,18 +29,20 @@ export function useHyperliquidTrading() {
     loading: clearinghouseLoading,
     refetch: refetchClearinghouse,
   } = useHyperliquidClearinghouse(address, authenticated);
-  const {
-    positions,
-    loading: positionsLoading,
-    refetch: refetchPositions,
-    waitForChange: waitForPositionsChange,
-  } = useHyperliquidPositions(walletId, authenticated);
+  // Orders first: whether one is resting decides whether positions keep
+  // polling before a position exists.
   const {
     orders,
     loading: ordersLoading,
     refetch: refetchOrders,
     waitForChange: waitForOrdersChange,
   } = useHyperliquidOrders(walletId, authenticated);
+  const {
+    positions,
+    loading: positionsLoading,
+    refetch: refetchPositions,
+    waitForChange: waitForPositionsChange,
+  } = useHyperliquidPositions(walletId, authenticated, orders.some(isRestingOrder));
   const actions = useHyperliquidActions(walletId ?? undefined, address ?? undefined);
 
   // One check per wallet, on load — not a running poll. Picks up a
@@ -53,8 +59,19 @@ export function useHyperliquidTrading() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletId]);
 
-  const refetchAll = () => {
+  // A trade opening or closing moves margin, positions and orders at once, so
+  // refetchAll refreshes all three. A narrower action refreshes only what it
+  // changed (llms.txt §10): a cancel or trigger edit the orders, a top-up or
+  // withdrawal the clearinghouse balance.
+  // The perps balance on the balance card (useGlobalBalance) is not polled,
+  // so whatever moves perps money refreshes it here too.
+  const refreshBalances = () => {
     void refetchClearinghouse();
+    void queryClient.invalidateQueries({ queryKey: perpsBalanceQueryKey() });
+  };
+
+  const refetchAll = () => {
+    refreshBalances();
     void refetchPositions();
     void refetchOrders();
   };
@@ -76,6 +93,10 @@ export function useHyperliquidTrading() {
     ordersLoading,
     actions,
     refetchAll,
+    refreshBalances,
+    refetchClearinghouse,
+    refetchPositions,
+    refetchOrders,
     waitForPositionsChange,
     waitForOrdersChange,
   };

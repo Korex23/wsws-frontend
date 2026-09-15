@@ -52,6 +52,10 @@ export function useHyperliquidClearinghouse(address: string | null, enabled = tr
     queryKey: ["hl-clearinghouse", address],
     queryFn: () => getAccountState(address as string),
     enabled: enabled && address != null,
+    // Never on a timer (llms.txt §10). It refreshes after a trade or a money
+    // move, and when the reader comes back to the tab, which the app-wide
+    // query client does not do by default.
+    refetchOnWindowFocus: true,
   });
   return { state: query.data ?? null, loading: query.isLoading, refetch: query.refetch };
 }

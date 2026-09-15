@@ -522,7 +522,7 @@ describe("PerpOrderTicket", () => {
     expect(sell).toBeEnabled();
     expect(
       screen.getByText(
-        "More than your HyperCore margin. The rest is bridged when you place the order."
+        "More than your perps margin. The rest is moved over when you place the order."
       )
     ).toBeInTheDocument();
 
@@ -540,7 +540,7 @@ describe("PerpOrderTicket", () => {
       const ids = (action.getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean);
       const texts = ids.map((id) => document.getElementById(id)?.textContent ?? "");
       expect(texts).toContain(
-        "More than your HyperCore margin. The rest is bridged when you place the order."
+        "More than your perps margin. The rest is moved over when you place the order."
       );
     }
   });
@@ -562,7 +562,7 @@ describe("PerpOrderTicket", () => {
     expect(screen.getByText("Not enough USDC")).toBeInTheDocument();
     expect(
       screen.queryByText(
-        "More than your HyperCore margin. The rest is bridged when you place the order."
+        "More than your perps margin. The rest is moved over when you place the order."
       )
     ).not.toBeInTheDocument();
   });
@@ -600,7 +600,7 @@ describe("PerpOrderTicket", () => {
     expect(sell).toBeDisabled();
     expect(
       screen.getByText(
-        "More than your HyperCore margin. The rest is bridged when you place the order."
+        "More than your perps margin. The rest is moved over when you place the order."
       )
     ).toBeInTheDocument();
     expect(screen.getByText("Sell: Take profit sits above the entry price")).toBeInTheDocument();

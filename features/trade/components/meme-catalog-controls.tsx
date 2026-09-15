@@ -48,6 +48,9 @@ export function MemeViewSwitch({
 // "500 of 11,502": the rows loaded against the server's total, which is what
 // the catalogue's size actually is, and beside it how many the view shows.
 // "Load more" asks for the next page of 500 until the pages cover the total.
+// A list that loads its pages ahead on its own (the desk, with its numbered
+// pager) passes `autoLoads`: the button goes, the strip says when a page is
+// loading, and a failed page gets a retry instead.
 // Nothing is drawn before the first page has said what the total is.
 export function MemeCatalogMore({
   loaded,
@@ -57,6 +60,7 @@ export function MemeCatalogMore({
   loadingMore,
   failed,
   onLoadMore,
+  autoLoads = false,
   className = "",
 }: {
   loaded: number;
@@ -67,6 +71,8 @@ export function MemeCatalogMore({
   /** The last "Load more" failed; the pages already held stay on screen. */
   failed: boolean;
   onLoadMore: () => void;
+  /** Pages load as the reader reaches them; there is no Load more to press. */
+  autoLoads?: boolean;
   className?: string;
 }) {
   const t = useTranslations("meme");
@@ -85,7 +91,20 @@ export function MemeCatalogMore({
         <span>{t("catalogShown", { shown: format.number(shownCount) })}</span>
       </span>
       {failed ? <span role="status">{t("catalogMoreFailed")}</span> : null}
-      {hasMore ? (
+      {autoLoads ? (
+        failed && hasMore ? (
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="cursor-pointer rounded-full border border-white/15 px-3 py-1 text-[11.5px] font-medium text-white/80 transition-colors hover:border-white/30 hover:text-white disabled:cursor-default disabled:opacity-60"
+          >
+            {t("retry")}
+          </button>
+        ) : loadingMore ? (
+          <span role="status">{t("catalogLoadingMore")}</span>
+        ) : null
+      ) : hasMore ? (
         <button
           type="button"
           onClick={onLoadMore}

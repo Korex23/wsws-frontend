@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { friendlyError } from "@/lib/errors";
+import { scrubVenue } from "@/features/trade/lib/venue-scrub";
 import type { HlPositionView, HlTriggerKind } from "@/features/trade/lib/hyperliquid-types";
 
 export interface TriggerModalTarget {
@@ -103,7 +104,7 @@ function TriggerModalBody({
       await onSave(position, kind, price, target.existingOrderId);
       close();
     } catch (err) {
-      setError(friendlyError(err, "Failed to update."));
+      setError(scrubVenue(friendlyError(err, "Failed to update.")));
       setBusy(false);
     }
   };

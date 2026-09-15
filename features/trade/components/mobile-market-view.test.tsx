@@ -157,6 +157,13 @@ vi.mock("@/features/trade/components/meme-trade-ticket", () => ({
 const memeSheetProps = vi.hoisted(() => ({
   last: null as { token: { symbol: string }; defaultSide?: string } | null,
 }));
+// The memecoin ticket opens on its chart, which resolves a CoinGecko id over
+// the network. This suite is about the tab's wiring, so the lookup answers
+// "not listed" and the chart draws its own empty state.
+vi.mock("@/hooks/use-coingecko-id", () => ({
+  useCoingeckoId: () => ({ id: null, loading: false }),
+}));
+
 vi.mock("@/features/trade/components/meme-trade-sheet", () => ({
   MemeTradeSheet: (props: {
     token: { symbol: string };
@@ -693,6 +700,26 @@ describe("MobileMarketView, the memecoin tap-to-screen ticket", () => {
     expect(screen.getByTestId("meme-trade-ticket")).toBeInTheDocument();
     expect(memeTicketProps.last?.token.symbol).toBe("PEPE");
     expect(memeMarketList()).not.toBeVisible();
+  });
+
+  // The phone ticket opens on the coin's chart, as the desk's rail does. The
+  // chart unmounts when folded, so a closed row resolves and draws nothing.
+  it("opens the ticket on the coin's chart, and folds it away on request", () => {
+    memes.tokens = [memeToken({ symbol: "PEPE", name: "Pepe" })];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    fireEvent.click(screen.getByText("PEPE"));
+
+    const close = screen.getByRole("button", { name: "Close Chart" });
+    expect(close).toHaveAttribute("aria-expanded", "true");
+    expect(document.querySelector('[data-region="meme-chart"]')).not.toBeNull();
+
+    fireEvent.click(close);
+    expect(screen.getByRole("button", { name: "View Chart" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+    expect(document.querySelector('[data-region="meme-chart"]')).toBeNull();
   });
 
   it("comes back to the memecoin list from the ticket without leaving the page", () => {

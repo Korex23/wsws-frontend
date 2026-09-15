@@ -5,6 +5,7 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { formatAmount } from "@/lib/trade/math";
 import { friendlyError } from "@/lib/errors";
+import { scrubVenue } from "@/features/trade/lib/venue-scrub";
 import type { HlPositionView } from "@/features/trade/lib/hyperliquid-types";
 
 interface HyperliquidClosePositionModalProps {
@@ -33,7 +34,7 @@ export function HyperliquidClosePositionModal({
       await onConfirm(position);
       onClose();
     } catch (err) {
-      setError(friendlyError(err, "Failed to close position."));
+      setError(scrubVenue(friendlyError(err, "Failed to close position.")));
     } finally {
       setBusy(false);
     }

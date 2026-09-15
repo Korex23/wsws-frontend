@@ -192,6 +192,9 @@ const SKELETON_FILL = "animate-pulse rounded bg-white/6";
 // The row count is the same fitted count the real table pages at, and the same
 // ref reads it: only one of the two panels is ever mounted, so one measurement
 // serves both and the list does not change length when the assets land.
+//
+// The ticket opens on its price chart, so the ticket placeholder holds the
+// chart's 200px too, the height the chart and its loading state both draw at.
 function DeskSkeleton({
   label,
   rows,
@@ -268,6 +271,7 @@ function DeskSkeleton({
       </div>
       <div className={`${TICKET_PANEL} gap-4`}>
         <div className="h-[40px] animate-pulse rounded-2xl bg-white/6" />
+        <div className="rounded-card h-[200px] animate-pulse bg-white/6" />
         <div className="rounded-card h-[104px] animate-pulse bg-white/6" />
         <div className="rounded-card h-[92px] animate-pulse bg-white/6" />
         <div className="rounded-card mt-auto h-[76px] animate-pulse bg-white/6" />

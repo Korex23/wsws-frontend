@@ -31,12 +31,14 @@ export function rwaRevalidate(path: string): number | undefined {
   return undefined;
 }
 
-// The perp surface: funding (Base -> Arbitrum) plus Ark's own reads and
-// prepare/submit write pairs (see apps/perp's own README for the signing
-// model: every write is signed client-side, this backend never forwards a
-// private key).
+// The perp surface: Ark's own reads and prepare/submit write pairs (see
+// apps/perp's own README for the signing model: every write is signed
+// client-side, this backend never forwards a private key), and the CCTP
+// deposit rail (Base -> HyperCore, llms.txt §6a). The Dextopus funding paths
+// it replaced are deliberately absent: the backend keeps them only as its own
+// fallback, and nothing in this app calls them.
 const PERP_ALLOWED =
-  /^(health|funding\/deposit-address\/[^/]+|funding\/deposit-status\/[^/]+|ark\/wallet\/[^/]+|ark\/assets|ark\/prices|ark\/market-contexts|ark\/funding-history\/[^/]+|ark\/candles\/[^/]+|ark\/account-state\/[^/]+|ark\/arbitrum-balance\/[^/]+|ark\/wallets\/[^/]+\/(positions|positions\/closed|orders|builder-fee|abstraction-mode|withdrawals\/pending)|ark\/orders\/(prepare|submit|cancel\/(prepare|submit)|trigger\/(prepare|submit))|ark\/leverage\/(prepare|submit)|ark\/bridge\/(prepare|confirm)|ark\/dex-transfer\/(prepare|submit)|ark\/withdrawals\/(prepare|submit)|ark\/positions\/close\/(prepare|submit)|ark\/builder-fee\/(prepare|submit)|ark\/abstraction-mode\/(prepare|submit))$/;
+  /^(health|ark\/wallet\/[^/]+|ark\/assets|ark\/prices|ark\/market-contexts|ark\/funding-history\/[^/]+|ark\/candles\/[^/]+|ark\/account-state\/[^/]+|ark\/arbitrum-balance\/[^/]+|ark\/wallets\/[^/]+\/(positions|positions\/closed|orders|builder-fee|abstraction-mode|withdrawals\/pending)|ark\/orders\/(prepare|submit|cancel\/(prepare|submit)|trigger\/(prepare|submit))|ark\/leverage\/(prepare|submit)|ark\/bridge\/(prepare|confirm)|ark\/dex-transfer\/(prepare|submit)|ark\/withdrawals\/(prepare|submit)|ark\/deposit\/cctp\/(config|record|status\/[^/]+)|ark\/positions\/close\/(prepare|submit)|ark\/builder-fee\/(prepare|submit)|ark\/abstraction-mode\/(prepare|submit))$/;
 
 export function isAllowedPerpPath(path: string): boolean {
   // Same traversal guard as the RWA allowlist: a raw ".." or encoded segment

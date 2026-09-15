@@ -1,15 +1,28 @@
 "use client";
 
-import { useCallback } from "react";
-import { useEvmSend } from "@/hooks/use-evm-send";
-import { useReroutedWithdraw } from "@/hooks/use-withdraw";
+import { useCallback, useMemo } from "react";
+import type { Address } from "viem";
+import { useEvmSend, useEvmSendBatch } from "@/hooks/use-evm-send";
+import { getCctpFeeQuote, lookupCctpAttestation } from "@/features/trade/lib/cctp-api";
+import {
+  burnBaseUsdcToPerps,
+  sendArbitrumUsdcToBase,
+  type ArbitrumToBaseStep,
+  type CctpTransferDeps,
+} from "@/features/trade/lib/cctp-transfers";
 import { useHyperliquidSigner } from "@/features/trade/lib/hyperliquid-signer";
+import {
+  PERPS_PLATFORM_WITHDRAWAL_FEE_USDC,
+  planWithdrawal,
+} from "@/features/trade/lib/perps-withdrawal";
 import {
   confirmBridge,
   getAbstractionModeStatus,
   getAccountState,
   getArbitrumBalance,
   getBuilderFeeStatus,
+  getCctpDepositConfig,
+  getCctpDepositStatus,
   getPendingWithdrawal,
   prepareAbstractionMode,
   prepareBridge,
@@ -21,6 +34,7 @@ import {
   prepareOrder,
   prepareTriggerOrder,
   prepareWithdrawal,
+  recordCctpDeposit,
   submitAbstractionMode,
   submitBuilderFeeApproval,
   submitCancelOrder,
@@ -33,6 +47,7 @@ import {
 } from "@/features/trade/lib/hyperliquid-api";
 import {
   isInsufficientMarginDetails,
+  type CctpDepositMovementStatus,
   type HlAbstractionModeStatus,
   type HlMarginMode,
   type HlOrderRow,
@@ -57,6 +72,44 @@ const MARGIN_POLL_INTERVAL_MS = 4_000;
 // own ARK_WITHDRAWAL_CONFIRMATION_TIMEOUT_MS) — a shorter shared timeout here
 // would give up on a withdrawal that's still genuinely in flight.
 const WITHDRAWAL_POLL_TIMEOUT_MS = 240_000;
+const USDC_DECIMALS = 6;
+
+/** What a withdrawal is doing, for the modal to put into words. */
+export type WithdrawStep = "withdrawing" | "waiting" | ArbitrumToBaseStep;
+
+/** What a top-up is doing, for the modal to put into words. */
+export type DepositStage = "sending" | "recording" | "confirming";
+
+/**
+ * How a top-up ended, once the Base burn has happened. The burn is the point of
+ * no return, so none of these is an error: each tells the modal what to say,
+ * and every one carries the burn hash to trace the deposit by.
+ */
+export type DepositOutcome =
+  | { kind: "credited"; burnTxHash: string }
+  | { kind: "pending"; burnTxHash: string }
+  | { kind: "recordFailed"; burnTxHash: string }
+  | {
+      kind: "failed";
+      burnTxHash: string;
+      status: Exclude<CctpDepositMovementStatus, "pending" | "confirmed">;
+    };
+
+export interface DepositTiming {
+  /** Waits between attempts to record the burn; attempts = length + 1. */
+  recordRetryDelaysMs: number[];
+  statusIntervalMs: number;
+  statusTimeoutMs: number;
+}
+
+// Recording is what tells the backend to relay a platform-paid mint, so it is
+// worth a few tries. The credit typically lands in under a minute; three
+// minutes only bounds the wait, it never fails the deposit.
+const DEFAULT_DEPOSIT_TIMING: DepositTiming = {
+  recordRetryDelaysMs: [1_000, 3_000],
+  statusIntervalMs: 3_000,
+  statusTimeoutMs: 180_000,
+};
 
 // Wallets confirmed to have approved the platform's builder fee (see
 // ensureBuilderFeeApproved below) — module-scoped so it's checked at most
@@ -79,11 +132,17 @@ export function useHyperliquidActions(walletId: string | undefined, address: str
     signSetAbstractionMode,
   } = useHyperliquidSigner(address);
   const evmSend = useEvmSend();
-  // Continues a withdrawal's last hop (HyperCore -> Arbitrum, Hyperliquid's
-  // own withdraw3, which can only ever settle to Arbitrum) on to Base, the
-  // chain funding actually originates from — reusing the same generic
-  // deposit-pipeline-in-reverse the funds page already ships with.
-  const { withdraw: sendArbitrumBalanceToBase } = useReroutedWithdraw("withdrawal");
+  const evmSendBatch = useEvmSendBatch();
+  // The CCTP transfers (cctp-transfers.ts) run on the user's sponsored wallet
+  // batch and reach Circle only through the app's /api/cctp proxy.
+  const cctpDeps = useMemo<CctpTransferDeps>(
+    () => ({
+      sendBatch: evmSendBatch,
+      feeQuote: getCctpFeeQuote,
+      lookupAttestation: lookupCctpAttestation,
+    }),
+    [evmSendBatch]
+  );
 
   // Bridges the wallet's full Arbitrum USDC balance to HyperCore — eager, not
   // deferred (see BridgeService on the backend): the only caller is the
@@ -283,35 +342,56 @@ export function useHyperliquidActions(walletId: string | undefined, address: str
     [walletId, signL1]
   );
 
-  // `onStatus` mirrors placeOrder's own progress callback — this can run for
-  // up to several minutes (Hyperliquid's own withdrawal confirmation window,
-  // ARK_WITHDRAWAL_CONFIRMATION_TIMEOUT_MS on the backend, matched here by
-  // WITHDRAWAL_POLL_TIMEOUT_MS) before it continues on to Base, so the UI
-  // needs something better to show than a static spinner. If this window
-  // still isn't enough, useWithdrawalResume picks the withdrawal back up
-  // the next time the wallet panel loads — see hyperliquid-actions.ts's
-  // own note there.
+  // A withdrawal (llms.txt §6b). `total` is what leaves the perps wallet: the
+  // withdraw3 carries it less the platform fee, which travels as its own
+  // signed sendAsset. `onStatus` reports each step for the modal to word; the
+  // venue's finalization alone takes a couple of minutes.
   const withdraw = useCallback(
     async (
-      amountUsdc: string,
-      onStatus?: (status: string) => void
+      total: string,
+      onStatus?: (step: WithdrawStep) => void
     ): Promise<{ treasuryMovementId: string }> => {
       if (!walletId) throw new Error("Wallet is not ready yet.");
-      onStatus?.("Withdrawing…");
+      // The modal checks the total against the free balance; this guards the
+      // minimum, which is all it can know on its own.
+      let plan = planWithdrawal({ total, withdrawable: total });
+      if (plan.kind !== "ok") throw new Error("That amount is below the minimum withdrawal.");
+
+      onStatus?.("withdrawing");
       const startingArbitrumBalance = address
         ? await getArbitrumBalance(address).catch(() => null)
         : null;
-      const prepared = await prepareWithdrawal(walletId, amountUsdc);
-      const signature = await signWithdrawal(prepared.action);
-      const result = await submitWithdrawal(walletId, prepared.action, signature);
 
-      // The withdrawal above has already succeeded by this point — Hyperliquid
-      // accepted it and the funds are on their way to the user's own wallet.
-      // Everything from here is a best-effort continuation: if it fails or
-      // times out, the money is still safe, just one hop short of home, so
-      // none of this is allowed to throw back out of `withdraw`.
+      // prepare takes the withdraw3 amount itself, so the platform fee is
+      // subtracted before it. The backend is the authority on that fee: if it
+      // prepared a different one (or none), prepare again with its figure so
+      // the total that leaves the wallet is still exactly the typed amount.
+      let prepared = await prepareWithdrawal(walletId, plan.withdraw3Amount);
+      const preparedFee = prepared.fee?.amountUsdc ?? "0";
+      const assumedFee = toBaseUnits(PERPS_PLATFORM_WITHDRAWAL_FEE_USDC, USDC_DECIMALS);
+      if (toBaseUnits(preparedFee, USDC_DECIMALS) !== assumedFee) {
+        plan = planWithdrawal({ total, withdrawable: total, platformFee: preparedFee });
+        if (plan.kind !== "ok") throw new Error("That amount is below the minimum withdrawal.");
+        prepared = await prepareWithdrawal(walletId, plan.withdraw3Amount);
+        const refreshedFee = toBaseUnits(prepared.fee?.amountUsdc ?? "0", USDC_DECIMALS);
+        if (refreshedFee !== toBaseUnits(preparedFee, USDC_DECIMALS)) {
+          throw new Error("The withdrawal fee changed. Try again.");
+        }
+      }
+
+      const signature = await signWithdrawal(prepared.withdraw.action);
+      const fee = prepared.fee
+        ? { action: prepared.fee.action, signature: await signDexTransfer(prepared.fee.action) }
+        : null;
+      const result = await submitWithdrawal(walletId, prepared.withdraw.action, signature, fee);
+
+      // The withdrawal has succeeded by this point: the venue accepted it and
+      // the funds are on their way to the user's own Arbitrum wallet. What
+      // follows only brings them the last hop home, so it never throws back
+      // out of `withdraw`. If it cannot finish, resumeWithdrawal picks it up on
+      // the next load.
       if (address && startingArbitrumBalance !== null) {
-        onStatus?.("Waiting for funds…");
+        onStatus?.("waiting");
         const startingRaw = toBaseUnits(startingArbitrumBalance, SETTLE_CHAINS.arbitrum.decimals);
         const deadline = Date.now() + WITHDRAWAL_POLL_TIMEOUT_MS;
         let creditedRaw = 0n;
@@ -327,64 +407,111 @@ export function useHyperliquidActions(walletId: string | undefined, address: str
         }
 
         if (creditedRaw > 0n) {
-          onStatus?.("Moving funds to your main wallet…");
-          await sendArbitrumBalanceToBase({
-            originNetwork: SETTLE_CHAINS.arbitrum.alchemyNetwork,
-            originChainId: SETTLE_CHAINS.arbitrum.chainId,
-            originTokenAddress: SETTLE_CHAINS.arbitrum.usdc,
-            originDecimals: SETTLE_CHAINS.arbitrum.decimals,
-            destinationChainId: SETTLE_CHAINS.base.chainId,
-            destinationAsset: SETTLE_CHAINS.base.usdc,
-            to: address,
+          await sendArbitrumUsdcToBase(cctpDeps, {
             amount: creditedRaw,
-            refundTo: address,
-          }).catch(() => {
-            // Fail soft — see the comment above this block.
+            recipient: address as Address,
+            onStatus,
+          }).catch((error) => {
+            console.warn("Withdrawal reached Arbitrum; the move to Base will resume later", error);
           });
         }
       }
 
       return result;
     },
-    [walletId, address, signWithdrawal, sendArbitrumBalanceToBase]
+    [walletId, address, signWithdrawal, signDexTransfer, cctpDeps]
   );
 
-  // Catches up a withdrawal whose Arbitrum -> Base leg never finished (see
-  // WithdrawalService.getPendingWithdrawal on the backend) — `withdraw`'s
-  // own poll above only continues the leg if it catches the credit live;
-  // closing the tab, or the credit simply taking longer than the poll
-  // window, leaves funds sitting on Arbitrum with nothing left to move
-  // them. Meant to be called once when the wallet loads (see
-  // useWithdrawalResume). Deliberately gated on the backend already
-  // knowing about an unresolved WITHDRAWAL-direction movement, never on
-  // "there happens to be an Arbitrum balance" alone — a wallet mid-FUNDING
-  // (a different movement type) also has a nonzero Arbitrum balance, and
-  // this must never redirect that to Base instead of letting it bridge to
-  // HyperCore. Silent no-op otherwise; never surfaces an error, since a
-  // background catch-up check failing is not something a page load should
-  // interrupt the user over — the funds are exactly as safe as before.
+  // Catches up a withdrawal whose Arbitrum -> Base leg never finished: closing
+  // the tab, or a credit slower than withdraw's own poll, leaves the funds on
+  // Arbitrum with nothing left to move them. Called once when the wallet loads
+  // (see useHyperliquidTrading). Gated strictly on the backend knowing of an
+  // unresolved withdrawal, never on "there is an Arbitrum balance" alone
+  // (llms.txt §6b): a wallet mid-funding also has one, and that must not be
+  // sent to Base. A page load is never interrupted by this; failures are logged.
   const resumeWithdrawal = useCallback(async (): Promise<void> => {
     if (!walletId || !address) return;
     try {
       const pending = await getPendingWithdrawal(walletId);
       if (!pending) return;
-      const balance = await getArbitrumBalance(address).catch(() => null);
-      if (balance === null || Number(balance) <= 0) return;
-      await sendArbitrumBalanceToBase({
-        originNetwork: SETTLE_CHAINS.arbitrum.alchemyNetwork,
-        originChainId: SETTLE_CHAINS.arbitrum.chainId,
-        originTokenAddress: SETTLE_CHAINS.arbitrum.usdc,
-        originDecimals: SETTLE_CHAINS.arbitrum.decimals,
-        destinationChainId: SETTLE_CHAINS.base.chainId,
-        destinationAsset: SETTLE_CHAINS.base.usdc,
-        to: address,
-        amount: toBaseUnits(balance, SETTLE_CHAINS.arbitrum.decimals),
-        refundTo: address,
-      });
-    } catch {
-      // Best-effort — see the comment above.
+      const balance = await getArbitrumBalance(address);
+      const balanceRaw = toBaseUnits(balance, SETTLE_CHAINS.arbitrum.decimals);
+      if (balanceRaw <= 0n) return;
+      await sendArbitrumUsdcToBase(cctpDeps, { amount: balanceRaw, recipient: address as Address });
+    } catch (error) {
+      console.warn("Could not resume a pending withdrawal; it will be tried again", error);
     }
-  }, [walletId, address, sendArbitrumBalanceToBase]);
+  }, [walletId, address, cctpDeps]);
+
+  // A top-up (llms.txt §6a): read who pays the mint relay, burn Base USDC to
+  // the perps balance in one sponsored batch, record the burn, then follow it
+  // to the credit. Throws only before the burn (nothing has moved yet); after
+  // the burn it always resolves an outcome, because the money is already on
+  // its way and an error would misstate that.
+  const depositToPerps = useCallback(
+    async (
+      amountUsdc: string,
+      onStage?: (stage: DepositStage) => void,
+      timing: DepositTiming = DEFAULT_DEPOSIT_TIMING
+    ): Promise<DepositOutcome> => {
+      if (!walletId || !address) throw new Error("Wallet is not ready yet.");
+      const amount = toBaseUnits(amountUsdc, USDC_DECIMALS);
+      if (amount <= 0n) throw new Error("Enter an amount to top up.");
+
+      const config = await getCctpDepositConfig();
+      const withdrawableBefore = await getAccountState(address)
+        .then((state) => toBaseUnits(state.withdrawable, USDC_DECIMALS))
+        .catch(() => null);
+
+      onStage?.("sending");
+      const burnTxHash = await burnBaseUsdcToPerps(cctpDeps, {
+        amount,
+        recipient: address as Address,
+        userPaysForward: config.userPaysDepositFee,
+      });
+
+      onStage?.("recording");
+      let recorded = false;
+      for (let attempt = 0; attempt <= timing.recordRetryDelaysMs.length; attempt++) {
+        try {
+          await recordCctpDeposit(walletId, burnTxHash, amountUsdc);
+          recorded = true;
+          break;
+        } catch (error) {
+          console.warn(`Recording deposit ${burnTxHash} failed (attempt ${attempt + 1})`, error);
+          const wait = timing.recordRetryDelaysMs[attempt];
+          if (wait !== undefined) await delay(wait);
+        }
+      }
+      if (!recorded) return { kind: "recordFailed", burnTxHash };
+
+      onStage?.("confirming");
+      const deadline = Date.now() + timing.statusTimeoutMs;
+      let lastPollError: unknown = null;
+      while (Date.now() < deadline) {
+        // A failed poll tick is retried on the next one; the deadline bounds
+        // it, and the last failure is reported if the wait runs out.
+        const status = await getCctpDepositStatus(burnTxHash).catch((error) => {
+          lastPollError = error;
+          return null;
+        });
+        if (status?.status === "confirmed") return { kind: "credited", burnTxHash };
+        if (status?.status === "failed" || status?.status === "stuck") {
+          return { kind: "failed", burnTxHash, status: status.status };
+        }
+        if (withdrawableBefore !== null) {
+          const now = await getAccountState(address)
+            .then((state) => toBaseUnits(state.withdrawable, USDC_DECIMALS))
+            .catch(() => null);
+          if (now !== null && now > withdrawableBefore) return { kind: "credited", burnTxHash };
+        }
+        await delay(timing.statusIntervalMs);
+      }
+      if (lastPollError) console.warn(`Deposit ${burnTxHash} status unreadable`, lastPollError);
+      return { kind: "pending", burnTxHash };
+    },
+    [walletId, address, cctpDeps]
+  );
 
   // Reads the wallet's current HyperCore account-abstraction mode — the
   // Manual/Unified/Portfolio pill in the order ticket uses this to show
@@ -413,6 +540,7 @@ export function useHyperliquidActions(walletId: string | undefined, address: str
     bridge,
     withdraw,
     resumeWithdrawal,
+    depositToPerps,
     cancelOrder,
     closePosition,
     updateTriggerOrder,

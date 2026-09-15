@@ -53,17 +53,14 @@ async function proxy(req: NextRequest, path: string[], method: "GET" | "POST", b
     }
   }
 
-  // The Ark wallet-identity/margin-state reads and the Base deposit
-  // address carry the target address in the path rather than a body, so the
-  // ownership check has to happen here instead of the body-shaped one above.
-  // Both fall back to NOT_FOUND (not FORBIDDEN) for an unauthenticated
+  // The Ark wallet-identity, margin-state and Arbitrum-balance reads carry the
+  // target address in the path rather than a body, so the ownership check has
+  // to happen here instead of the body-shaped one above. They fall back to NOT_FOUND (not FORBIDDEN) for an unauthenticated
   // request so an unauthenticated probe cannot distinguish "wrong path" from
   // "not yours".
   const addressMatch =
     method === "GET"
-      ? /^(?:ark\/(?:wallet|account-state|arbitrum-balance)|funding\/deposit-address)\/([^/]+)$/.exec(
-          joined
-        )
+      ? /^ark\/(?:wallet|account-state|arbitrum-balance)\/([^/]+)$/.exec(joined)
       : null;
   if (addressMatch) {
     const claims = await verifyRequest(req);

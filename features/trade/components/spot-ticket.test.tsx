@@ -304,13 +304,13 @@ describe("SpotTicket", () => {
     expect(buyState.submit).toHaveBeenCalled();
   });
 
-  it("folds the chart away until it is asked for", () => {
+  it("opens on the chart, and folds it away when asked", () => {
     renderTicket();
     const disclosure = screen.getByRole("button", { name: new RegExp(en.spot.viewChart) });
-    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
 
     fireEvent.click(disclosure);
-    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
   });
 
   it("shows what is held in this market, from base units", () => {

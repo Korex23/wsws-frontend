@@ -26,9 +26,9 @@ import { toRwaRowView } from "@/features/rwa/lib/row-view";
 import { formatDecimalString } from "@/lib/trade/amount";
 import { formatUsd, fromBaseUnits, toBaseUnits } from "@/lib/trade/math";
 
-// Dynamic: the chart pulls lightweight-charts and the panel starts collapsed,
-// so those bytes only arrive once someone opens "View Chart". The spot desk
-// loads its own chart the same way.
+// Dynamic: the chart pulls lightweight-charts, which stays out of the page's
+// first bundle and arrives with the ticket instead. The spot desk loads its own
+// chart the same way.
 const PriceChart = dynamic(() => import("@/components/ui/price-chart").then((m) => m.PriceChart), {
   ssr: false,
 });
@@ -116,7 +116,9 @@ export function RwaTicket({
 }: RwaTicketProps) {
   const t = useTranslations("rwa");
   const ticket = useRwaTicket({ asset, initialSide, initialAmount });
-  const [chartExpanded, setChartExpanded] = useState(false);
+  // Open on arrival: the price is the first thing someone checks before a
+  // trade, so the ticket shows it rather than hiding it behind "View Chart".
+  const [chartExpanded, setChartExpanded] = useState(true);
   // Which settlement request the reader has waved off. The transfer itself is
   // owned by the page-scope tracker, so "Continue in background" is a request
   // to stop reporting it here, not a cancellation.

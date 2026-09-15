@@ -32,12 +32,17 @@ const api = vi.hoisted(() => ({
   getBuilderFeeStatus: vi.fn(async () => ({ approved: true, maxFeeRateTenthsBps: 100 })),
   prepareBuilderFeeApproval: vi.fn(),
   submitBuilderFeeApproval: vi.fn(),
+  getAccountState: vi.fn(),
+  getCctpDepositConfig: vi.fn(),
+  recordCctpDeposit: vi.fn(),
+  getCctpDepositStatus: vi.fn(),
 }));
 vi.mock("@/features/trade/lib/hyperliquid-api", () => api);
 
 const signer = vi.hoisted(() => ({
   signL1: vi.fn(),
   signWithdrawal: vi.fn(),
+  signDexTransfer: vi.fn(),
   signBuilderFeeApproval: vi.fn(),
 }));
 vi.mock("@/features/trade/lib/hyperliquid-signer", () => ({
@@ -45,20 +50,26 @@ vi.mock("@/features/trade/lib/hyperliquid-signer", () => ({
 }));
 
 const evmSend = vi.hoisted(() => vi.fn());
+const evmSendBatch = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/use-evm-send", () => ({
   useEvmSend: () => evmSend,
+  useEvmSendBatch: () => evmSendBatch,
 }));
 
-const reroutedWithdraw = vi.hoisted(() =>
-  vi.fn(async () => ({
-    depositRequestId: "req-1",
-    txHash: "0xRerouteTx",
-    amountOut: "5",
-    minAmountOut: "4.9",
-  }))
-);
-vi.mock("@/hooks/use-withdraw", () => ({
-  useReroutedWithdraw: () => ({ withdraw: reroutedWithdraw, quoting: false, sending: false }),
+// The CCTP moves themselves are pinned at their calldata in
+// cctp-transfers.test.ts; here they are the seam the actions drive.
+type Transfers = typeof import("@/features/trade/lib/cctp-transfers");
+const transfers = vi.hoisted(() => ({
+  burnBaseUsdcToPerps: vi.fn<Transfers["burnBaseUsdcToPerps"]>(),
+  sendArbitrumUsdcToBase: vi.fn<Transfers["sendArbitrumUsdcToBase"]>(),
+}));
+vi.mock("@/features/trade/lib/cctp-transfers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/trade/lib/cctp-transfers")>()),
+  ...transfers,
+}));
+vi.mock("@/features/trade/lib/cctp-api", () => ({
+  getCctpFeeQuote: vi.fn(),
+  lookupCctpAttestation: vi.fn(),
 }));
 
 import { useHyperliquidActions } from "@/features/trade/lib/hyperliquid-actions";
@@ -255,86 +266,164 @@ describe("useHyperliquidActions.withdraw", () => {
     api.getArbitrumBalance.mockImplementation(async (): Promise<string> => {
       throw new Error("balance check unavailable");
     });
+    transfers.sendArbitrumUsdcToBase.mockImplementation(async () => {});
   });
 
-  it("prepares, signs, then submits the withdrawal", async () => {
-    const prepared = { action: { type: "withdraw3" }, nonce: 3 };
-    api.prepareWithdrawal.mockResolvedValue(prepared);
+  const WITHDRAW3 = { type: "withdraw3" };
+  const FEE_ACTION = { type: "sendAsset" };
+  const FEE_SIGNATURE = { r: "0xfr", s: "0xfs", v: 28 };
+
+  // llms.txt §6b: the typed amount is the TOTAL. The withdraw3 carries the
+  // total less the platform fee, and the fee travels as its own signed leg.
+  it("prepares the total less the platform fee, signs both legs and submits the fee with it", async () => {
+    api.prepareWithdrawal.mockResolvedValue({
+      withdraw: { action: WITHDRAW3, nonce: 3 },
+      fee: { action: FEE_ACTION, nonce: 4, amountUsdc: "0.5" },
+    });
+    signer.signWithdrawal.mockResolvedValue(SIGNATURE);
+    signer.signDexTransfer.mockResolvedValue(FEE_SIGNATURE);
+    api.submitWithdrawal.mockResolvedValue({ treasuryMovementId: "movement-1" });
+
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    const output = await result.current.withdraw("100");
+
+    expect(api.prepareWithdrawal).toHaveBeenCalledTimes(1);
+    expect(api.prepareWithdrawal).toHaveBeenCalledWith(WALLET_ID, "99.5");
+    expect(signer.signWithdrawal).toHaveBeenCalledWith(WITHDRAW3);
+    expect(signer.signDexTransfer).toHaveBeenCalledWith(FEE_ACTION);
+    expect(api.submitWithdrawal).toHaveBeenCalledWith(WALLET_ID, WITHDRAW3, SIGNATURE, {
+      action: FEE_ACTION,
+      signature: FEE_SIGNATURE,
+    });
+    expect(output.treasuryMovementId).toBe("movement-1");
+  });
+
+  it("prepares again with the backend's own fee when it differs, before signing anything", async () => {
+    api.prepareWithdrawal
+      .mockResolvedValueOnce({
+        withdraw: { action: { type: "withdraw3", stale: true }, nonce: 3 },
+        fee: { action: FEE_ACTION, nonce: 4, amountUsdc: "0.75" },
+      })
+      .mockResolvedValueOnce({
+        withdraw: { action: WITHDRAW3, nonce: 5 },
+        fee: { action: FEE_ACTION, nonce: 6, amountUsdc: "0.75" },
+      });
+    signer.signWithdrawal.mockResolvedValue(SIGNATURE);
+    signer.signDexTransfer.mockResolvedValue(FEE_SIGNATURE);
+    api.submitWithdrawal.mockResolvedValue({ treasuryMovementId: "movement-1" });
+
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    await result.current.withdraw("100");
+
+    expect(api.prepareWithdrawal.mock.calls).toEqual([
+      [WALLET_ID, "99.5"],
+      [WALLET_ID, "99.25"],
+    ]);
+    expect(signer.signWithdrawal).toHaveBeenCalledTimes(1);
+    expect(signer.signWithdrawal).toHaveBeenCalledWith(WITHDRAW3);
+  });
+
+  it("withdraws the whole total with no fee leg when the backend has no fee configured", async () => {
+    api.prepareWithdrawal
+      .mockResolvedValueOnce({ withdraw: { action: { stale: true }, nonce: 3 }, fee: null })
+      .mockResolvedValueOnce({ withdraw: { action: WITHDRAW3, nonce: 5 }, fee: null });
     signer.signWithdrawal.mockResolvedValue(SIGNATURE);
     api.submitWithdrawal.mockResolvedValue({ treasuryMovementId: "movement-1" });
 
     const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
-    const output = await result.current.withdraw("5");
+    await result.current.withdraw("20");
 
-    expect(signer.signWithdrawal).toHaveBeenCalledWith(prepared.action);
-    expect(api.submitWithdrawal).toHaveBeenCalledWith(WALLET_ID, prepared.action, SIGNATURE);
-    expect(output.treasuryMovementId).toBe("movement-1");
+    expect(api.prepareWithdrawal.mock.calls).toEqual([
+      [WALLET_ID, "19.5"],
+      [WALLET_ID, "20"],
+    ]);
+    expect(signer.signDexTransfer).not.toHaveBeenCalled();
+    expect(api.submitWithdrawal).toHaveBeenCalledWith(WALLET_ID, WITHDRAW3, SIGNATURE, null);
   });
 
-  it("continues the withdrawal on to the user's main wallet once the credit lands on Arbitrum, reporting progress", async () => {
-    const prepared = { action: { type: "withdraw3" }, nonce: 3 };
-    api.prepareWithdrawal.mockResolvedValue(prepared);
+  it("refuses a total that would leave nothing to receive, before preparing anything", async () => {
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    await expect(result.current.withdraw("1.5")).rejects.toThrow(/minimum/i);
+    expect(api.prepareWithdrawal).not.toHaveBeenCalled();
+  });
+
+  it("continues the credited amount home to Base over CCTP, reporting each step", async () => {
+    api.prepareWithdrawal.mockResolvedValue({
+      withdraw: { action: WITHDRAW3, nonce: 3 },
+      fee: { action: FEE_ACTION, nonce: 4, amountUsdc: "0.5" },
+    });
     signer.signWithdrawal.mockResolvedValue(SIGNATURE);
+    signer.signDexTransfer.mockResolvedValue(FEE_SIGNATURE);
     api.submitWithdrawal.mockResolvedValue({ treasuryMovementId: "movement-1" });
-    // First call is the pre-withdrawal starting balance; every call after
-    // that (the poll) already sees it risen, so the loop exits on its very
-    // first check with no real delay.
+    // The starting balance, then the poll already sees the credit.
     api.getArbitrumBalance.mockResolvedValueOnce("10").mockResolvedValueOnce("15");
+    transfers.sendArbitrumUsdcToBase.mockImplementation(async (_deps, opts) => {
+      opts.onStatus?.("moving");
+      opts.onStatus?.("confirming");
+      opts.onStatus?.("finishing");
+    });
     const onStatus = vi.fn();
 
     const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
-    const output = await result.current.withdraw("5", onStatus);
+    await result.current.withdraw("6", onStatus);
 
-    expect(reroutedWithdraw).toHaveBeenCalledWith({
-      originNetwork: "arb-mainnet",
-      originChainId: 42161,
-      originTokenAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-      originDecimals: 6,
-      destinationChainId: 8453,
-      destinationAsset: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-      to: ADDRESS,
-      amount: 5_000_000n,
-      refundTo: ADDRESS,
-    });
-    expect(output.treasuryMovementId).toBe("movement-1");
+    expect(transfers.sendArbitrumUsdcToBase).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sendBatch: evmSendBatch,
+      }),
+      expect.objectContaining({ amount: 5_000_000n, recipient: ADDRESS })
+    );
     expect(onStatus.mock.calls.map((call) => call[0])).toEqual([
-      "Withdrawing…",
-      "Waiting for funds…",
-      "Moving funds to your main wallet…",
+      "withdrawing",
+      "waiting",
+      "moving",
+      "confirming",
+      "finishing",
     ]);
   });
 
   it("skips the continuation when the starting Arbitrum balance can't be read, without failing the withdrawal", async () => {
-    const prepared = { action: { type: "withdraw3" }, nonce: 3 };
-    api.prepareWithdrawal.mockResolvedValue(prepared);
+    api.prepareWithdrawal.mockResolvedValue({
+      withdraw: { action: WITHDRAW3, nonce: 3 },
+      fee: { action: FEE_ACTION, nonce: 4, amountUsdc: "0.5" },
+    });
     signer.signWithdrawal.mockResolvedValue(SIGNATURE);
+    signer.signDexTransfer.mockResolvedValue(FEE_SIGNATURE);
     api.submitWithdrawal.mockResolvedValue({ treasuryMovementId: "movement-1" });
-    // Default mock behavior: getArbitrumBalance always rejects.
 
     const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
-    const output = await result.current.withdraw("5");
+    const output = await result.current.withdraw("6");
 
-    expect(reroutedWithdraw).not.toHaveBeenCalled();
+    expect(transfers.sendArbitrumUsdcToBase).not.toHaveBeenCalled();
     expect(output.treasuryMovementId).toBe("movement-1");
   });
 
-  it("fails soft when the continuation itself fails — the withdrawal has already succeeded", async () => {
-    const prepared = { action: { type: "withdraw3" }, nonce: 3 };
-    api.prepareWithdrawal.mockResolvedValue(prepared);
+  it("does not fail an already accepted withdrawal when the last leg fails, and says so in the log", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    api.prepareWithdrawal.mockResolvedValue({
+      withdraw: { action: WITHDRAW3, nonce: 3 },
+      fee: { action: FEE_ACTION, nonce: 4, amountUsdc: "0.5" },
+    });
     signer.signWithdrawal.mockResolvedValue(SIGNATURE);
+    signer.signDexTransfer.mockResolvedValue(FEE_SIGNATURE);
     api.submitWithdrawal.mockResolvedValue({ treasuryMovementId: "movement-1" });
     api.getArbitrumBalance.mockResolvedValueOnce("10").mockResolvedValueOnce("15");
-    reroutedWithdraw.mockRejectedValueOnce(new Error("quote failed"));
+    transfers.sendArbitrumUsdcToBase.mockRejectedValueOnce(new Error("attestation timed out"));
 
     const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
-    const output = await result.current.withdraw("5");
+    const output = await result.current.withdraw("6");
 
-    expect(reroutedWithdraw).toHaveBeenCalled();
     expect(output.treasuryMovementId).toBe("movement-1");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 
 describe("useHyperliquidActions.resumeWithdrawal", () => {
+  beforeEach(() => {
+    transfers.sendArbitrumUsdcToBase.mockImplementation(async () => {});
+  });
+
   it("does nothing when the backend has no unresolved withdrawal for this wallet", async () => {
     api.getPendingWithdrawal.mockResolvedValueOnce(null);
 
@@ -343,7 +432,7 @@ describe("useHyperliquidActions.resumeWithdrawal", () => {
 
     expect(api.getPendingWithdrawal).toHaveBeenCalledWith(WALLET_ID);
     expect(api.getArbitrumBalance).not.toHaveBeenCalled();
-    expect(reroutedWithdraw).not.toHaveBeenCalled();
+    expect(transfers.sendArbitrumUsdcToBase).not.toHaveBeenCalled();
   });
 
   it("does nothing when a wallet or address isn't ready yet, without calling the backend", async () => {
@@ -353,7 +442,7 @@ describe("useHyperliquidActions.resumeWithdrawal", () => {
     expect(api.getPendingWithdrawal).not.toHaveBeenCalled();
   });
 
-  it("does nothing when there's a pending withdrawal but the funds haven't actually landed on Arbitrum yet", async () => {
+  it("does nothing when there's a pending withdrawal but the funds haven't landed on Arbitrum yet", async () => {
     api.getPendingWithdrawal.mockResolvedValueOnce({
       treasuryMovementId: "movement-1",
       amountUsdc: "18",
@@ -364,10 +453,10 @@ describe("useHyperliquidActions.resumeWithdrawal", () => {
     const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
     await result.current.resumeWithdrawal();
 
-    expect(reroutedWithdraw).not.toHaveBeenCalled();
+    expect(transfers.sendArbitrumUsdcToBase).not.toHaveBeenCalled();
   });
 
-  it("forwards the full Arbitrum balance on to the user's main wallet when a withdrawal is stuck there", async () => {
+  it("sends the whole Arbitrum balance home to Base over CCTP when a withdrawal is stuck there", async () => {
     api.getPendingWithdrawal.mockResolvedValueOnce({
       treasuryMovementId: "movement-1",
       amountUsdc: "18",
@@ -378,40 +467,151 @@ describe("useHyperliquidActions.resumeWithdrawal", () => {
     const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
     await result.current.resumeWithdrawal();
 
-    expect(reroutedWithdraw).toHaveBeenCalledWith({
-      originNetwork: "arb-mainnet",
-      originChainId: 42161,
-      originTokenAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-      originDecimals: 6,
-      destinationChainId: 8453,
-      destinationAsset: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-      to: ADDRESS,
-      amount: 18_000_000n,
-      refundTo: ADDRESS,
-    });
+    expect(transfers.sendArbitrumUsdcToBase).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ amount: 18_000_000n, recipient: ADDRESS })
+    );
   });
 
-  it("fails soft when the backend lookup itself errors", async () => {
+  it("does not interrupt a page load when the lookup fails, and logs it", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     api.getPendingWithdrawal.mockRejectedValueOnce(new Error("network error"));
 
     const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
 
     await expect(result.current.resumeWithdrawal()).resolves.toBeUndefined();
-    expect(reroutedWithdraw).not.toHaveBeenCalled();
+    expect(transfers.sendArbitrumUsdcToBase).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
-  it("fails soft when forwarding the funds itself fails", async () => {
+  it("does not interrupt a page load when forwarding fails, and logs it", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     api.getPendingWithdrawal.mockResolvedValueOnce({
       treasuryMovementId: "movement-1",
       amountUsdc: "18",
       status: "stuck",
     });
     api.getArbitrumBalance.mockResolvedValueOnce("18");
-    reroutedWithdraw.mockRejectedValueOnce(new Error("quote failed"));
+    transfers.sendArbitrumUsdcToBase.mockRejectedValueOnce(new Error("fee unavailable"));
 
     const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
 
     await expect(result.current.resumeWithdrawal()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+// llms.txt §6a: config, then the Base burn, then record, then poll the burn's
+// status until confirmed. The burn is the point of no return, so everything
+// after it reports what happened rather than failing.
+describe("useHyperliquidActions.depositToPerps", () => {
+  const BURN = `0x${"b1".repeat(32)}` as const;
+  const FAST = { recordRetryDelaysMs: [1, 1], statusIntervalMs: 1, statusTimeoutMs: 50 };
+
+  beforeEach(() => {
+    api.getCctpDepositConfig.mockResolvedValue({ userPaysDepositFee: false, sourceDomain: 6 });
+    api.getAccountState.mockResolvedValue({ withdrawable: "10" });
+    api.recordCctpDeposit.mockResolvedValue({ treasuryMovementId: "movement-9" });
+    api.getCctpDepositStatus.mockResolvedValue({
+      treasuryMovementId: "movement-9",
+      amountUsdc: "25",
+      status: "confirmed",
+      burnTxHash: BURN,
+      mintTxHash: "0xmint",
+    });
+    transfers.burnBaseUsdcToPerps.mockResolvedValue(BURN);
+  });
+
+  it("burns the exact amount for this wallet, records the burn, and reports the credit", async () => {
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    const outcome = await result.current.depositToPerps("25", undefined, FAST);
+
+    expect(transfers.burnBaseUsdcToPerps).toHaveBeenCalledWith(
+      expect.objectContaining({ sendBatch: evmSendBatch }),
+      { amount: 25_000_000n, recipient: ADDRESS, userPaysForward: false }
+    );
+    expect(api.recordCctpDeposit).toHaveBeenCalledWith(WALLET_ID, BURN, "25");
+    expect(api.getCctpDepositStatus).toHaveBeenCalledWith(BURN);
+    expect(outcome).toEqual({ kind: "credited", burnTxHash: BURN });
+  });
+
+  it("has Circle relay the mint when the backend says the user pays for it", async () => {
+    api.getCctpDepositConfig.mockResolvedValue({ userPaysDepositFee: true, sourceDomain: 6 });
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    await result.current.depositToPerps("25", undefined, FAST);
+    expect(transfers.burnBaseUsdcToPerps).toHaveBeenCalledWith(expect.anything(), {
+      amount: 25_000_000n,
+      recipient: ADDRESS,
+      userPaysForward: true,
+    });
+  });
+
+  it("burns nothing when the deposit config cannot be read", async () => {
+    api.getCctpDepositConfig.mockRejectedValue(new Error("down"));
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    await expect(result.current.depositToPerps("25", undefined, FAST)).rejects.toThrow("down");
+    expect(transfers.burnBaseUsdcToPerps).not.toHaveBeenCalled();
+  });
+
+  it("retries the record, and reports a burn the backend never heard about", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    api.recordCctpDeposit.mockRejectedValue(new Error("gateway timeout"));
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    const outcome = await result.current.depositToPerps("25", undefined, FAST);
+
+    expect(api.recordCctpDeposit).toHaveBeenCalledTimes(3);
+    expect(outcome).toEqual({ kind: "recordFailed", burnTxHash: BURN });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("counts a rising perps balance as the credit, even before the status says so", async () => {
+    api.getCctpDepositStatus.mockResolvedValue(null);
+    api.getAccountState
+      .mockResolvedValueOnce({ withdrawable: "10" })
+      .mockResolvedValue({ withdrawable: "34.9" });
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    const outcome = await result.current.depositToPerps("25", undefined, FAST);
+    expect(outcome).toEqual({ kind: "credited", burnTxHash: BURN });
+  });
+
+  it("reports a deposit the backend marks failed or stuck, with the burn to trace it by", async () => {
+    api.getCctpDepositStatus.mockResolvedValue({
+      treasuryMovementId: "movement-9",
+      amountUsdc: "25",
+      status: "stuck",
+      burnTxHash: BURN,
+      mintTxHash: null,
+    });
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    const outcome = await result.current.depositToPerps("25", undefined, FAST);
+    expect(outcome).toEqual({ kind: "failed", burnTxHash: BURN, status: "stuck" });
+  });
+
+  it("reports a deposit still on its way when the wait runs out, never an error", async () => {
+    api.getCctpDepositStatus.mockResolvedValue({
+      treasuryMovementId: "movement-9",
+      amountUsdc: "25",
+      status: "pending",
+      burnTxHash: BURN,
+      mintTxHash: null,
+    });
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    const outcome = await result.current.depositToPerps("25", undefined, FAST);
+    expect(outcome).toEqual({ kind: "pending", burnTxHash: BURN });
+  });
+
+  it("reports each stage as it goes", async () => {
+    const onStage = vi.fn();
+    const { result } = renderHook(() => useHyperliquidActions(WALLET_ID, ADDRESS));
+    await result.current.depositToPerps("25", onStage, FAST);
+    expect(onStage.mock.calls.map((call) => call[0])).toEqual([
+      "sending",
+      "recording",
+      "confirming",
+    ]);
   });
 });
 

@@ -29,6 +29,9 @@ const TAB_LABEL = {
 // "stale" on its own while the section sits open.
 const CLOCK_TICK_MS = 30_000;
 
+// Placeholder rows while a list loads, drawn as the Coins view draws its own.
+const SKELETON_ROWS = [0, 1, 2];
+
 function useNow(intervalMs: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -41,21 +44,22 @@ function useNow(intervalMs: number): number {
 function PartialBadge() {
   const t = useTranslations("memePositions");
   return (
-    <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-2 py-0.5 text-[11px] font-medium text-amber-200">
+    <span className="inline-flex items-center rounded-full border border-amber-200/25 bg-amber-200/10 px-2.5 py-1 text-[11.5px] font-semibold text-amber-200/80">
       {t("partialBadge")}
     </span>
   );
 }
 
+// The Coins view's error state, so a failed list reads the same in both views.
 function ErrorLine({ message, onRetry }: { message: string; onRetry: () => unknown }) {
   const t = useTranslations("memePositions");
   return (
-    <div className="flex flex-wrap items-center justify-center gap-3 border-t border-white/6 px-6 py-8 text-center text-[13px] text-white/55">
-      <span>{message}</span>
+    <div className="flex flex-col items-center gap-3 px-2 py-8 text-center">
+      <p className="max-w-[300px] text-[13px] leading-[1.5] font-normal text-white/55">{message}</p>
       <button
         type="button"
         onClick={() => onRetry()}
-        className="cursor-pointer rounded-lg border border-white/12 bg-white/5 px-3 py-1.5 text-[12.5px] font-medium text-white/80 hover:text-white"
+        className="text-ink cursor-pointer rounded-xl bg-white px-5 py-2.5 font-sans text-[13px] font-semibold hover:opacity-90"
       >
         {t("retry")}
       </button>
@@ -63,21 +67,36 @@ function ErrorLine({ message, onRetry }: { message: string; onRetry: () => unkno
   );
 }
 
+// The empty card the Kash history sheet uses.
+function EmptyCard({ text }: { text: string }) {
+  return (
+    <div className="mt-2 rounded-[14px] border border-white/8 bg-white/3 px-4 py-6 text-center text-[13px] font-normal text-white/55">
+      {text}
+    </div>
+  );
+}
+
 function SkeletonRows() {
   return (
     <div aria-busy="true">
-      {[0, 1, 2].map((i) => (
+      {SKELETON_ROWS.map((i) => (
         <div
           key={i}
           aria-hidden="true"
-          className="flex items-center gap-3 border-t border-white/6 px-4 py-3.5 sm:px-6"
+          className="flex items-center gap-3 border-t border-white/6 py-3.5"
         >
           <span className="size-9 shrink-0 animate-pulse rounded-[11px] bg-white/8" />
           <span className="min-w-0 flex-1">
-            <SkeletonLine width="w-20" />
-            <SkeletonLine width="w-32" />
+            <span className="block font-sans text-[14.5px] font-medium">
+              <SkeletonLine width="w-14" />
+            </span>
+            <span className="mt-0.5 block text-[12px] font-normal">
+              <SkeletonLine width="w-28" />
+            </span>
           </span>
-          <SkeletonLine width="w-16" />
+          <span className="shrink-0 text-right font-sans text-[14.5px] font-medium">
+            <SkeletonLine width="w-16" />
+          </span>
         </div>
       ))}
     </div>
@@ -90,8 +109,8 @@ function Paging<T>({ list }: { list: PagedList<T> }) {
   const t = useTranslations("memePositions");
   if (list.total === null || list.total === 0) return null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/6 px-4 py-3 sm:px-6">
-      <span className="text-[12px] text-white/45">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/6 py-3">
+      <span className="text-[12.5px] font-normal text-white/55">
         {list.loadMoreFailed
           ? t("loadMoreFailed")
           : t("shownOf", { shown: list.items.length, total: list.total })}
@@ -101,7 +120,7 @@ function Paging<T>({ list }: { list: PagedList<T> }) {
           type="button"
           onClick={list.loadMore}
           disabled={list.isLoadingMore}
-          className="cursor-pointer rounded-lg border border-white/12 bg-white/5 px-3 py-1.5 text-[12.5px] font-medium text-white/80 hover:text-white disabled:cursor-wait disabled:opacity-60"
+          className="text-ink cursor-pointer rounded-lg bg-white px-3 py-1.5 text-[12.5px] font-semibold hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
         >
           {list.isLoadingMore ? t("loadingMore") : t("loadMore")}
         </button>
@@ -110,17 +129,25 @@ function Paging<T>({ list }: { list: PagedList<T> }) {
   );
 }
 
-function SummaryStrip() {
+// What the memecoins are worth and what they made, in the bordered card the
+// app's sheets use, with the figure set in the display face as the asset sheet
+// sets a price.
+function SummaryCard() {
   const t = useTranslations("memePositions");
   const locale = useLocale();
   const { summary, isLoading, error, refetch } = useMemePortfolioSummary();
 
   if (isLoading) {
     return (
-      <div aria-busy="true" className="grid grid-cols-2 gap-4 px-4 pb-4 sm:px-6 md:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => (
-          <SkeletonLine key={i} width="w-24" />
-        ))}
+      <div
+        aria-busy="true"
+        className="flex items-end justify-between gap-4 rounded-[14px] border border-white/8 bg-white/3 px-4 py-3.5"
+      >
+        <span className="flex flex-col gap-2">
+          <SkeletonLine width="w-20" />
+          <span className="block h-6 w-28 animate-pulse rounded-md bg-white/8" />
+        </span>
+        <SkeletonLine width="w-16" />
       </div>
     );
   }
@@ -138,58 +165,46 @@ function SummaryStrip() {
   return (
     <section
       aria-label={t("summaryLabel")}
-      className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 pb-4 sm:px-6 md:grid-cols-4"
+      className="rounded-[14px] border border-white/8 bg-white/3 px-4 py-3.5"
     >
-      <div className="min-w-0">
-        <div className="text-[11.5px] tracking-[0.04em] text-white/40 uppercase">
-          {t("summaryValue")}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="tnum font-sans text-[18px] font-medium">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[12px] font-normal text-white/50">{t("summaryValue")}</div>
+          <div className="ws-display tnum mt-0.5 text-[22px] leading-[30px] tracking-[-0.01em]">
             {formatUsdString(summary.currentValueUsd) ?? "—"}
-          </span>
-          {partial ? <PartialBadge /> : null}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-[12px] font-normal text-white/50">{t("summaryTotalPnl")}</div>
+          {/* As tall as the display figure beside it, so both figures sit on one line. */}
+          <div className="mt-0.5 flex h-[30px] items-center justify-end gap-1.5">
+            <span className={`tnum text-[14px] font-semibold ${toneClass(summary.totalPnlUsd)}`}>
+              {formatUsdString(summary.totalPnlUsd, { signed: true }) ?? "—"}
+            </span>
+            {totalReturn ? (
+              <span
+                title={t("summaryReturn")}
+                className={`tnum text-[12px] font-normal ${toneClass(summary.totalReturnPercent)}`}
+              >
+                {totalReturn}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
-      <div className="min-w-0">
-        <div className="text-[11.5px] tracking-[0.04em] text-white/40 uppercase">
-          {t("summaryTotalPnl")}
+      {partial ? (
+        <div className="mt-2.5">
+          <PartialBadge />
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span
-            className={`tnum font-sans text-[18px] font-medium ${toneClass(summary.totalPnlUsd)}`}
-          >
-            {formatUsdString(summary.totalPnlUsd, { signed: true }) ?? "—"}
+      ) : null}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-white/6 pt-2.5 text-[12px] font-normal text-white/45">
+        <span>
+          {t("summaryRealized")}{" "}
+          <span className={`tnum font-medium ${toneClass(summary.realizedPnlUsd)}`}>
+            {formatUsdString(summary.realizedPnlUsd, { signed: true }) ?? "—"}
           </span>
-          {partial ? <PartialBadge /> : null}
-        </div>
-      </div>
-      <div className="min-w-0">
-        <div className="text-[11.5px] tracking-[0.04em] text-white/40 uppercase">
-          {t("summaryReturn")}
-        </div>
-        {totalReturn ? (
-          <span
-            className={`tnum font-sans text-[18px] font-medium ${toneClass(summary.totalReturnPercent)}`}
-          >
-            {totalReturn}
-          </span>
-        ) : (
-          <span className="font-sans text-[18px] text-white/50">—</span>
-        )}
-      </div>
-      <div className="min-w-0">
-        <div className="text-[11.5px] tracking-[0.04em] text-white/40 uppercase">
-          {t("summaryRealized")}
-        </div>
-        <span
-          className={`tnum font-sans text-[18px] font-medium ${toneClass(summary.realizedPnlUsd)}`}
-        >
-          {formatUsdString(summary.realizedPnlUsd, { signed: true }) ?? "—"}
         </span>
-      </div>
-      <div className="col-span-2 text-[11.5px] text-white/40 md:col-span-4">
-        {t("summaryAsOf", { time: calculatedAt })}
+        <span className="text-white/35">{t("summaryAsOf", { time: calculatedAt })}</span>
       </div>
     </section>
   );
@@ -222,9 +237,7 @@ function PositionsPanel({ chain, status, emptyText, now, onSell }: PositionsPane
   return (
     <>
       {rows.length === 0 ? (
-        <p className="border-t border-white/6 px-6 py-8 text-center text-[13px] text-white/45">
-          {emptyText}
-        </p>
+        <EmptyCard text={emptyText} />
       ) : (
         <ul>
           {rows.map((position) => (
@@ -239,9 +252,9 @@ function PositionsPanel({ chain, status, emptyText, now, onSell }: PositionsPane
       )}
       <Paging list={list} />
       {disclaimers.length > 0 ? (
-        <div className="border-t border-white/6 px-4 py-3 sm:px-6">
+        <div className="border-t border-white/6 pt-3">
           {disclaimers.map((line) => (
-            <p key={line} className="text-[11px] text-white/40">
+            <p key={line} className="text-[11.5px] font-normal text-white/35">
               {line}
             </p>
           ))}
@@ -262,9 +275,7 @@ function ActivityPanel() {
   return (
     <>
       {list.items.length === 0 ? (
-        <p className="border-t border-white/6 px-6 py-8 text-center text-[13px] text-white/45">
-          {t("emptyActivity")}
-        </p>
+        <EmptyCard text={t("emptyActivity")} />
       ) : (
         <ul>
           {list.items.map((activity) => (
@@ -278,11 +289,11 @@ function ActivityPanel() {
 }
 
 /**
- * The Memecoins section of /portfolio: what was bought through the trade
- * service, with profit and loss from the service's own ledger. A summary
- * strip, then Open · Closed · Activity · Base · Solana, each keeping the
- * server's paging. Sell hands the position, on its own chain, to whoever owns
- * the trade sheet; this feature never imports it.
+ * The Memecoins view of the holdings sheet, behind the balance card's coins
+ * button: what was bought through the trade service, with profit and loss from
+ * the service's own ledger. A summary card, then Open · Closed · Activity ·
+ * Base · Solana, each keeping the server's paging. Sell hands the position, on
+ * its own chain, to whoever owns the trade sheet; this feature never imports it.
  */
 export function MemePositions({ onSell }: { onSell: (token: MemeToken) => void }) {
   const t = useTranslations("memePositions");
@@ -292,18 +303,21 @@ export function MemePositions({ onSell }: { onSell: (token: MemeToken) => void }
   const nothingYet = summary !== null && summary.totalPositions === 0;
 
   return (
-    <div className="ws-card overflow-hidden" data-sensitive="balance">
-      <div className="px-4 pt-5 pb-3 sm:px-6">
-        <h2 className="ws-display text-[22px]">{t("title")}</h2>
-        <p className="mt-0.5 text-[12.5px] text-white/50">{t("subtitle")}</p>
-      </div>
-
-      <SummaryStrip />
+    // One scroller for the card, the tabs and the list, so the sheet's own
+    // panel never scrolls and its close button stays put. Budgeted the way
+    // the Coins list is (see holdings-modal.tsx), less the search field this
+    // view has no use for: the title, the tabs and the panel's padding cost
+    // about 150px. The tabs stick to the top once the card scrolls away.
+    <div
+      className="ws-no-scrollbar mt-3.5 max-h-[min(88vh_-_160px,720px)] overflow-y-auto"
+      data-sensitive="balance"
+    >
+      <SummaryCard />
 
       <div
         role="tablist"
         aria-label={t("tabsLabel")}
-        className="flex gap-1 overflow-x-auto border-t border-white/6 px-3 py-2 sm:px-5"
+        className="ws-no-scrollbar bg-sheet sticky top-0 z-[1] flex gap-1 overflow-x-auto pt-4 pb-2"
       >
         {TABS.map((id) => (
           <button
@@ -314,8 +328,8 @@ export function MemePositions({ onSell }: { onSell: (token: MemeToken) => void }
             aria-selected={tab === id}
             aria-controls="meme-tab-panel"
             onClick={() => setTab(id)}
-            className={`shrink-0 cursor-pointer rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
-              tab === id ? "bg-white/10 text-white" : "text-white/55 hover:text-white"
+            className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+              tab === id ? "bg-white/12 text-white/90" : "text-white/45 hover:text-white/70"
             }`}
           >
             {t(TAB_LABEL[id])}
