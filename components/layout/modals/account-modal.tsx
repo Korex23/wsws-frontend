@@ -7,8 +7,11 @@ import { toast } from "@/lib/toast";
 import { Avatar } from "@/components/ui/avatar";
 import { LanguageSelect } from "@/components/ui/language-select";
 import { InviteFriendsModal } from "@/features/referrals";
-import { MoveOldMoneyEntry } from "@/features/migrate";
-import { MIGRATION_ADAPTERS } from "@/components/layout/migration-adapters";
+import dynamic from "next/dynamic";
+// Deep import: the @/features/migrate barrel re-exports UpdateBalanceButton,
+// which mounts the whole Privy SDK. The row is light; the sheet it opens is
+// deferred below.
+import { MoveOldMoneyButton } from "@/features/migrate/components/move-old-money-entry";
 import { HelpIcon, LockIcon, PasskeyIcon, SignOutIcon } from "@/components/ui/icons";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { useDevicePasskey } from "@/hooks/use-device-passkey";
@@ -38,9 +41,14 @@ function InviteIcon({ size = 20 }: { size?: number }) {
   );
 }
 
+const MigrationSheetHost = dynamic(() => import("@/components/layout/migration-sheet-host"), {
+  ssr: false,
+});
+
 export function AccountModal({ onClose }: AccountModalProps) {
   const t = useTranslations("account");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const tLanguage = useTranslations("language");
   const { profile, logout } = useAuthSession();
   const passkey = useDevicePasskey();
@@ -80,7 +88,10 @@ export function AccountModal({ onClose }: AccountModalProps) {
           </span>
           {t("inviteFriends")}
         </button>
-        <MoveOldMoneyEntry adapters={MIGRATION_ADAPTERS} className={item} />
+        <MoveOldMoneyButton onClick={() => setMoveOpen(true)} className={item} />
+        {moveOpen ? (
+          <MigrationSheetHost open onClose={() => setMoveOpen(false)} entry="account_modal" />
+        ) : null}
         {/* Only for a device that fell back to a PIN and could hold a passkey
             now. Hidden otherwise, so it is an answer to a problem the user has
             rather than a setting to wonder about. */}

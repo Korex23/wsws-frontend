@@ -29,11 +29,19 @@ vi.mock("decane-connect-kit", () => ({
 
 // The migration door needs a query client and the whole venue-adapter graph;
 // neither is what this test is about.
-vi.mock("@/features/migrate", () => ({
+// Deep-imported now, not through the @/features/migrate barrel: that barrel
+// re-exports UpdateBalanceButton, which mounts the whole Privy SDK, and this
+// popover renders on every signed-in route.
+vi.mock("@/features/migrate/components/move-old-money-entry", () => ({
   MoveOldMoneyButton: ({ onClick }: { onClick: () => void }) => (
     <button onClick={onClick}>open-migration</button>
   ),
-  MoveOldMoneySheet: ({ open }: { open: boolean }) =>
+}));
+// The sheet is behind next/dynamic; the host is what the popover renders.
+vi.mock("@/components/layout/migration-sheet-host", () => ({
+  __esModule: true,
+  default: ({ open }: { open: boolean }) => (open ? <div data-testid="migration-sheet" /> : null),
+  MigrationSheetHost: ({ open }: { open: boolean }) =>
     open ? <div data-testid="migration-sheet" /> : null,
 }));
 vi.mock("@/components/layout/migration-adapters", () => ({
@@ -113,7 +121,9 @@ describe("the migration sheet's lifetime", () => {
     );
 
     fireEvent.click(screen.getByText("open-migration"));
-    expect(screen.getByTestId("migration-sheet")).toBeInTheDocument();
+    // findBy, not getBy: the sheet is behind next/dynamic and resolves a tick
+    // later — which is the point, it is not in the initial payload.
+    expect(await screen.findByTestId("migration-sheet")).toBeInTheDocument();
 
     // What a click inside the sheet does to the popover.
     rerender(<AccountPopover open={false} onClose={() => {}} triggerRef={triggerRef} />);

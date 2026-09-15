@@ -8,10 +8,17 @@ import { useSocialAuth, useSocialWallet } from "decane-connect-kit";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { Avatar } from "@/components/ui/avatar";
 import { InviteFriendsModal } from "@/features/referrals";
-import { MoveOldMoneyButton, MoveOldMoneySheet } from "@/features/migrate";
-import { MIGRATION_ADAPTERS } from "@/components/layout/migration-adapters";
+import dynamic from "next/dynamic";
+// Deep import: the @/features/migrate barrel re-exports UpdateBalanceButton,
+// which mounts the whole Privy SDK. The row itself is light; the sheet is not,
+// so only the sheet is deferred — and this popover is mounted on every route.
+import { MoveOldMoneyButton } from "@/features/migrate/components/move-old-money-entry";
 import { HelpIcon, SignOutIcon } from "@/components/ui/icons";
 import { toast } from "@/lib/toast";
+
+const MigrationSheetHost = dynamic(() => import("@/components/layout/migration-sheet-host"), {
+  ssr: false,
+});
 
 const SUPPORT_FORM_URL = "https://forms.gle/T5DLdFCAbRsVrzU97";
 
@@ -233,15 +240,16 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
           popover body would be unmounted by that same click, half way through
           handling it. Which is why Sign in and Move both did nothing on
           desktop while the phone, whose door is a modal, was fine. */}
-      <MoveOldMoneySheet
-        open={moveOpen}
-        onClose={() => {
-          setMoveOpen(false);
-          onClose();
-        }}
-        adapters={MIGRATION_ADAPTERS}
-        entry="account_modal"
-      />
+      {moveOpen ? (
+        <MigrationSheetHost
+          open
+          onClose={() => {
+            setMoveOpen(false);
+            onClose();
+          }}
+          entry="account_modal"
+        />
+      ) : null}
     </>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import { DecaneKit } from "decane-connect-kit";
+import { returningFromPrivyOAuth } from "@/features/migrate/lib/oauth-return";
 import { useDecaneCredentials } from "@/hooks/use-decane-credentials";
 // Staging (post-Decane-fork) addition: fans Polymarket query invalidations
 // across tabs. Pure query-cache plumbing, no wallet — safe under Decane.
@@ -21,8 +23,6 @@ import { BalanceVisibilityProvider } from "@/components/ui/balance-visibility";
 // the same reason the root providers do: it composes a feature, and only the
 // app layer may. The gate loads the host itself on demand.
 import { MiniTimerGate } from "@/features/casino/components/last-standing/mini-timer-gate";
-import { MigrationOAuthReturn } from "@/features/migrate";
-import { MIGRATION_ADAPTERS } from "@/components/layout/migration-adapters";
 import { BroadcastSessionProvider } from "@/components/broadcast/broadcast-session";
 import {
   collectRotatedRecoveryPassword,
@@ -42,6 +42,18 @@ const DECANE_APP_ID_FALLBACK = process.env.NEXT_PUBLIC_DECANE_APP_ID || "wsws-pl
 
 // The chains the app holds value on, in Decane's social chain-id format. Keep
 // in sync with EVM_NETWORKS in lib/server/alchemy.ts.
+// Deferred, and deep-imported through a host rather than the @/features/migrate
+// barrel. That barrel re-exports UpdateBalanceButton, which mounts
+// LegacyPrivyProvider — the whole Privy SDK — and the host pulls
+// MIGRATION_ADAPTERS, which reaches into four feature barrels. Statically
+// imported here they would ship on every signed-in route for a component that
+// renders on one page load in a user's life. Same trap as the casino barrel
+// noted above.
+const MigrationOAuthReturnHost = dynamic(
+  () => import("@/components/layout/migration-oauth-return-host"),
+  { ssr: false }
+);
+
 const DECANE_CHAINS = ["evm:8453", "evm:1", "evm:42161", "evm:10", "evm:137", "solana:mainnet"];
 
 /**
@@ -152,7 +164,7 @@ export function SessionProviders({ children }: { children: React.ReactNode }) {
                 sheet on the way back, which both completes the login and puts
                 the user back where they were — about to move their money.
                 Renders nothing on any ordinary page load. */}
-            <MigrationOAuthReturn adapters={MIGRATION_ADAPTERS} />
+            {returningFromPrivyOAuth ? <MigrationOAuthReturnHost /> : null}
           </BroadcastSessionProvider>
         </BalanceVisibilityProvider>
       </NetworkStatusProvider>
