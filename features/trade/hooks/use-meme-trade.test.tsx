@@ -118,10 +118,7 @@ const quote = {
 describe("useMemeTrade on Base when the service records a delivered trade as failed", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue(delivered(USDC, 1_960_000n));
@@ -227,10 +224,7 @@ describe("useMemeTrade on Base when the service refuses the second registration"
 
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.quoteSwap.mockResolvedValue(twoCalls);
     api.registerSubmission
       .mockResolvedValueOnce({ swapId: "swap-1", status: "SUBMITTED", callIndex: 0 })
@@ -313,10 +307,7 @@ describe("useMemeTrade on Base when the service refuses the second registration"
 describe("useMemeTrade status polling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue({ hash: "0xhash", logs: [] });
@@ -417,10 +408,7 @@ describe("useMemeTrade status polling", () => {
 describe("useMemeTrade on Base when only a user-operation hash comes back", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockRejectedValue(new SubmittedEvmOperationError("0xuop"));
@@ -475,10 +463,7 @@ describe("tradeRef", () => {
 describe("useMemeTrade quote retries", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue({ hash: "0xhash", logs: [] });
     api.fetchSwapStatus.mockResolvedValue({ swapId: "swap-1", status: "CONFIRMED", updatedAt: "" });
@@ -688,10 +673,7 @@ describe("useMemeTrade on Solana", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`solana:${SOL_WALLET}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`solana:${SOL_WALLET}`]));
     solana.send.mockResolvedValue("5igSignature");
     api.registerSolanaSubmission.mockResolvedValue({ swapId: "sol-1", status: "SUBMITTED" });
     api.fetchSwapStatus.mockResolvedValue({ swapId: "sol-1", status: "CONFIRMED", updatedAt: "" });
@@ -739,10 +721,7 @@ describe("useMemeTrade refreshes the service portfolio", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`${WALLET.toLowerCase()}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`${WALLET.toLowerCase()}`]));
     api.quoteSwap.mockResolvedValue(quote);
     api.registerSubmission.mockResolvedValue({ swapId: "swap-1", status: "SUBMITTED" });
     chain.evmSend.mockResolvedValue(delivered(USDC, 1_960_000n));
@@ -791,10 +770,7 @@ describe("useMemeTrade refreshes the service portfolio", () => {
 
   it("invalidates on a CONFIRMED Solana swap too", async () => {
     const SOL_WALLET = "So1WalletCaseSensitive11111111111111111111";
-    window.localStorage.setItem(
-      "wsws.meme-linked.v2",
-      JSON.stringify([`solana:${SOL_WALLET}`])
-    );
+    window.localStorage.setItem("wsws.meme-linked.v2", JSON.stringify([`solana:${SOL_WALLET}`]));
     solana.send.mockResolvedValue("5igSignature");
     api.quoteSolanaSwap.mockResolvedValue({
       swapId: "sol-1",

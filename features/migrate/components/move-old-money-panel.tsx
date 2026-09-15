@@ -223,9 +223,7 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
       >
         <button
           onClick={() =>
-            signedInElsewhere
-              ? void privy.logout().then(() => privy.login())
-              : void privy.login()
+            signedInElsewhere ? void privy.logout().then(() => privy.login()) : void privy.login()
           }
           // Not merely privy.ready: between Privy being ready and the inherited
           // session being discarded, a login would be torn down by the logout
@@ -258,7 +256,10 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
   // otherwise the summary waits for the opted-in run and reports both.
   const finished = result ?? (autoResult && groups.optIn.length === 0 ? autoResult : null);
   if (finished) {
-    const runs = finished === autoResult ? [finished] : ([autoResult, finished].filter(Boolean) as RunResult[]);
+    const runs =
+      finished === autoResult
+        ? [finished]
+        : ([autoResult, finished].filter(Boolean) as RunResult[]);
     // A holding retried across both runs is one row, and counts as failed only
     // if no run settled it.
     const attempted = [

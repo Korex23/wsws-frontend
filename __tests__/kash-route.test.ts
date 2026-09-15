@@ -35,7 +35,11 @@ async function loadRoute() {
 function signIn(address: string) {
   auth.verifyRequest.mockResolvedValue({ userId: "user-1" });
   auth.getRequestUser.mockResolvedValue(walletUser(address));
-  auth.getRequestIdentity.mockResolvedValue({ userId: "did:x", evmAddress: address, solanaAddress: null });
+  auth.getRequestIdentity.mockResolvedValue({
+    userId: "did:x",
+    evmAddress: address,
+    solanaAddress: null,
+  });
 }
 
 describe("kash proxy route", () => {

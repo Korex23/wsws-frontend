@@ -241,7 +241,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   // Provider-agnostic wallet: Decane resolves through its address endpoint,
   // Privy through the user object. The old Privy-only path returned null for a
   // Decane session and failed the wallet check against the caller's own wallet.
-  const wallet = needsSession ? ((await getRequestIdentity(req, claims))?.evmAddress ?? null) : null;
+  const wallet = needsSession
+    ? ((await getRequestIdentity(req, claims))?.evmAddress ?? null)
+    : null;
   const displayName = needsSession ? chessDisplayNameOfUser(user) : null;
   if (needsSession && !user) return walletUnavailable();
   if (needsSession && !wallet) return noWallet();

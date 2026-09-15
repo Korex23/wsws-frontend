@@ -54,7 +54,11 @@ beforeEach(async () => {
   fetch.mockImplementation(async () => answer({ success: true, data: { balance: "1" } }));
   verifyRequest.mockResolvedValue({ userId: "did:x" });
   getRequestUser.mockResolvedValue({ wallet: WALLET });
-  getRequestIdentity.mockResolvedValue({ userId: "did:x", evmAddress: WALLET, solanaAddress: null });
+  getRequestIdentity.mockResolvedValue({
+    userId: "did:x",
+    evmAddress: WALLET,
+    solanaAddress: null,
+  });
   route = await import("./route");
 });
 afterEach(() => {
@@ -107,7 +111,11 @@ describe("wallet-scoped reads", () => {
     const path = `accounts/${WALLET}`;
     await route.GET(get(path), ctx(path));
     getRequestUser.mockResolvedValue({ wallet: OTHER });
-  getRequestIdentity.mockResolvedValue({ userId: "did:x", evmAddress: OTHER, solanaAddress: null });
+    getRequestIdentity.mockResolvedValue({
+      userId: "did:x",
+      evmAddress: OTHER,
+      solanaAddress: null,
+    });
     const res = await route.GET(get(path), ctx(path));
     expect(res.status).toBe(403);
     expect(fetch).toHaveBeenCalledTimes(1);

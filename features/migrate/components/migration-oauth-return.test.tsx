@@ -9,13 +9,11 @@ vi.mock("@/features/migrate/lib/oauth-return", () => ({
   },
 }));
 vi.mock("@/features/migrate/components/move-old-money-sheet", () => ({
-  MoveOldMoneySheet: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="sheet" /> : null,
+  MoveOldMoneySheet: ({ open }: { open: boolean }) => (open ? <div data-testid="sheet" /> : null),
 }));
 
-const { MigrationOAuthReturn } = await import(
-  "@/features/migrate/components/migration-oauth-return"
-);
+const { MigrationOAuthReturn } =
+  await import("@/features/migrate/components/migration-oauth-return");
 
 describe("MigrationOAuthReturn", () => {
   it("renders nothing on an ordinary page load", () => {

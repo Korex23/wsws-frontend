@@ -228,11 +228,7 @@ describe("the sweep phase survives an empty wallet", () => {
   });
 
   it("adds no sweep when nothing pays into the wallet", () => {
-    const plan = scheduleSettlement(
-      [holding("pc", "polymarket", "collateral")],
-      new Set(),
-      NOW
-    );
+    const plan = scheduleSettlement([holding("pc", "polymarket", "collateral")], new Set(), NOW);
     expect(plan.phases.map((p) => p.phase)).toEqual(["settle"]);
   });
 

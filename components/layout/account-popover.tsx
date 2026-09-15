@@ -194,10 +194,7 @@ export function AccountPopover({ open, onClose, triggerRef }: AccountPopoverProp
                   phone Account modal, so a desktop user reaches the sweep from
                   the same place. Only the row lives here — the sheet is a
                   sibling below, for the reason given there. */}
-              <MoveOldMoneyButton
-                onClick={() => setMoveOpen(true)}
-                className={itemClass}
-              />
+              <MoveOldMoneyButton onClick={() => setMoveOpen(true)} className={itemClass} />
 
               <a
                 href={SUPPORT_FORM_URL}
