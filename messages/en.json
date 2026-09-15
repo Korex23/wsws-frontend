@@ -1957,9 +1957,9 @@
       "toastGameStarted": "Your game is live",
       "toastStartFailed": "Couldn't start the game",
       "startFloorUnavailable": "Couldn't reach the game contract, so we can't quote a stake right now.",
-      "startNeedsEth": "You need at least {amount} of ETH on Base to start a game.",
+      "startNeedsBalance": "You need at least {amount} in your balance to start a game.",
       "startUnavailable": "Unavailable",
-      "startNeedsEthCta": "Not enough ETH",
+      "startNeedsBalanceCta": "Not enough balance",
       "shareHeading": "Invite players",
       "shareBody": "Every player who joins grows the pot, and you take 10% of it when the timer ends.",
       "shareCta": "Share",
@@ -1983,7 +1983,8 @@
       "gameNotFoundBody": "This link doesn't point at a game. It may have been typed wrong, or the round never started.",
       "backToLobby": "Back to the lobby",
       "balanceUpdating": "Updating…",
-      "lobbyStale": "Can't reach the server right now. This is the last list we got; it refreshes on its own."
+      "lobbyStale": "Can't reach the server right now. This is the last list we got; it refreshes on its own.",
+      "toastBalanceShort": "That's more than your balance."
     },
     "fund": {
       "title": "Add money",

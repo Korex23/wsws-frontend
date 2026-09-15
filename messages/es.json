@@ -1957,9 +1957,9 @@
       "toastGameStarted": "Tu partida está en marcha",
       "toastStartFailed": "No se pudo iniciar la partida",
       "startFloorUnavailable": "No se pudo contactar el contrato, así que no podemos calcular la apuesta ahora.",
-      "startNeedsEth": "Necesitas al menos {amount} en ETH sobre Base para iniciar una partida.",
+      "startNeedsBalance": "Necesitas al menos {amount} en tu saldo para empezar una partida.",
       "startUnavailable": "No disponible",
-      "startNeedsEthCta": "ETH insuficiente",
+      "startNeedsBalanceCta": "Saldo insuficiente",
       "shareHeading": "Invita jugadores",
       "shareBody": "Cada jugador que entra hace crecer el bote, y tú te llevas el 10% cuando acabe el tiempo.",
       "shareCta": "Compartir",
@@ -1983,7 +1983,8 @@
       "gameNotFoundBody": "Este enlace no apunta a ningún juego. Puede estar mal escrito, o la ronda nunca empezó.",
       "backToLobby": "Volver al lobby",
       "balanceUpdating": "Actualizando…",
-      "lobbyStale": "No podemos conectar con el servidor ahora. Esta es la última lista que recibimos; se actualiza sola."
+      "lobbyStale": "No podemos conectar con el servidor ahora. Esta es la última lista que recibimos; se actualiza sola.",
+      "toastBalanceShort": "Eso supera tu saldo."
     },
     "fund": {
       "title": "Añadir dinero",

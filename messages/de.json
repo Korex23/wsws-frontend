@@ -1957,9 +1957,9 @@
       "toastGameStarted": "Dein Spiel läuft",
       "toastStartFailed": "Spiel konnte nicht gestartet werden",
       "startFloorUnavailable": "Der Spielvertrag ist nicht erreichbar, daher lässt sich der Einsatz gerade nicht beziffern.",
-      "startNeedsEth": "Du brauchst mindestens {amount} in ETH auf Base, um ein Spiel zu starten.",
+      "startNeedsBalance": "Du brauchst mindestens {amount} Guthaben, um ein Spiel zu starten.",
       "startUnavailable": "Nicht verfügbar",
-      "startNeedsEthCta": "Zu wenig ETH",
+      "startNeedsBalanceCta": "Guthaben zu niedrig",
       "shareHeading": "Spieler einladen",
       "shareBody": "Jeder Mitspieler lässt den Pot wachsen, und du bekommst 10% davon, wenn die Zeit abläuft.",
       "shareCta": "Teilen",
@@ -1983,7 +1983,8 @@
       "gameNotFoundBody": "Dieser Link führt zu keinem Spiel. Er wurde vielleicht falsch eingegeben, oder die Runde hat nie begonnen.",
       "backToLobby": "Zurück zur Lobby",
       "balanceUpdating": "Wird aktualisiert…",
-      "lobbyStale": "Der Server ist gerade nicht erreichbar. Das ist die letzte Liste, die wir bekommen haben; sie aktualisiert sich von selbst."
+      "lobbyStale": "Der Server ist gerade nicht erreichbar. Das ist die letzte Liste, die wir bekommen haben; sie aktualisiert sich von selbst.",
+      "toastBalanceShort": "Das ist mehr als dein Guthaben."
     },
     "fund": {
       "title": "Geld hinzufügen",
