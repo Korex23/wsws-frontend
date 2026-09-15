@@ -24,6 +24,22 @@ export interface AccessClaims {
 // storage. Same-origin requests carry it, which is what lets a route handler
 // and a Server Component verify the session without header plumbing.
 export const ACCESS_TOKEN_COOKIE = "privy-token";
+
+// Decane holds its access token in memory and hands it to apiFetch as a Bearer
+// header. That covers every fetch — but not a document navigation. The chess
+// board is an <iframe src="/api/chess/play">, and a browser attaches no
+// Authorization header to one; only cookies travel. Privy set its own cookie,
+// which is why the iframe authenticated before the migration and arrived
+// anonymous after it. This is the same mechanism for the new session, written
+// client-side by DecaneTokenBridge.
+export const DECANE_ACCESS_TOKEN_COOKIE = "decane-token";
+
+// The session token a cookie jar carries, whichever provider wrote it. One
+// helper so the three readers (this module, lib/server/session, the chess
+// proxy's forwardAuthHeaders) cannot drift apart.
+export function accessTokenFromCookie(read: (name: string) => string | undefined): string | null {
+  return read(ACCESS_TOKEN_COOKIE) ?? read(DECANE_ACCESS_TOKEN_COOKIE) ?? null;
+}
 const IDENTITY_TOKEN_COOKIE = "privy-id-token";
 
 const REQUEST_USER_CACHE_TTL_MS = 60_000;
@@ -64,7 +80,7 @@ function cacheRequestUser(key: string, user: User): void {
 function extractAccessToken(req: NextRequest): string | null {
   const header = req.headers.get("authorization");
   if (header?.startsWith("Bearer ")) return header.slice("Bearer ".length);
-  return req.cookies.get(ACCESS_TOKEN_COOKIE)?.value ?? null;
+  return accessTokenFromCookie((name) => req.cookies.get(name)?.value);
 }
 
 // Verifies a Privy access token on its own, for the migration link route,

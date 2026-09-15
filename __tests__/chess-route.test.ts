@@ -9,6 +9,12 @@ const auth = vi.hoisted(() => ({
 vi.mock("@/lib/server/auth", () => ({
   ...auth,
   ACCESS_TOKEN_COOKIE: "privy-token",
+  DECANE_ACCESS_TOKEN_COOKIE: "decane-token",
+  // Mirrors the real helper: either provider's cookie authenticates, which is
+  // what lets an <iframe src="/api/chess/play"> navigation carry a session at
+  // all — it can attach no Authorization header.
+  accessTokenFromCookie: (read: (name: string) => string | undefined) =>
+    read("privy-token") ?? read("decane-token") ?? null,
 }));
 
 function makeReq(

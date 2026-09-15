@@ -146,7 +146,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   const wallet = needsSession
     ? ((await getRequestIdentity(req, claims))?.evmAddress ?? null)
     : null;
-  if (needsSession && !user) return walletUnavailable();
+  // Only a Privy session has a user object to miss: for Decane, `user` is
+  // null by design and supplies nothing but the display name. Requiring it
+  // here 401'd every migrated player after their token had verified.
+  if (needsSession && claims?.provider === "privy" && !user) return walletUnavailable();
   if (needsSession && !wallet) return noWallet();
 
   const forwardedSearch = wallet
@@ -180,7 +183,10 @@ async function authedWrite(
   if (!claims) return unauthorized();
 
   const user = claims?.provider === "privy" ? await getRequestUser(req, claims) : null;
-  if (!user) return walletUnavailable();
+  // Only a Privy session has a user object to miss: for Decane, `user` is
+  // null by design and supplies nothing but the display name. Requiring it
+  // here 401'd every migrated player after their token had verified.
+  if (claims?.provider === "privy" && !user) return walletUnavailable();
   const wallet = (await getRequestIdentity(req, claims))?.evmAddress ?? null;
   if (!wallet) return noWallet();
 
