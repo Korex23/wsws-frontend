@@ -100,12 +100,21 @@ export function parseLegacyDirectory(csv: string): Map<string, LegacyDirectoryEn
 async function read(): Promise<Map<string, LegacyDirectoryEntry> | null> {
   const url = process.env.LEGACY_DIRECTORY_URL;
   try {
-    if (url) {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) return null;
-      return parseLegacyDirectory(await res.text());
-    }
-    return parseLegacyDirectory(await readFile(BUNDLED_PATH, "utf8"));
+    const raw = url
+      ? await (async () => {
+          const res = await fetch(url, { cache: "no-store" });
+          return res.ok ? res.text() : null;
+        })()
+      : await readFile(BUNDLED_PATH, "utf8");
+    if (raw === null) return null;
+
+    const rows = parseLegacyDirectory(raw);
+    // Zero rows is treated as unreadable, never as "nobody is a member". The
+    // likeliest cause is a URL pointing at the sheet's /edit page rather than
+    // its CSV export, which answers 200 with HTML: the parser finds no hashes,
+    // and an empty directory would answer a definite no for every user on the
+    // platform. An export with no members is not a thing worth supporting.
+    return rows.size > 0 ? rows : null;
   } catch {
     // No file, no network, malformed — all the same answer: unknown.
     return null;

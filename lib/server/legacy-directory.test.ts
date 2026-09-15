@@ -196,3 +196,26 @@ describe("tuning the window without a deploy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("a source that parses to nothing", () => {
+  beforeEach(() => vi.stubEnv("LEGACY_DIRECTORY_URL", "https://sheet.example/csv"));
+
+  // The likeliest misconfiguration: the sheet's /edit link instead of its CSV
+  // export. Google answers 200 with a page of HTML, the parser finds no
+  // hashes, and an empty directory would be a definite "no" for everyone.
+  it("treats a page of HTML as unreadable, not as an empty membership", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<!DOCTYPE html><html>…</html>", { status: 200 }))
+    );
+    await expect(lookupLegacyEmail(EMAIL)).resolves.toEqual({ known: null, entry: null });
+  });
+
+  it("treats an empty file the same way", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("sha256_email,evm,solana\n", { status: 200 }))
+    );
+    await expect(lookupLegacyEmail(EMAIL)).resolves.toEqual({ known: null, entry: null });
+  });
+});
