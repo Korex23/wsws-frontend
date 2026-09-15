@@ -66,12 +66,10 @@ export const walletAdapter: VenueAdapter<SweepAsset> = {
   },
   async settle(holdings, ctx) {
     const outcomes = new Map<string, SettleOutcome>();
-    if (!ctx.current.evm || !ctx.current.solana) {
-      for (const h of holdings) {
-        outcomes.set(h.id, { ok: false, error: "The new wallet is not ready.", retryable: true });
-      }
-      return outcomes;
-    }
+    // Destinations are checked per chain inside runSweep, not up front. Failing
+    // the whole sweep unless BOTH addresses existed meant a session with no
+    // Solana address could not move its Base USDC either — blocked on an
+    // address nothing in the sweep was going to use.
     const chains = groupSweepAssets(holdings.map((h) => h.ref));
     const byAsset = await runSweep(
       chains,
