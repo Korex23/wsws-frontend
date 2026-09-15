@@ -105,11 +105,22 @@ export async function POST(req: NextRequest) {
   // as a live lookup. `known: null` means it could not be read at all, which
   // falls through to Privy rather than answering no.
   const identifiers = [...(email ? [email] : []), ...(xId ? [xIdentifier(xId)] : [])];
+  console.log(
+    `[migrate] check: asked with ${[email && "email", xId && "x-id", xHandle && "x-handle"].filter(Boolean).join(" + ")}`
+  );
   const directory = await lookupLegacyIdentifiers(identifiers);
   if (directory.known === true && directory.entry) {
-    return answer(true, await fundsAt(directory.entry.evm, directory.entry.solana));
+    const usd = await fundsAt(directory.entry.evm, directory.entry.solana);
+    console.log(
+      `[migrate] result: legacy account FOUND, old wallet holds ${usd === null ? "unknown (read failed or partial)" : `$${usd.toFixed(2)}`}` +
+        `${usd === 0 ? " -> already swept, offer retired" : usd === null ? " -> offer kept, cannot prove empty" : " -> offering Update Balance"}`
+    );
+    return answer(true, usd);
   }
-  if (directory.known === false) return answer(false);
+  if (directory.known === false) {
+    console.log("[migrate] result: no legacy account for this user");
+    return answer(false);
+  }
 
   try {
     // Privy can be asked either way, and an X user has no address to ask with.
@@ -136,7 +147,11 @@ export async function POST(req: NextRequest) {
     const solana = wallet("solana");
     if (!evm && !solana) return answer(false);
 
-    return answer(true, await fundsAt(evm, solana));
+    const usd = await fundsAt(evm, solana);
+    console.log(
+      `[migrate] result: legacy account found via PRIVY fallback, old wallet holds ${usd === null ? "unknown" : `$${usd.toFixed(2)}`}`
+    );
+    return answer(true, usd);
   } catch {
     // No such user is the ordinary case and Privy reports it as an error. A
     // genuine outage lands here too, and both answer the same way on purpose:

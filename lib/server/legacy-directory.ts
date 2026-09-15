@@ -124,6 +124,12 @@ export function parseLegacyDirectory(csv: string): Map<string, LegacyDirectoryEn
   return rows;
 }
 
+// Identifiers are never logged, only their kind and a short hash prefix. The
+// prefix is enough to correlate a lookup with a row while you are testing, and
+// useless to anyone reading the logs later.
+const tag = (identifier: string) =>
+  `${identifier.startsWith("x:@") ? "x-handle" : identifier.startsWith("x:") ? "x-id" : "email"}:${hashIdentifier(identifier).slice(0, 8)}`;
+
 async function read(): Promise<Map<string, LegacyDirectoryEntry> | null> {
   const url = process.env.LEGACY_DIRECTORY_URL;
   try {
@@ -136,14 +142,21 @@ async function read(): Promise<Map<string, LegacyDirectoryEntry> | null> {
     if (raw === null) return null;
 
     const rows = parseLegacyDirectory(raw);
+    console.log(
+      `[migrate] directory loaded: ${rows.size} rows from ${url ? "LEGACY_DIRECTORY_URL" : BUNDLED_PATH}`
+    );
     // Zero rows is treated as unreadable, never as "nobody is a member". The
     // likeliest cause is a URL pointing at the sheet's /edit page rather than
     // its CSV export, which answers 200 with HTML: the parser finds no hashes,
     // and an empty directory would answer a definite no for every user on the
     // platform. An export with no members is not a thing worth supporting.
     return rows.size > 0 ? rows : null;
-  } catch {
+  } catch (err) {
     // No file, no network, malformed — all the same answer: unknown.
+    console.warn(
+      `[migrate] directory unreadable (${url ? "url" : "bundled file"}), falling through to Privy:`,
+      err instanceof Error ? err.message : err
+    );
     return null;
   }
 }
@@ -199,12 +212,21 @@ export async function lookupLegacyIdentifiers(
   identifiers: readonly string[]
 ): Promise<LegacyLookup> {
   const rows = await directory();
-  if (!rows) return { known: null, entry: null };
-  for (const identifier of identifiers) {
-    if (!identifier) continue;
-    const entry = rows.get(hashIdentifier(identifier));
-    if (entry) return { known: true, entry };
+  if (!rows) {
+    console.log("[migrate] lookup: directory unavailable -> unknown (will try Privy)");
+    return { known: null, entry: null };
   }
+  const tried = identifiers.filter(Boolean);
+  for (const identifier of tried) {
+    const entry = rows.get(hashIdentifier(identifier));
+    if (entry) {
+      console.log(
+        `[migrate] lookup: HIT on ${tag(identifier)} -> evm=${entry.evm ? "yes" : "no"} solana=${entry.solana ? "yes" : "no"}`
+      );
+      return { known: true, entry };
+    }
+  }
+  console.log(`[migrate] lookup: no match for [${tried.map(tag).join(", ")}] in ${rows.size} rows`);
   return { known: false, entry: null };
 }
 

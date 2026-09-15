@@ -39,6 +39,14 @@ async function ask(): Promise<LegacyAccount> {
   // in with Twitter, and those accounts carry a handle and nothing else.
   // Asking only for an email would strand every one of them.
   const profile = readDisplayProfile();
+  // Which identifiers this browser can offer. Kinds only — the values are the
+  // user's own and have no business in a console.
+  console.log(
+    "[migrate] identifiers known to this browser:",
+    [profile?.email && "email", profile?.providerSubject && "x-id", profile?.username && "x-handle"]
+      .filter(Boolean)
+      .join(" + ") || "none"
+  );
   const email = profile?.email;
   const xId = profile?.providerSubject;
   // The handle as well as the id: the Privy export carries only handles, so
@@ -58,13 +66,24 @@ async function ask(): Promise<LegacyAccount> {
       },
       { requireAuth: true }
     );
-    if (!res.ok) return UNKNOWN;
+    if (!res.ok) {
+      console.warn("[migrate] legacy check failed:", res.status, "- treating as unknown");
+      return UNKNOWN;
+    }
     const body = (await res.json()) as { hasLegacyAccount?: unknown; legacyFundsUsd?: unknown };
-    return {
+    const answer = {
       has: body.hasLegacyAccount === true,
       fundsUsd: typeof body.legacyFundsUsd === "number" ? body.legacyFundsUsd : null,
     };
-  } catch {
+    console.log(
+      `[migrate] legacy check: ${answer.has ? "account found" : "no account"}` +
+        (answer.has
+          ? `, old wallet holds ${answer.fundsUsd === null ? "an amount we could not read" : `$${answer.fundsUsd.toFixed(2)}`}`
+          : "")
+    );
+    return answer;
+  } catch (err) {
+    console.warn("[migrate] legacy check errored, treating as unknown:", err);
     return UNKNOWN;
   }
 }

@@ -151,6 +151,11 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
     async (opted: ReadonlySet<string>): Promise<RunResult> => {
       setConfirming(false);
       const plan = scheduleSettlement(remaining, opted, now);
+      console.log(
+        `[migrate] moving: ${plan.phases.map((ph) => `${ph.phase}(${ph.holdings.length})`).join(" -> ") || "nothing"}` +
+          `, worth $${sumValueUsd(plan.phases.flatMap((ph) => ph.holdings)).toFixed(2)}` +
+          `${plan.settleLater.length ? `, ${plan.settleLater.length} left for later` : ""}`
+      );
       track("migration_reviewed", {
         holdings: remaining.length,
         opted_in: opted.size,
@@ -158,6 +163,9 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
         value_usd: sumValueUsd(plan.phases.flatMap((p) => p.holdings)),
       });
       const outcome = await runner.run(plan);
+      console.log(
+        `[migrate] moved: ${outcome.outcome}, $${outcome.movedUsd.toFixed(2)} across ${outcome.movedCount} item(s)`
+      );
       track("migration_completed", { outcome: outcome.outcome, moved_usd: outcome.movedUsd });
       if (outcome.outcome === "complete") markMigrationComplete();
       // Anything that landed is the user's money in their new wallet, so it

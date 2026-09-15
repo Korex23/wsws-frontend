@@ -57,6 +57,14 @@ export async function runSettlement(
   const byVenue = new Map(adapters.map((a) => [a.venue, a]));
   const results = new Map<string, SettleOutcome>();
   const record = (holding: LegacyHolding, outcome: SettleOutcome) => {
+    console.log(
+      `[migrate]   ${outcome.ok ? "moved" : "failed"} ${holding.label}` +
+        (outcome.ok
+          ? outcome.txHashes?.length
+            ? ` (${outcome.txHashes[0]})`
+            : ""
+          : `: ${outcome.error}`)
+    );
     results.set(holding.id, outcome);
     hooks.onStep?.(holding, outcome);
   };

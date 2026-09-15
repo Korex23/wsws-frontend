@@ -79,11 +79,24 @@ describe("lookupLegacyIdentifiers", () => {
   });
 
   it("answers unknown when there is no source at all", async () => {
-    // No URL, and the bundled file does not exist in the test tree.
-    await expect(lookupLegacyIdentifiers([emailIdentifier("korex@example.com")])).resolves.toEqual({
-      known: null,
-      entry: null,
-    });
+    // No URL, and no readable bundled file. Mocked rather than assumed absent:
+    // a real config/legacy-directory.csv exists on a machine that has run the
+    // export, and this must assert the behaviour, not the tester's filesystem.
+    vi.doMock("node:fs/promises", () => ({
+      readFile: vi.fn(async () => {
+        throw new Error("ENOENT");
+      }),
+    }));
+    vi.resetModules();
+    const fresh = await import("@/lib/server/legacy-directory");
+    fresh.resetLegacyDirectory();
+
+    await expect(
+      fresh.lookupLegacyIdentifiers([fresh.emailIdentifier("korex@example.com")])
+    ).resolves.toEqual({ known: null, entry: null });
+
+    vi.doUnmock("node:fs/promises");
+    vi.resetModules();
   });
 
   it("reads the sheet once, not once per lookup", async () => {
