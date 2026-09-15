@@ -291,7 +291,9 @@
     "slice_realAssets": "Reale Werte",
     "slice_tokens": "Token",
     "takeTour": "Tour starten",
-    "portfolioAllocation": "Portfolio-Aufteilung"
+    "portfolioAllocation": "Portfolio-Aufteilung",
+    "quickActions": "Schnellaktionen",
+    "closeQuickActions": "Schnellaktionen schließen"
   },
   "remitBanner": {
     "title": "Geld über Grenzen senden",

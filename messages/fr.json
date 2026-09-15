@@ -291,7 +291,9 @@
     "slice_realAssets": "Actifs réels",
     "slice_tokens": "Jetons",
     "takeTour": "Faire la visite",
-    "portfolioAllocation": "Répartition du portefeuille"
+    "portfolioAllocation": "Répartition du portefeuille",
+    "quickActions": "Actions rapides",
+    "closeQuickActions": "Fermer les actions rapides"
   },
   "remitBanner": {
     "title": "Envoyez de l'argent à l'étranger",

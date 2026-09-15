@@ -291,7 +291,9 @@
     "slice_realAssets": "Ativos reais",
     "slice_tokens": "Tokens",
     "takeTour": "Fazer o tour",
-    "portfolioAllocation": "Alocação da carteira"
+    "portfolioAllocation": "Alocação da carteira",
+    "quickActions": "Ações rápidas",
+    "closeQuickActions": "Fechar ações rápidas"
   },
   "remitBanner": {
     "title": "Envie dinheiro para o estrangeiro",

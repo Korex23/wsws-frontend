@@ -291,7 +291,9 @@
     "slice_realAssets": "Real assets",
     "slice_tokens": "Tokens",
     "takeTour": "Take a tour",
-    "portfolioAllocation": "Portfolio Allocation"
+    "portfolioAllocation": "Portfolio Allocation",
+    "quickActions": "Quick actions",
+    "closeQuickActions": "Close quick actions"
   },
   "remitBanner": {
     "title": "Send money across borders",
