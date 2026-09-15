@@ -25,6 +25,13 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
   };
 });
 
+// Imported once here rather than inside each test: the mocks above are lazy
+// (they read mockUsePrivy/mockUseQuery at call time, not import time), so the
+// module is safe to load before a test configures them. Loading it inside the
+// test body charged the module's first transform to the 5s per-test timeout,
+// which it could exceed under a loaded, parallel run.
+const { useUser } = await import("./use-user");
+
 describe("useUser", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,7 +49,6 @@ describe("useUser", () => {
       error: null,
     });
 
-    const { useUser } = await import("./use-user");
     const { result } = renderHook(() => useUser());
 
     expect(result.current.isAuthenticated).toBe(false);
@@ -89,7 +95,6 @@ describe("useUser", () => {
       error: null,
     });
 
-    const { useUser } = await import("./use-user");
     const { result } = renderHook(() => useUser());
 
     expect(result.current.isAuthenticated).toBe(true);

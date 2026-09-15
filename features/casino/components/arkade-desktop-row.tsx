@@ -2,7 +2,11 @@
 
 import { useTranslations } from "next-intl";
 import type { CasinoGame } from "@/features/casino/lib/games";
-import { ARKADE_CARD_FRAME, ArkadeGameCard } from "@/features/casino/components/arkade-game-card";
+import {
+  ARKADE_CARD_FRAME,
+  ArkadeGameCard,
+  type ArkadeBadgeTone,
+} from "@/features/casino/components/arkade-game-card";
 
 /**
  * One row of the desktop Arkade catalogue (node 173:47144): three game cards
@@ -38,9 +42,22 @@ export interface ArkadeDesktopRowProps {
   onSelectGame?: (game: CasinoGame) => void;
   // Draws placeholder cards instead of tiles or the empty treatment.
   loading?: boolean;
+  // The badge every card in this rail wears (e.g. "hot" for Trending, "new" for
+  // New on Arkade). Left unset, each card falls back to its own state.
+  badge?: ArkadeBadgeTone;
+  // Overrides `badge` on the first card only — Trending's lead card is the one
+  // "Most Played" tile over a rail of "Hot".
+  firstBadge?: ArkadeBadgeTone;
 }
 
-export function ArkadeDesktopRow({ games, label, onSelectGame, loading }: ArkadeDesktopRowProps) {
+export function ArkadeDesktopRow({
+  games,
+  label,
+  onSelectGame,
+  loading,
+  badge,
+  firstBadge,
+}: ArkadeDesktopRowProps) {
   const t = useTranslations("casino.hub");
 
   if (loading) {
@@ -78,9 +95,14 @@ export function ArkadeDesktopRow({ games, label, onSelectGame, loading }: Arkade
       // same card width as a full one instead of stretching to fill.
       className="grid list-none grid-cols-3 gap-[13px]"
     >
-      {games.map((game) => (
+      {games.map((game, index) => (
         <li key={game.id} className="min-w-0">
-          <ArkadeGameCard game={game} surface="desktop" onActivate={onSelectGame} />
+          <ArkadeGameCard
+            game={game}
+            surface="desktop"
+            badge={index === 0 && firstBadge ? firstBadge : badge}
+            onActivate={onSelectGame}
+          />
         </li>
       ))}
     </ul>

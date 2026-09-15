@@ -14,6 +14,13 @@ vi.mock("@/features/casino/components/casino-page", () => ({
   CasinoPage: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
+// The desktop head reads the wallet balance; the balance is not under test, so
+// the hook is stubbed to a settled, empty portfolio rather than standing up a
+// QueryClient for the route.
+vi.mock("@/hooks/use-portfolio", () => ({
+  usePortfolio: () => ({ tokens: [], loading: false, totalUsd: 0 }),
+}));
+
 vi.mock("@/features/casino/components/arkade-mobile", () => ({
   ArkadeMobile: () => <div data-testid="mobile-catalogue" />,
 }));
