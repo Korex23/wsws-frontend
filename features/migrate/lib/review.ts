@@ -3,7 +3,7 @@
 // Pure so the partition is tested.
 
 import { isSettleable, sumValueUsd } from "@/lib/migration/schedule";
-import type { LegacyHolding, Settleability, Venue } from "@/lib/migration/types";
+import type { LegacyHolding, Settleability, SettleOutcome, Venue } from "@/lib/migration/types";
 
 export interface ReviewGroups {
   automatic: LegacyHolding[];
@@ -29,6 +29,29 @@ export function reviewGroups(
   groups.movingUsd =
     sumValueUsd(groups.automatic) + sumValueUsd(groups.optIn.filter((h) => optIn.has(h.id)));
   return groups;
+}
+
+/**
+ * What still stands between the user and leaving: holdings that could move
+ * NOW and that no run so far has settled. Two things deliberately never block:
+ *
+ *   - skipped (stranded) and later holdings — the user cannot act on them, and
+ *     the button this replaced did not hold on them either;
+ *   - anything a run settled, whichever run it was. The review's own
+ *     `remaining` only subtracts the automatic run, because the opted-in run's
+ *     successes are shown in the summary instead; a gate that read that count
+ *     would stay shut on money that had just moved, with nothing to retry.
+ *
+ * Pure, so the gate's exit condition is tested.
+ */
+export function blockingHoldings(
+  holdings: readonly LegacyHolding[],
+  runs: ReadonlyArray<{ results: ReadonlyMap<string, SettleOutcome> }>,
+  now: number
+): LegacyHolding[] {
+  const unsettled = holdings.filter((h) => !runs.some((r) => r.results.get(h.id)?.ok));
+  const groups = reviewGroups(unsettled, new Set(), now);
+  return [...groups.automatic, ...groups.optIn];
 }
 
 // A holding worth less than a cent renders as "$0.00", which is noise: the

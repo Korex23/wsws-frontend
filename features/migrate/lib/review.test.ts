@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  blockingHoldings,
   byVenue,
   defaultOptIn,
   reasonKey,
@@ -113,5 +114,41 @@ describe("worthShowing", () => {
     const dust = { ...holding("dust", "wallet"), valueUsd: 0 };
     const groups = reviewGroups([dust], new Set(), NOW);
     expect(groups.automatic.map((h) => h.id)).toEqual(["dust"]);
+  });
+});
+
+describe("blockingHoldings", () => {
+  const ok = (...ids: string[]) => ({
+    results: new Map(ids.map((id) => [id, { ok: true as const, txHashes: [] }])),
+  });
+  const failed = (...ids: string[]) => ({
+    results: new Map(ids.map((id) => [id, { ok: false as const, error: "x", retryable: true }])),
+  });
+
+  // Seen live: "Partly moved, Failed 0, Waiting 0", the gate shut, no retry.
+  // The opted-in run had moved the money; only the automatic run was being
+  // subtracted, so the count still said something was left.
+  it("subtracts what ANY run settled, not just the automatic one", () => {
+    const a = holding("a", "wallet");
+    const b = holding("b", "perps", { deterministic: false });
+    expect(blockingHoldings([a, b], [ok("a"), ok("b")], 0)).toEqual([]);
+    expect(blockingHoldings([a, b], [ok("a")], 0)).toEqual([b]);
+  });
+
+  it("keeps a holding every run failed on", () => {
+    const a = holding("a", "wallet");
+    expect(blockingHoldings([a], [failed("a"), failed("a")], 0)).toEqual([a]);
+  });
+
+  it("never blocks on what cannot move now", () => {
+    const later = holding("l", "cpmm", {
+      settleability: { state: "waitUntil", at: null, reason: "awaitingResolution" },
+    });
+    const now = holding("n", "wallet");
+    expect(blockingHoldings([later, now], [], 0)).toEqual([now]);
+  });
+
+  it("is empty with nothing discovered", () => {
+    expect(blockingHoldings([], [], 0)).toEqual([]);
   });
 });

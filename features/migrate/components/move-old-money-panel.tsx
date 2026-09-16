@@ -18,6 +18,7 @@ import { linkLegacyAccount } from "@/features/migrate/lib/api";
 import { ethPriceFromPortfolio } from "@/features/migrate/lib/discover";
 import type { RunResult } from "@/features/migrate/lib/run";
 import {
+  blockingHoldings,
   byVenue,
   defaultOptIn,
   reasonKey,
@@ -131,19 +132,25 @@ export function MoveOldMoneyPanel({
   // below must not be written on a sweep whose link failed — that is exactly
   // how a device ends up "done" for an account the service never mapped.
   const linkLanded = useRef(false);
-  useEffect(() => {
-    if (!signer || linked.current) return;
-    linked.current = true;
+  // The same fact as state, for anything that renders on it.
+  const [linkedHere, setLinkedHere] = useState(false);
+  const link = useCallback(() => {
     linkLegacyAccount()
       .then(() => {
         linkLanded.current = true;
+        setLinkedHere(true);
         track("migration_linked");
         void refetchStatus();
       })
       .catch((error: unknown) => {
         if (!isUnconfigured(error)) console.error("Linking the old account failed", error);
       });
-  }, [signer, refetchStatus]);
+  }, [refetchStatus]);
+  useEffect(() => {
+    if (!signer || linked.current) return;
+    linked.current = true;
+    link();
+  }, [signer, link]);
 
   // Old-identity data never outlives the panel.
   useEffect(
@@ -169,14 +176,20 @@ export function MoveOldMoneyPanel({
   // Tell the host where things stand. `linkLanded` is a ref, but a landed link
   // refetches the status, which is a dep here, so the report catches up.
   const serverLinked = status.data?.linked === true;
+  const linkedNow = serverLinked || linkedHere;
   const discovered = holdingsQuery.dataUpdatedAt > 0;
+  const blocking = useMemo(
+    () =>
+      blockingHoldings(
+        holdings,
+        [autoResult, result].filter((r): r is RunResult => r !== null),
+        now
+      ),
+    [holdings, autoResult, result, now]
+  );
   useEffect(() => {
-    onProgress?.({
-      linked: serverLinked || linkLanded.current,
-      discovered,
-      remaining: remaining.length,
-    });
-  }, [onProgress, serverLinked, discovered, remaining.length]);
+    onProgress?.({ linked: linkedNow, discovered, remaining: blocking.length });
+  }, [onProgress, linkedNow, discovered, blocking.length]);
   const checked = optIn ?? defaultOptIn(remaining);
   const groups = useMemo(() => reviewGroups(remaining, checked, now), [remaining, checked, now]);
 
@@ -361,8 +374,20 @@ export function MoveOldMoneyPanel({
               <button onClick={onClose} className={PRIMARY}>
                 {t("gateFinish")}
               </button>
+            ) : !linkedNow ? (
+              <>
+                <p className="text-[13.5px] text-white/60">{t("gateNotLinked")}</p>
+                <button onClick={link} className={PRIMARY}>
+                  {t("gateLinkAgain")}
+                </button>
+              </>
             ) : (
-              <p className="text-[13.5px] text-white/60">{t("gateNotDone")}</p>
+              <>
+                <p className="text-[13.5px] text-white/60">{t("gateNotDone")}</p>
+                <button onClick={() => void holdingsQuery.refetch()} className={SECONDARY}>
+                  {t("gateCheckAgain")}
+                </button>
+              </>
             )
           ) : (
             <button onClick={onClose} className={SECONDARY}>
