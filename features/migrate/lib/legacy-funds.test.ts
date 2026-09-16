@@ -33,14 +33,17 @@ describe("the old wallet, read by the frontend", () => {
 
   // The wallet that prompted this: cbXRP $0.92, CHIP $0.40, BLUESCREEN $0.12,
   // DOBBY $0.015 and 17 tokens worth less than a cent. The service saw $0.
-  it("counts every sweepable token worth a cent, whatever it is", () => {
+  // The wallet that prompted the floor: cbXRP $0.92 and CHIP $0.40 count;
+  // DOBBY $0.015 and the sub-cent memecoins are dead and skipped.
+  it("counts tokens above the sweep floor, drops the dead ones", () => {
     const list = [
       holding("cbXRP", { symbol: "cbXRP", valueUsd: 0.92 }),
       holding("CHIP", { symbol: "CHIP", valueUsd: 0.4 }),
       holding("DOBBY", { symbol: "DOBBY", valueUsd: 0.015 }),
     ];
     expect(legacyWalletHasFunds(list)).toBe(true);
-    expect(legacyWalletUsd(list)).toBeCloseTo(1.335, 6);
+    expect(legacyWalletUsd(list)).toBeCloseTo(1.32, 6);
+    expect(legacyWalletMovable(list).map((h) => h.id)).toEqual(["cbXRP", "CHIP"]);
   });
 
   // Dust cannot hold a gate shut: one sub-cent token that reverts on transfer

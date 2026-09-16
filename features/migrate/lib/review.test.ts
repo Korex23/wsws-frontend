@@ -103,9 +103,11 @@ describe("worthShowing", () => {
     expect(worthShowing(at(0.0099))).toBe(false);
   });
 
-  it("keeps a cent and anything above it", () => {
-    expect(worthShowing(at(0.01))).toBe(true);
+  it("keeps the sweep floor and above, drops dead tokens below it", () => {
+    expect(worthShowing(at(0.1))).toBe(true);
     expect(worthShowing(at(1.25))).toBe(true);
+    expect(worthShowing(at(0.09))).toBe(false);
+    expect(worthShowing(at(0.01))).toBe(false);
   });
 
   it("does not partition the groups — the plan still carries the dust", () => {

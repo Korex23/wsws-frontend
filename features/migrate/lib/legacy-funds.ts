@@ -17,6 +17,8 @@ import { worthShowing } from "@/features/migrate/lib/review";
  * dust; it just cannot hold the user hostage.
  */
 export function legacyWalletMovable(holdings: readonly LegacyHolding[]): LegacyHolding[] {
+  // worthShowing uses the sweep floor, so this counts exactly what the sweep
+  // would move: sub-floor dead tokens are not "money left".
   return holdings.filter(
     (h) => h.settleability.state === "now" && h.amount > 0n && worthShowing(h)
   );
