@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   wallets: [] as Array<{ walletClientType: string; address: string }>,
   embedded: [] as Array<{ chainType: string; address: string }>,
   recordedEvm: null as string | null,
+  recordedSol: null as string | null,
 }));
 
 vi.mock("@privy-io/react-auth", () => ({
@@ -16,7 +17,9 @@ vi.mock("@privy-io/react-auth", () => ({
   useWallets: () => ({ wallets: state.wallets }),
 }));
 vi.mock("@/features/migrate/hooks/use-migration-status", () => ({
-  useMigrationStatus: () => ({ data: { legacy: { evm: state.recordedEvm, solana: null } } }),
+  useMigrationStatus: () => ({
+    data: { legacy: { evm: state.recordedEvm, solana: state.recordedSol } },
+  }),
 }));
 vi.mock("@/lib/user", () => ({
   // The account's own embedded wallets, and "first ethereum" as the fallback.
@@ -40,6 +43,7 @@ beforeEach(() => {
   state.wallets = [];
   state.embedded = [{ chainType: "ethereum", address: FIRST }];
   state.recordedEvm = null;
+  state.recordedSol = null;
 });
 
 describe("useLegacySigner", () => {
@@ -90,6 +94,20 @@ describe("useLegacySigner", () => {
 
   // Recorded wallet known, but its object has not arrived yet: no signer, so no
   // send fires against a wallet that cannot yet sign.
+  it("prefers the recorded Solana wallet too, when the account holds it", () => {
+    const SOL_FIRST = "So1First1111111111111111111111111111111111";
+    const SOL_RECORDED = "So1Recorded22222222222222222222222222222222";
+    state.embedded = [
+      { chainType: "solana", address: SOL_FIRST },
+      { chainType: "solana", address: SOL_RECORDED },
+    ];
+    state.recordedSol = SOL_RECORDED;
+    // No EVM this account; a signer still forms on the Solana side alone.
+    state.wallets = [];
+    const { result } = renderHook(() => useLegacySigner());
+    expect(result.current?.addresses.solana).toBe(SOL_RECORDED);
+  });
+
   it("waits for the recorded wallet's object even when its address is known", () => {
     state.embedded = [
       { chainType: "ethereum", address: FIRST },

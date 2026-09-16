@@ -34,18 +34,24 @@ export function useLegacySigner(): LegacySigner | null {
   // the recorded address. Prefer that recorded address whenever it is one of
   // this account's own wallets; otherwise the account simply differs, and the
   // first wallet is the right fallback.
-  const recordedEvm = useMigrationStatus().data?.legacy?.evm ?? null;
+  const recorded = useMigrationStatus().data?.legacy ?? null;
 
   return useMemo(() => {
     if (!fresh || !ready || !authenticated) return null;
-    const ownEvm = getEmbeddedWallets(user)
-      .filter((w) => w.chainType === "ethereum")
-      .map((w) => w.address.toLowerCase());
-    const evm =
-      recordedEvm && ownEvm.includes(recordedEvm.toLowerCase())
-        ? recordedEvm
-        : getWalletAddress(user, "ethereum");
-    const solana = getWalletAddress(user, "solana");
+    // Prefer the wallet the backend recorded at link time — the one that
+    // provably holds the funds — over getWalletAddress's "first embedded",
+    // but only when it is one of THIS account's own wallets. Same reasoning on
+    // both chains: an account can carry more than one embedded wallet.
+    const own = (chain: "ethereum" | "solana") =>
+      getEmbeddedWallets(user)
+        .filter((w) => w.chainType === chain)
+        .map((w) => w.address.toLowerCase());
+    const prefer = (recordedAddr: string | null, chain: "ethereum" | "solana") =>
+      recordedAddr && own(chain).includes(recordedAddr.toLowerCase())
+        ? recordedAddr
+        : getWalletAddress(user, chain);
+    const evm = prefer(recorded?.evm ?? null, "ethereum");
+    const solana = prefer(recorded?.solana ?? null, "solana");
     if (!evm && !solana) return null;
     // The ADDRESS is on the user record the moment sign-in lands; the wallet
     // OBJECT arrives later, once Privy's embedded-wallet iframe has initialised.
@@ -70,5 +76,15 @@ export function useLegacySigner(): LegacySigner | null {
         return (await wallet.getEthereumProvider()) as unknown as EIP1193Provider;
       },
     };
-  }, [fresh, ready, authenticated, user, wallets, recordedEvm, sendBatch, sendToken]);
+  }, [
+    fresh,
+    ready,
+    authenticated,
+    user,
+    wallets,
+    recorded?.evm,
+    recorded?.solana,
+    sendBatch,
+    sendToken,
+  ]);
 }
