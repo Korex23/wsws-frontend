@@ -87,13 +87,18 @@ vi.mock("@/features/casino/lib/chess/live-socket", () => ({
   ),
 }));
 
-vi.mock("@privy-io/react-auth", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@privy-io/react-auth")>();
-  return {
-    ...original,
-    usePrivy: () => ({ ready: true, authenticated: true }),
-  };
-});
+// The hooks under test read the session through the app's auth seam; a signed
+// in session with the same wallet the other mocks use is all they need.
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
+    ready: true,
+    authenticated: true,
+    evmAddress: "0xabc",
+    solanaAddress: null,
+    profile: { name: "", email: "", avatarSeed: "0xabc" },
+    logout: vi.fn(async () => {}),
+  }),
+}));
 
 const bettingHooks = vi.hoisted(() => ({
   useMatchMarket: vi.fn(),
@@ -136,7 +141,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 // The wallet is the platform's; these tests care about how screens react to
-// its balance, not about Privy or the portfolio fetch beneath it.
+// its balance, not about the auth session or the portfolio fetch beneath it.
 const wallet = vi.hoisted(() => ({ balance: 10, balanceUsd: 20_000, unitPriceUsd: 2000 }));
 vi.mock("@/features/casino/hooks/use-casino-wallet", () => ({
   useCasinoWallet: () => ({

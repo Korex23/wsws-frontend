@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
 import { CasinoError, CasinoLoading } from "@/features/casino/components/casino-state";
 import {
   ArenaClock,
@@ -353,7 +352,6 @@ export function ArenaDetailSection({
   showCreatedShare?: boolean;
 }) {
   const router = useRouter();
-  const { login } = usePrivy();
   const wallet = useCasinoWallet();
   const arena = useArenaTournament(arenaId);
   const redirectedPairing = useRef<string | null>(null);
@@ -383,7 +381,7 @@ export function ArenaDetailSection({
 
   const handleJoin = async () => {
     if (!wallet.connected) {
-      login();
+      router.push("/auth");
       return;
     }
     const toastId = toast.loading(detail.me ? "Rejoining Arena…" : "Joining Arena…");

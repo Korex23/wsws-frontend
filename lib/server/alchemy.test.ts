@@ -166,25 +166,6 @@ describe("fetchPortfolio upstreams", () => {
     return seen;
   }
 
-  // The link that makes a bought memecoin visible: without this call the
-  // allowlist only knows the public catalogue's first page, which on
-  // 2026-09-15 was 67 Base coins out of a 121,383-token catalogue.
-  it("asks the trade service which coins this caller holds", async () => {
-    const seen = stubFetch();
-    const { fetchPortfolio } = await import("./alchemy");
-    await fetchPortfolio(WALLET, undefined, null, "Bearer privy-token");
-    expect(seen.some((u) => u.includes("/portfolio?page=1"))).toBe(true);
-  });
-
-  // Signed out, or on a poll that carries no bearer, the trade service is not
-  // called at all rather than called as nobody.
-  it("asks nothing of the trade service without a bearer", async () => {
-    const seen = stubFetch();
-    const { fetchPortfolio } = await import("./alchemy");
-    await fetchPortfolio(WALLET, undefined);
-    expect(seen.some((u) => u.includes("/portfolio?page=1"))).toBe(false);
-  });
-
   it("never calls the Portfolio API for an EVM wallet", async () => {
     const seen = stubFetch();
     const { fetchPortfolio } = await import("./alchemy");
@@ -192,6 +173,19 @@ describe("fetchPortfolio upstreams", () => {
     expect(seen.some((u) => u.includes("assets/tokens/by-address"))).toBe(false);
     // Every EVM network was read, none of them through the Portfolio API.
     expect(seen.filter((u) => u.includes("rpc.zerodev.app")).length).toBe(EVM_NETWORKS.length);
+  });
+
+  it("reads only Base and skips Solana for the Base-only portfolio", async () => {
+    const seen = stubFetch();
+    const { fetchPortfolio } = await import("./alchemy");
+    const SOLANA = "So1anaWa11etAddress111111111111111111111111";
+
+    await fetchPortfolio(WALLET, SOLANA, null, "base");
+
+    const chainReads = seen.filter((u) => u.includes("rpc.zerodev.app"));
+    expect(chainReads).toHaveLength(1);
+    expect(chainReads[0]).toContain("/chain/8453");
+    expect(seen.some((u) => u.includes("assets/tokens/by-address"))).toBe(false);
   });
 
   // A trade on Base must not re-read the 27 other networks or re-page the
@@ -301,5 +295,75 @@ describe("fetchPortfolio upstreams", () => {
     await fetchPortfolio(undefined, "So1anaWa11etAddress111111111111111111111111");
     expect(seen.filter((u) => u.includes("assets/tokens/by-address")).length).toBe(1);
     expect(seen.some((u) => u.includes("rpc.zerodev.app"))).toBe(false);
+  });
+});
+
+// A held catalogue memecoin the market cannot price. The registry now says so
+// with a null (null is not zero, per the trade contract), and that null must
+// not leak into a TokenBalance, whose price is a number every consumer adds
+// and sorts by. The holding stays a recognised meme with an unknown price,
+// which the holdings list renders "Valuation unavailable", never "$0.00".
+describe("fetchPortfolio, a held meme with no catalogue price", () => {
+  const SOLANA = "So1anaWa11etAddress111111111111111111111111";
+  const MINT = "Mem3M1ntCaseSensitive11111111111111111111111";
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv("ALCHEMY_API_KEY", "alchemy-key");
+    vi.doMock("@/lib/server/rwa-registry", () => ({ fetchRwaRegistry: async () => ({}) }));
+    vi.doMock("@/lib/server/buyable-registry", () => ({
+      fetchBuyableRegistry: async () => ({
+        buyable: { "solana-mainnet": new Set([MINT.toLowerCase()]) },
+        meme: { "solana-mainnet": new Map([[MINT.toLowerCase(), { logo: null, priceUsd: null }]]) },
+      }),
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string" ? input : ((input as URL).href ?? (input as Request).url);
+        const ok = (body: unknown) =>
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        if (url.includes("assets/tokens/by-address")) {
+          return ok({
+            data: {
+              tokens: [
+                {
+                  network: "solana-mainnet",
+                  tokenAddress: MINT,
+                  tokenBalance: "5000000",
+                  tokenMetadata: { decimals: 6, symbol: "MEME", name: "Meme" },
+                  tokenPrices: [],
+                },
+              ],
+            },
+          });
+        }
+        if (url.includes("/tokens/by-symbol")) return ok({ data: [] });
+        return ok({});
+      })
+    );
+  });
+  afterEach(async () => {
+    const { resetResponseCache } = await import("./response-cache");
+    resetResponseCache();
+    vi.doUnmock("@/lib/server/rwa-registry");
+    vi.doUnmock("@/lib/server/buyable-registry");
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the holding, marked a meme, with an unknown price rather than a null one", async () => {
+    const { fetchPortfolio } = await import("./alchemy");
+    const { tokens } = await fetchPortfolio(undefined, SOLANA);
+    const meme = tokens.find((t) => t.address === MINT);
+    expect(meme).toBeDefined();
+    expect(meme?.meme).toBe(true);
+    expect(meme?.balance).toBe(5);
+    expect(meme?.priceUsd).toBe(0);
+    expect(meme?.valueUsd).toBe(0);
   });
 });

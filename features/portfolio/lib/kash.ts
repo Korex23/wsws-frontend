@@ -14,8 +14,12 @@
 // money. Keep amounts as strings end to end and only parse for display math.
 
 import { createServiceClient } from "@/lib/api/service";
+import type { AuthIdentity } from "@/lib/auth-token";
 
 const kash = createServiceClient("/api/kash", "Kash is unavailable right now.");
+// The same transport signing as a chosen identity — used by the migration
+// sweep to read/act on the OLD (legacy) wallet. Defaults to the current user.
+const kashAs = (identity?: AuthIdentity) => (identity ? kash.as(identity) : kash);
 
 export interface KashStatus {
   price: { kashPriceUsd: string; source: string };
@@ -135,29 +139,6 @@ export interface KashPurchase {
   paymentTxHash?: string;
 }
 
-export interface KashConversionQuote {
-  kashAmount: string;
-  usdcPayout: string;
-  marketPriceUsd: string;
-  redemptionPriceUsd: string;
-  feePct: number;
-  /** Fee in dollars, priced by the engine — never re-derived on the client. */
-  feeUsd: string;
-  coverageState: "normal" | "throttled" | "paused";
-  epochCapRemainingUsd: string;
-}
-
-export interface KashConversion {
-  id: string;
-  wallet: string;
-  kashBurned: string;
-  usdcPaid: string;
-  redemptionPriceUsd: string;
-  createdAt: string;
-  burnTxHash?: string;
-  payoutTxHash?: string;
-}
-
 /** Result of settling a wallet's points into KSH. */
 export interface KashClaim {
   weekKey: string;
@@ -193,16 +174,38 @@ export interface KashLedgerEntry {
 }
 
 /**
+ * The exact message the wallet must sign to claim. Mirrors
+ * WalletSignatureVerifier.claimSettlementMessage() on the backend
+ * byte-for-byte — the server recovers the signer over this same string, so
+ * drifting the format here is an auth failure, not a lint issue.
+ */
+export const claimSettlementMessage = (wallet: string, timestamp: number) =>
+  [
+    "World Street — claim Kash settlement",
+    `wallet: ${wallet.toLowerCase()}`,
+    `ts: ${timestamp}`,
+  ].join("\n");
+
+/**
  * Settle this wallet's accrued points into KSH now, instead of waiting for the
  * weekly batch. Only ever affects the caller's own wallet.
+ *
+ * No on-chain event proves who is claiming (unlike a purchase or a
+ * conversion's permit), so the wallet signs `claimSettlementMessage` and the
+ * backend recovers the signer before settling — otherwise anyone could name
+ * an arbitrary wallet in the body and force its claim.
  */
-export const postKashClaim = (wallet: string) =>
-  kash.post<KashClaim>("/settlements/claim", { wallet });
+export const postKashClaim = (
+  wallet: string,
+  signature: string,
+  timestamp: number,
+  identity?: AuthIdentity
+) => kashAs(identity).post<KashClaim>("/settlements/claim", { wallet, signature, timestamp });
 
 export const getKashStatus = () => kash.get<KashStatus>("/status");
 
-export const getKashAccount = (wallet: string) =>
-  kash.authedGet<KashAccount>(`/accounts/${wallet}`);
+export const getKashAccount = (wallet: string, identity?: AuthIdentity) =>
+  kashAs(identity).authedGet<KashAccount>(`/accounts/${wallet}`);
 
 export const getKashLedger = (wallet: string, limit = 20) =>
   kash.authedGet<KashLedgerEntry[]>(`/accounts/${wallet}/ledger`, { limit });
@@ -210,8 +213,8 @@ export const getKashLedger = (wallet: string, limit = 20) =>
 export const getKashSubscriptionTiers = () =>
   kash.get<KashSubscriptionTier[]>("/subscriptions/tiers");
 
-export const getKashSubscription = (wallet: string) =>
-  kash.authedGet<KashSubscription>(`/subscriptions/${wallet}`);
+export const getKashSubscription = (wallet: string, identity?: AuthIdentity) =>
+  kashAs(identity).authedGet<KashSubscription>(`/subscriptions/${wallet}`);
 
 export const postKashSubscribe = (wallet: string, tier: number, paymentTxHash?: string) =>
   kash.post<KashSubscription>("/subscriptions", { wallet, tier, paymentTxHash });
@@ -219,35 +222,8 @@ export const postKashSubscribe = (wallet: string, tier: number, paymentTxHash?: 
 export const getKashPurchaseQuote = (usdcAmount: string) =>
   kash.get<KashPurchaseQuote>("/purchases/quote", { amount: usdcAmount });
 
-export const getKashConversionQuote = (kashAmount: string) =>
-  kash.get<KashConversionQuote>("/conversions/quote", { amount: kashAmount });
-
 export const postKashPurchase = (wallet: string, usdcAmount: string, paymentTxHash?: string) =>
   kash.post<KashPurchase>("/purchases", { wallet, usdcAmount, paymentTxHash });
-
-// `idempotencyKey` is not optional in practice, only in the type: a conversion
-// is three sequential Base transactions (permit, burn, payout) measuring ~7s
-// against the gateway's 10s proxy timeout. A caller can therefore receive a
-// timeout for a conversion that ALREADY burned and ALREADY paid, and a retry
-// without a key burns a second time. Same key ⇒ the engine returns the
-// original conversion instead.
-export const postKashConversion = (
-  wallet: string,
-  kashAmount: string,
-  permit?: { deadline: number; v: number; r: string; s: string },
-  idempotencyKey?: string
-) => kash.post<KashConversion>("/conversions", { wallet, kashAmount, permit, idempotencyKey });
-
-/**
- * A retry key for one conversion ATTEMPT.
- *
- * Must be generated where the user's intent begins, not inside the request:
- * a key minted per request changes on every retry, which is precisely the
- * behaviour it exists to prevent.
- */
-export function newConversionKey(): string {
-  return `convert-${globalThis.crypto.randomUUID()}`;
-}
 
 // Progress toward the holding gate as a 0..1 fraction, from the account's own
 // decimal strings. Used for the progress bar, so it clamps rather than throws:

@@ -11,8 +11,15 @@ const TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523
 
 const apiFetch = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api", () => ({ apiFetch }));
-vi.mock("@privy-io/react-auth", () => ({
-  usePrivy: () => ({ ready: true, authenticated: true, user: null }),
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
+    ready: true,
+    authenticated: true,
+    evmAddress: null,
+    solanaAddress: null,
+    profile: { name: "", email: "", avatarSeed: "" },
+    logout: vi.fn(),
+  }),
 }));
 vi.mock("@/components/providers/server-session", () => ({
   useSessionWallet: (chain: string) => (chain === "ethereum" ? EVM : null),
@@ -73,17 +80,27 @@ describe("usePortfolio fresh reads", () => {
     expect(requestedUrls()[0]).toBe(`/api/portfolio?evm=${EVM}`);
   });
 
-  // A trade on Base names Base: the server re-reads that network and answers
-  // the other 27 from cache (ADR-2026-09-09-portfolio-refresh-scope).
-  // A snapshot that says a network did not answer is a floor, not the
-  // balance. Ask again in seconds, not in a minute.
-  it("polls again quickly while the snapshot is missing a network", async () => {
+  it("uses an isolated query and endpoint for Base-only balances", async () => {
+    renderHook(() => usePortfolio({ scope: "base" }), { wrapper });
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    expect(requestedUrls()[0]).toBe(`/api/portfolio?evm=${EVM}&scope=base`);
+    expect(client.getQueryData<Portfolio>(["portfolio", "base", EVM])).toEqual(snapshot);
+    expect(client.getQueryData(["portfolio", EVM, null])).toBeUndefined();
+  });
+
+  // Balance pages recover partial snapshots without the old five-second RPC
+  // loop. A trade still gets an immediate scoped read through refetchFresh.
+  it("backs off partial balance-page snapshots to thirty seconds", async () => {
     apiFetch.mockImplementationOnce(async () => answer({ ...snapshot, missing: ["base-mainnet"] }));
     renderHook(() => usePortfolio(), { wrapper });
     await act(() => vi.advanceTimersByTimeAsync(0));
     expect(apiFetch).toHaveBeenCalledTimes(1);
 
     await act(() => vi.advanceTimersByTimeAsync(5_100));
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+
+    await act(() => vi.advanceTimersByTimeAsync(25_000));
     expect(apiFetch).toHaveBeenCalledTimes(2);
 
     // Whole again: back to the minute.
@@ -246,7 +263,10 @@ describe("usePortfolio poll cadence by page", () => {
   });
 
   it("polls every three minutes elsewhere", async () => {
-    location.pathname = "/meme";
+    location.pathname = "/casino/chess";
+    apiFetch.mockImplementation(async () =>
+      answer({ ...snapshot, missing: ["worldchain-mainnet"] })
+    );
     renderHook(() => usePortfolio(), { wrapper });
     await act(() => vi.advanceTimersByTimeAsync(0));
     await act(() => vi.advanceTimersByTimeAsync(61_000));

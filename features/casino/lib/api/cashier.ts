@@ -9,14 +9,16 @@
 // in exact base units, never floats.
 
 import { chessGet, chessPost } from "@/features/casino/lib/api/chess-client";
+import type { AuthIdentity } from "@/lib/auth-token";
 import type { GatewayApiError } from "@/lib/api/envelope";
 import { fromBaseUnits, toBaseUnits } from "@/lib/trade/math";
 
 export const USDC_DECIMALS = 6;
 export const COMPUTER_WAGER_FEE_BPS = 800;
-export const MIN_STAKED_CHESS_COMPUTER_LEVEL = 5;
+export const HUMAN_CHESS_WAGER_FEE_BPS = 1_000;
+export const MIN_STAKED_CHESS_COMPUTER_LEVEL = 1;
 export const MIN_STAKED_DRAUGHTS_COMPUTER_LEVEL = 4;
-export const COMPUTER_DRAW_RETURN_BPS = 5_000;
+export const COMPUTER_DRAW_RETURN_BPS = 0;
 export const CHESS_WIN_REWARD_BPS = 10_000;
 
 const COMPUTER_REWARD_BPS: Readonly<Record<number, number>> = {
@@ -67,18 +69,21 @@ export interface CashierDeposit {
 
 export interface CashierWithdrawal {
   status: string;
-  txHash: string;
+  txHash: string | null;
 }
 
 export async function fetchCashierConfig(): Promise<CashierConfig> {
   return chessGet<CashierConfig>("/cashier/config");
 }
 
-export async function fetchChessBalance(wallet: string): Promise<CashierBalance> {
+export async function fetchChessBalance(
+  wallet: string,
+  identity?: AuthIdentity
+): Promise<CashierBalance> {
   return chessGet<CashierBalance>(
     `/cashier/players/${encodeURIComponent(wallet)}/balance`,
     undefined,
-    { requireAuth: true }
+    { requireAuth: true, identity }
   );
 }
 
@@ -92,9 +97,14 @@ export async function confirmChessDeposit(wallet: string, txHash: string): Promi
 
 export async function createChessWithdrawal(
   wallet: string,
-  amountUsdc: string
+  amountUsdc: string,
+  identity?: AuthIdentity
 ): Promise<CashierWithdrawal> {
-  return chessPost<CashierWithdrawal>("/cashier/withdrawals", { player: wallet, amountUsdc });
+  return chessPost<CashierWithdrawal>(
+    "/cashier/withdrawals",
+    { player: wallet, amountUsdc },
+    { identity }
+  );
 }
 
 // True when a cashier failure means "not set up on this deployment" rather
@@ -112,6 +122,22 @@ export function isCashierUnavailable(error: unknown): boolean {
 export function isCashierAccessDenied(error: unknown): boolean {
   const code = (error as GatewayApiError | null)?.code;
   return code === "UNAUTHORIZED" || code === "NO_WALLET";
+}
+
+// Confirmation can race the chain indexer even after the wallet reports a
+// successful send. Retry only that narrow state; validation failures must be
+// surfaced immediately instead of being mislabeled as pending confirmation.
+export function isChessDepositPending(error: unknown): boolean {
+  const gatewayError = error as GatewayApiError | null;
+  if (!gatewayError) return false;
+  const message = gatewayError.message.toLowerCase();
+  const pendingMessage =
+    message.includes("receipt not found yet") ||
+    message.includes("no block number yet") ||
+    message.includes("confirmation(s); need");
+  return (
+    pendingMessage && (gatewayError.code === "CONFLICT" || gatewayError.code === "BAD_REQUEST")
+  );
 }
 
 function nonNegativeUsdc(value: string | undefined): string {
@@ -219,7 +245,7 @@ export function chessComputerWagerBreakdown(
   availableUsdc: string,
   level: number
 ): ComputerWagerBreakdown | null {
-  if (level < MIN_STAKED_CHESS_COMPUTER_LEVEL || level > 8) return null;
+  if (level < 1 || level > 8) return null;
   const stake = toBaseUnits(stakeUsdc, USDC_DECIMALS);
   if (stake <= 0n) return null;
   const reward = (stake * BigInt(CHESS_WIN_REWARD_BPS)) / 10_000n;

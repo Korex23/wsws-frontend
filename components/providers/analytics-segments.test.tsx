@@ -12,8 +12,16 @@ const analytics = vi.hoisted(() => ({
   tagClaritySession: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock("@privy-io/react-auth", () => ({
-  usePrivy: () => privy.state,
+// The segments read the session through the Decane-backed seam; `privy.state`
+// still drives ready/authenticated so the cases below keep their meaning.
+vi.mock("@/hooks/use-auth-session", () => ({
+  useAuthSession: () => ({
+    evmAddress: null,
+    solanaAddress: null,
+    profile: { name: "", email: "", avatarSeed: "" },
+    logout: vi.fn(),
+    ...privy.state,
+  }),
 }));
 
 vi.mock("@/lib/analytics/mixpanel", () => ({
@@ -92,6 +100,15 @@ describe("AnalyticsSegments", () => {
     mount(client);
 
     client.setQueryData(["prices", ["ETH"]], { ETH: 3000 });
+
+    expect(analytics.setSuper).not.toHaveBeenCalled();
+  });
+
+  it("does not report the Base-only chess balance as the full portfolio", () => {
+    const client = new QueryClient();
+    mount(client);
+
+    client.setQueryData(["portfolio", "base", "0xabc"], { totalUsd: 12, tokens: [] });
 
     expect(analytics.setSuper).not.toHaveBeenCalled();
   });

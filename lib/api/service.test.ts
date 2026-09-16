@@ -70,7 +70,11 @@ describe("createServiceClient", () => {
   it("routes an authed read through apiFetch with requireAuth", async () => {
     await client.authedGet("/mine", { limit: 5 });
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(apiFetch).toHaveBeenCalledWith("/api/demo/mine?limit=5", {}, { requireAuth: true });
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/api/demo/mine?limit=5",
+      {},
+      { requireAuth: true, identity: "current" }
+    );
     // And the public path must NOT be given credentials.
     expect(apiFetch).not.toHaveBeenCalledWith("/api/demo/mine?limit=5", {}, { anonymous: true });
   });
@@ -84,15 +88,27 @@ describe("createServiceClient", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: "1" }),
       },
-      { requireAuth: true }
+      { requireAuth: true, identity: "current" }
     );
 
     await client.post("/resign");
     expect(apiFetch).toHaveBeenLastCalledWith(
       "/api/demo/resign",
       { method: "POST" },
-      { requireAuth: true }
+      { requireAuth: true, identity: "current" }
     );
+  });
+
+  it("preserves a pre-serialized signed JSON body and its headers", async () => {
+    const body = '{"signer_address":"0x123"}';
+    await client.postRawJson("/signed", body, {
+      "x-polymarket-account-signature": "signature",
+    });
+
+    const [, init] = vi.mocked(apiFetch).mock.calls.at(-1) ?? [];
+    expect(init).toMatchObject({ method: "POST", body });
+    expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
+    expect(new Headers(init?.headers).get("x-polymarket-account-signature")).toBe("signature");
   });
 
   it("carries the method through for put and delete", async () => {
@@ -100,14 +116,14 @@ describe("createServiceClient", () => {
     expect(apiFetch).toHaveBeenLastCalledWith(
       "/api/demo/note",
       expect.objectContaining({ method: "PUT" }),
-      { requireAuth: true }
+      { requireAuth: true, identity: "current" }
     );
 
     await client.del("/note", { id: 1 });
     expect(apiFetch).toHaveBeenLastCalledWith(
       "/api/demo/note",
       expect.objectContaining({ method: "DELETE" }),
-      { requireAuth: true }
+      { requireAuth: true, identity: "current" }
     );
   });
 

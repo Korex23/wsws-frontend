@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestUser, verifyRequest } from "@/lib/server/auth";
+import { getRequestIdentity, getRequestUser, verifyRequest } from "@/lib/server/auth";
 import {
   chessReadNeedsSession,
-  walletOfUser,
   withChessReadIdentity,
   withChessIdentity,
 } from "@/lib/server/chess-identity";
-import { wsapiService } from "@/lib/wsapi-base";
+import { chessUpstreamCandidates } from "@/lib/server/chess-upstream";
+import { fetchUpstreamRead, fetchUpstreamWrite } from "@/lib/server/upstream-failover";
 
 // Server-side proxy for draughts. The game is a module of the chess service
 // rather than a service of its own, so it shares that base URL and everything
@@ -20,12 +20,7 @@ import { wsapiService } from "@/lib/wsapi-base";
 // Reads are public: the lobby, a board and its moves are spectator-visible. The
 // exceptions are a player's private note and the player-only chat room, which
 // need the session.
-const LOCAL_DEV_CHESS_API = "http://127.0.0.1:8082";
-const BASE =
-  process.env.CHESS_API_URL ??
-  (process.env.NODE_ENV === "development" ? LOCAL_DEV_CHESS_API : undefined) ??
-  process.env.NEXT_PUBLIC_CHESS_API_URL ??
-  wsapiService("chess");
+const UPSTREAMS = chessUpstreamCandidates();
 const UPSTREAM_PREFIX = "draughts";
 const NO_STORE = "no-store, max-age=0, must-revalidate";
 
@@ -95,24 +90,32 @@ async function forward(
 ) {
   const search = searchParams ? searchParams.toString() : req.nextUrl.searchParams.toString();
   const query = search ? `?${search}` : "";
-  const url = `${BASE}/${upstreamPath(joined)}${query}`;
+  const cacheKey = `${upstreamPath(joined)}${query}`;
   const headers: Record<string, string> = { accept: "application/json" };
   if (method !== "GET") headers["content-type"] = "application/json";
   if (wallet) headers["x-wallet-address"] = wallet;
   const ttl = cacheTtlMs(joined);
 
   try {
-    const res = await fetch(url, {
+    const init: RequestInit = {
       method,
       headers,
       body,
       cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
-    });
+    };
+    const res =
+      method === "GET"
+        ? await fetchUpstreamRead(UPSTREAMS, cacheKey, init, 15_000)
+        : await fetchUpstreamWrite(UPSTREAMS, cacheKey, init, 15_000);
     const text = await res.text();
     const contentType = res.headers.get("content-type") ?? "text/plain; charset=utf-8";
     if (method === "GET" && res.ok && ttl > 0) {
-      cache.set(url, { expires: Date.now() + ttl, body: text, status: res.status, contentType });
+      cache.set(cacheKey, {
+        expires: Date.now() + ttl,
+        body: text,
+        status: res.status,
+        contentType,
+      });
     }
     return new NextResponse(text, {
       status: res.status,
@@ -129,15 +132,24 @@ async function forward(
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
-  if (!BASE) return notConfigured();
+  if (UPSTREAMS.length === 0) return notConfigured();
   const joined = path.join("/");
   const ttl = cacheTtlMs(joined);
   const needsSession = chessReadNeedsSession(joined, req.nextUrl.searchParams);
   const claims = needsSession ? await verifyRequest(req) : null;
   if (needsSession && !claims) return unauthorized();
-  const user = needsSession ? await getRequestUser(req, claims) : null;
-  const wallet = needsSession ? walletOfUser(user) : null;
-  if (needsSession && !user) return walletUnavailable();
+  const user =
+    needsSession && claims?.provider === "privy" ? await getRequestUser(req, claims) : null;
+  // Provider-agnostic wallet: Decane resolves through its address endpoint,
+  // Privy through the user object. The old Privy-only path returned null for a
+  // Decane session and failed the wallet check against the caller's own wallet.
+  const wallet = needsSession
+    ? ((await getRequestIdentity(req, claims))?.evmAddress ?? null)
+    : null;
+  // Only a Privy session has a user object to miss: for Decane, `user` is
+  // null by design and supplies nothing but the display name. Requiring it
+  // here 401'd every migrated player after their token had verified.
+  if (needsSession && claims?.provider === "privy" && !user) return walletUnavailable();
   if (needsSession && !wallet) return noWallet();
 
   const forwardedSearch = wallet
@@ -145,9 +157,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
     : req.nextUrl.searchParams;
 
   const forwardedQuery = forwardedSearch.toString();
-  const url = `${BASE}/${upstreamPath(joined)}${forwardedQuery ? `?${forwardedQuery}` : ""}`;
+  const cacheKey = `${upstreamPath(joined)}${forwardedQuery ? `?${forwardedQuery}` : ""}`;
   if (ttl > 0) {
-    const hit = cache.get(url);
+    const hit = cache.get(cacheKey);
     if (hit && hit.expires > Date.now()) {
       return new NextResponse(hit.body, {
         status: hit.status,
@@ -165,14 +177,17 @@ async function authedWrite(
   method: "POST" | "PUT" | "DELETE"
 ) {
   const { path } = await ctx.params;
-  if (!BASE) return notConfigured();
+  if (UPSTREAMS.length === 0) return notConfigured();
 
   const claims = await verifyRequest(req);
   if (!claims) return unauthorized();
 
-  const user = await getRequestUser(req, claims);
-  if (!user) return walletUnavailable();
-  const wallet = walletOfUser(user);
+  const user = claims?.provider === "privy" ? await getRequestUser(req, claims) : null;
+  // Only a Privy session has a user object to miss: for Decane, `user` is
+  // null by design and supplies nothing but the display name. Requiring it
+  // here 401'd every migrated player after their token had verified.
+  if (claims?.provider === "privy" && !user) return walletUnavailable();
+  const wallet = (await getRequestIdentity(req, claims))?.evmAddress ?? null;
   if (!wallet) return noWallet();
 
   const raw = await req.text();

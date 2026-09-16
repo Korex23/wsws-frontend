@@ -1,10 +1,11 @@
 "use client";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { usePrivy } from "@privy-io/react-auth";
-import { apiFetch } from "@/lib/api";
-import { getWalletAddress } from "@/lib/user";
+import { queryKeys } from "@/lib/query-keys";
+import { fetchUserActivity, type UserActivity } from "@/lib/api/services/activity";
+
 import { buildActivityEntries, type ActivityEntry } from "@/lib/activity/entries";
 import type { ActivityItem } from "@/lib/server/activity";
 
@@ -30,26 +31,16 @@ const EMPTY: ActivityItem[] = [];
 const EMPTY_ENTRIES: ActivityEntry[] = [];
 
 export function useActivity({ pollMs = POLL_MS }: { pollMs?: number } = {}) {
-  const { user, ready, authenticated } = usePrivy();
-  const evm = getWalletAddress(user, "ethereum");
-  const solana = getWalletAddress(user, "solana");
+  const { ready, authenticated, evmAddress, solanaAddress, profile } = useAuthSession();
+  const addressFor = (chain: string) => (chain === "solana" ? solanaAddress : evmAddress);
+  const evm = evmAddress;
+  const solana = solanaAddress;
   const enabled = ready && authenticated && Boolean(evm || solana);
 
-  const query = useQuery<{ items: ActivityItem[] }>({
-    queryKey: ["activity", evm, solana],
+  const query = useQuery<UserActivity>({
+    queryKey: queryKeys.activity.byWallet(evm, solana),
     enabled,
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (evm) params.set("evm", evm);
-      if (solana) params.set("solana", solana);
-      const res = await apiFetch(`/api/activity?${params.toString()}`, {}, { requireAuth: true });
-      if (!res.ok) {
-        throw new Error(
-          res.status === 429 ? "Too many requests, try again shortly" : "Could not load activity"
-        );
-      }
-      return res.json();
-    },
+    queryFn: () => fetchUserActivity({ evm, solana }),
     refetchInterval: pollMs,
     staleTime: POLL_MS,
     // Keep the current list rendered while a poll refetches, so the feed never
@@ -71,6 +62,9 @@ export function useActivity({ pollMs = POLL_MS }: { pollMs?: number } = {}) {
     items,
     loading: query.isLoading,
     error: query.isError,
+    // Some source did not answer, so `items` is not the whole history. The
+    // view says so rather than presenting a short list as a complete one.
+    partial: (query.data?.unavailable?.length ?? 0) > 0,
     refetch: query.refetch,
   };
 }

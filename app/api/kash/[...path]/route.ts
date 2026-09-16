@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestUser, verifyRequest } from "@/lib/server/auth";
-import { walletOfUser } from "@/lib/server/chess-identity";
+import { getRequestIdentity, verifyRequest } from "@/lib/server/auth";
 import { wsapiService } from "@/lib/wsapi-base";
 
 // Server-side proxy for the Kash rewards engine (buy KSH, earn on activity,
@@ -21,7 +20,6 @@ const PUBLIC_GET_PATHS = new Set([
   "status",
   "purchases/quote",
   "activities/quote",
-  "conversions/quote",
   "subscriptions/tiers",
   // On-chain desk reads: contract addresses, price, pause state, reserve, and
   // the two quotes. All wallet-free.
@@ -50,7 +48,6 @@ function isPublicGet(path: string[]): boolean {
 // wallet keeps one user from building payloads against another's nonces.
 const WALLET_POST_PATHS = new Set([
   "purchases",
-  "conversions",
   "subscriptions",
   "settlements/claim",
   "desk/buy/prepare",
@@ -140,7 +137,13 @@ async function walletGate(req: NextRequest, claimed: string | null): Promise<Nex
   const claims = await verifyRequest(req);
   if (!claims) return unauthorized();
   if (!claimed) return forbidden();
-  const wallet = walletOfUser(await getRequestUser(req, claims));
+  // Provider-agnostic: a Decane session resolves its wallet through Decane's
+  // address endpoint, a Privy one through the Privy user. Asking Privy for a
+  // user whose id is a Decane UUID returns nothing, which used to surface here
+  // as "Wallet must be the signed-in wallet" — a 403 for a perfectly valid
+  // session, after it had already authenticated.
+  const identity = await getRequestIdentity(req, claims);
+  const wallet = identity?.evmAddress ?? null;
   if (!wallet || claimed.toLowerCase() !== wallet.toLowerCase()) return forbidden();
   return null;
 }
@@ -165,7 +168,10 @@ function isIdentityPath(joined: string): boolean {
 async function identityGate(req: NextRequest): Promise<NextResponse | null> {
   const claims = await verifyRequest(req);
   if (!claims) return unauthorized();
-  if (!req.headers.get("privy-id-token")) return unauthorized();
+  // A verified session is the requirement, not a Privy identity token
+  // specifically. Decane issues no identity token at all, so demanding one
+  // here 401'd every Decane caller unconditionally. Which credential the
+  // engine is given to identify them is forward()'s problem below.
   return null;
 }
 
@@ -180,8 +186,17 @@ async function forward(
   if (method !== "GET") headers["content-type"] = "application/json";
   // Only identity routes carry the caller's token upstream; everything else
   // keeps the engine request as anonymous as it always was.
-  const idToken = req.headers.get("privy-id-token");
-  if (idToken && isIdentityPath(joined)) headers["privy-id-token"] = idToken;
+  //
+  // Two credentials now, because the two providers identify a caller
+  // differently: Privy by its signed identity token, Decane by the bearer the
+  // engine's shared verifier reads. Forwarding whichever is present lets one
+  // route serve both during the migration window.
+  if (isIdentityPath(joined)) {
+    const idToken = req.headers.get("privy-id-token");
+    if (idToken) headers["privy-id-token"] = idToken;
+    const authorization = req.headers.get("authorization");
+    if (authorization) headers["authorization"] = authorization;
+  }
 
   try {
     const call = async () => {

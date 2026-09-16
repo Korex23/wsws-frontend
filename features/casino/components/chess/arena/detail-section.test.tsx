@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArenaDetail } from "@/features/casino/lib/api/arena";
 
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
-const login = vi.hoisted(() => vi.fn());
 const arenaState = vi.hoisted(() => ({
   detail: null as ArenaDetail | null,
   isOrganizer: false,
@@ -20,10 +19,6 @@ const arenaState = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
-}));
-
-vi.mock("@privy-io/react-auth", () => ({
-  usePrivy: () => ({ login }),
 }));
 
 vi.mock("@/features/casino/hooks/use-casino-wallet", () => ({

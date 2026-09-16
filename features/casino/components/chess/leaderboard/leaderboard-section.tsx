@@ -1,9 +1,8 @@
 "use client";
 
-import { usePrivy } from "@privy-io/react-auth";
 import { CasinoError, CasinoLoading } from "@/features/casino/components/casino-state";
 import { useChessLeaderboard } from "@/features/casino/hooks/use-chess-leaderboard";
-import { deriveProfile } from "@/lib/user";
+import { useAuthSession } from "@/hooks/use-auth-session";
 import { LeaderboardFilters } from "./leaderboard-filters";
 import { countryName, perfLabel } from "./leaderboard-format";
 import { LeaderboardSidebar } from "./leaderboard-sidebar";
@@ -26,8 +25,7 @@ function LeaderboardMark() {
 }
 
 export function LeaderboardSection() {
-  const { user } = usePrivy();
-  const profile = deriveProfile(user);
+  const { profile } = useAuthSession();
   const board = useChessLeaderboard();
   const selectedPerfLabel = perfLabel(board.perf);
   const selectedCountryName = board.country ? countryName(board.country) : "Global";

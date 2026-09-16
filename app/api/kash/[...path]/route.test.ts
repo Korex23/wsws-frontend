@@ -8,12 +8,13 @@ import { NextRequest } from "next/server";
 // write for the wallet drops its entries so the refresh after an action sees
 // the engine, not the cache.
 
-const { verifyRequest, getRequestUser, fetch } = vi.hoisted(() => ({
+const { verifyRequest, getRequestUser, getRequestIdentity, fetch } = vi.hoisted(() => ({
   verifyRequest: vi.fn(),
   getRequestUser: vi.fn(),
+  getRequestIdentity: vi.fn(),
   fetch: vi.fn(),
 }));
-vi.mock("@/lib/server/auth", () => ({ verifyRequest, getRequestUser }));
+vi.mock("@/lib/server/auth", () => ({ verifyRequest, getRequestUser, getRequestIdentity }));
 vi.mock("@/lib/server/chess-identity", () => ({
   walletOfUser: (user: { wallet?: string } | null) => user?.wallet ?? null,
 }));
@@ -53,6 +54,11 @@ beforeEach(async () => {
   fetch.mockImplementation(async () => answer({ success: true, data: { balance: "1" } }));
   verifyRequest.mockResolvedValue({ userId: "did:x" });
   getRequestUser.mockResolvedValue({ wallet: WALLET });
+  getRequestIdentity.mockResolvedValue({
+    userId: "did:x",
+    evmAddress: WALLET,
+    solanaAddress: null,
+  });
   route = await import("./route");
 });
 afterEach(() => {
@@ -105,6 +111,11 @@ describe("wallet-scoped reads", () => {
     const path = `accounts/${WALLET}`;
     await route.GET(get(path), ctx(path));
     getRequestUser.mockResolvedValue({ wallet: OTHER });
+    getRequestIdentity.mockResolvedValue({
+      userId: "did:x",
+      evmAddress: OTHER,
+      solanaAddress: null,
+    });
     const res = await route.GET(get(path), ctx(path));
     expect(res.status).toBe(403);
     expect(fetch).toHaveBeenCalledTimes(1);

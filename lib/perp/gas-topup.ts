@@ -29,8 +29,14 @@ import type { BuildResult } from "@/lib/perp/types";
 
 export type TopUpOutcome = { ok: true } | { ok: false; error: string };
 
-type TopUpErrorCode = "addFundsForGas" | "gasQuoteFailed" | "gasSwapFailed";
-type InternalOutcome = { ok: true } | { ok: false; code: TopUpErrorCode };
+export type KeeperGasErrorCode = "addFundsForGas" | "gasQuoteFailed" | "gasSwapFailed";
+export type KeeperGasOutcome = { ok: true } | { ok: false; code: KeeperGasErrorCode };
+
+export interface KeeperGasDeps {
+  // Sends USDC from the trader's wallet to the quoted deposit address. The
+  // hook wires the app wallet; the migration flow wires the old one.
+  sendUsdc(to: string, amount: bigint): Promise<string>;
+}
 
 // Extra headroom on top of the raw wei deficit: the buy targets a USDC spend
 // estimated from a live price snapshot, and the Dextopus quote moves between
@@ -121,134 +127,134 @@ export function estimateUsdcToSpend(neededWei: bigint, ethPriceUsd: number): num
 // signatures (the deposit send, then the perp action itself — plus an
 // unwrap only on the self-heal path); trades that already have enough ETH
 // stay at one signature, unchanged from before this existed.
+export async function ensureKeeperGas(
+  trader: `0x${string}`,
+  builds: BuildResult[],
+  deps: KeeperGasDeps
+): Promise<KeeperGasOutcome> {
+  const neededWei = stepsTotalValueWei(builds);
+  if (neededWei === 0n) return { ok: true };
+
+  const client = publicClientForChain(PERP_CHAIN_ID);
+  const ethWei = await client.getBalance({ address: trader });
+  if (ethWei >= neededWei) return { ok: true };
+
+  const deficitWei = neededWei - ethWei;
+  const targetWei = applySafetyMargin(deficitWei);
+
+  // Self-heal: if a wallet already holds enough WETH to clear the target
+  // on its own (stranded from an earlier attempt, or anything else),
+  // just unwrap it — cheaper and one signature shorter than a fresh buy.
+  const existingWeth = await readBaseTokenBalance(WETH_ADDRESS, trader);
+  if (existingWeth >= targetWei) {
+    const toUnwrap = capUnwrapAmount(existingWeth, targetWei);
+    // Mutates the caller's array: the unwrap rides in the same batch and
+    // signature as the perp action builds already carries, so callers
+    // see it appear in the same `builds` they pass to sendBatch after.
+    builds.unshift({
+      chainId: PERP_CHAIN_ID,
+      steps: [
+        {
+          to: WETH_ADDRESS,
+          data: encodeWethWithdraw(toUnwrap),
+          value: "0",
+          label: "Unwrap ETH for the execution fee",
+        },
+      ],
+    });
+    return { ok: true };
+  }
+
+  const usdcBalance = await readBaseTokenBalance(USDC_ADDRESS, trader);
+
+  let ethPriceUsd: number;
+  try {
+    const prices = await fetchPerpPrices();
+    const ethUsd = prices.find((p) => p.pair === "ETH/USD")?.price;
+    if (!ethUsd) throw new Error("no ETH/USD price");
+    ethPriceUsd = Number(ethUsd);
+  } catch {
+    return { ok: false, code: "gasQuoteFailed" };
+  }
+
+  const usdcToSpend = estimateUsdcToSpend(targetWei, ethPriceUsd);
+  let usdcToSpendBase = toBaseUnits(usdcToSpend.toFixed(USDC_DECIMALS), USDC_DECIMALS);
+
+  if (usdcBalance < usdcToSpendBase) {
+    return { ok: false, code: "addFundsForGas" };
+  }
+
+  try {
+    // The perp price feed only gives a rough USDC amount to ask for —
+    // Dextopus's own quote is the real rate (their fee/spread included)
+    // and can undershoot it. Check the quote's guaranteed minimum output
+    // before spending anything; if it's short, scale the request up and
+    // re-quote once rather than discovering the shortfall only after the
+    // USDC is already gone.
+    let quote = await fetchBuyQuote({
+      route: ETH_ON_BASE_ROUTE,
+      amount: usdcToSpendBase,
+      recipient: trader,
+      refundTo: trader,
+      slippageBps: SLIPPAGE_BPS,
+    });
+    if (quote.minOutput < targetWei) {
+      // A little extra on top of the exact scale-up ratio so a second
+      // shortfall (further fee/spread drift on the bigger amount) is
+      // very unlikely, without looping re-quotes indefinitely.
+      const scaledUsdc = (usdcToSpendBase * targetWei * 105n) / (quote.minOutput * 100n);
+      if (scaledUsdc > usdcBalance) {
+        return { ok: false, code: "addFundsForGas" };
+      }
+      usdcToSpendBase = scaledUsdc;
+      quote = await fetchBuyQuote({
+        route: ETH_ON_BASE_ROUTE,
+        amount: usdcToSpendBase,
+        recipient: trader,
+        refundTo: trader,
+        slippageBps: SLIPPAGE_BPS,
+      });
+      if (quote.minOutput < targetWei) {
+        return { ok: false, code: "gasSwapFailed" };
+      }
+    }
+    await deps.sendUsdc(quote.depositAddress, usdcToSpendBase);
+    // A poll timeout or a misreported status doesn't necessarily mean
+    // the buy failed — it means Dextopus's status endpoint didn't say
+    // "settled" within the deadline. The chain is the actual source of
+    // truth: fall through to the balance check below either way rather
+    // than failing a top-up whose ETH already landed.
+    await pollDepositSettled(quote.requestId);
+  } catch {
+    return { ok: false, code: "gasSwapFailed" };
+  }
+
+  // Defensive final check: even generous margins can't survive
+  // materially worse-than-quoted slippage, and this doubles as the real
+  // confirmation the poll above is only a status-endpoint proxy for.
+  // Fail clearly rather than sign a batch that reverts on-chain from an
+  // unmet fee.
+  const freshEthWei = await client.getBalance({ address: trader });
+  if (freshEthWei < neededWei) {
+    return { ok: false, code: "gasSwapFailed" };
+  }
+  return { ok: true };
+}
+
+// The app's own wallet as the keeper-gas funder, with the codes translated.
 export function useGasTopUp() {
   const t = useTranslations("perps");
   const { sendUsdc } = useSendUsdc();
 
-  const ensureGasInternal = useCallback(
-    async (trader: `0x${string}`, builds: BuildResult[]): Promise<InternalOutcome> => {
-      const neededWei = stepsTotalValueWei(builds);
-      if (neededWei === 0n) return { ok: true };
-
-      const client = publicClientForChain(PERP_CHAIN_ID);
-      const ethWei = await client.getBalance({ address: trader });
-      if (ethWei >= neededWei) return { ok: true };
-
-      const deficitWei = neededWei - ethWei;
-      const targetWei = applySafetyMargin(deficitWei);
-
-      // Self-heal: if a wallet already holds enough WETH to clear the target
-      // on its own (stranded from an earlier attempt, or anything else),
-      // just unwrap it — cheaper and one signature shorter than a fresh buy.
-      const existingWeth = await readBaseTokenBalance(WETH_ADDRESS, trader);
-      if (existingWeth >= targetWei) {
-        const toUnwrap = capUnwrapAmount(existingWeth, targetWei);
-        // Mutates the caller's array: the unwrap rides in the same batch and
-        // signature as the perp action builds already carries, so callers
-        // see it appear in the same `builds` they pass to sendBatch after.
-        builds.unshift({
-          chainId: PERP_CHAIN_ID,
-          steps: [
-            {
-              to: WETH_ADDRESS,
-              data: encodeWethWithdraw(toUnwrap),
-              value: "0",
-              label: "Unwrap ETH for the execution fee",
-            },
-          ],
-        });
-        return { ok: true };
-      }
-
-      const usdcBalance = await readBaseTokenBalance(USDC_ADDRESS, trader);
-
-      let ethPriceUsd: number;
-      try {
-        const prices = await fetchPerpPrices();
-        const ethUsd = prices.find((p) => p.pair === "ETH/USD")?.price;
-        if (!ethUsd) throw new Error("no ETH/USD price");
-        ethPriceUsd = Number(ethUsd);
-      } catch {
-        return { ok: false, code: "gasQuoteFailed" };
-      }
-
-      const usdcToSpend = estimateUsdcToSpend(targetWei, ethPriceUsd);
-      let usdcToSpendBase = toBaseUnits(usdcToSpend.toFixed(USDC_DECIMALS), USDC_DECIMALS);
-
-      if (usdcBalance < usdcToSpendBase) {
-        return { ok: false, code: "addFundsForGas" };
-      }
-
-      try {
-        // The perp price feed only gives a rough USDC amount to ask for —
-        // Dextopus's own quote is the real rate (their fee/spread included)
-        // and can undershoot it. Check the quote's guaranteed minimum output
-        // before spending anything; if it's short, scale the request up and
-        // re-quote once rather than discovering the shortfall only after the
-        // USDC is already gone.
-        let quote = await fetchBuyQuote({
-          route: ETH_ON_BASE_ROUTE,
-          amount: usdcToSpendBase,
-          recipient: trader,
-          refundTo: trader,
-          slippageBps: SLIPPAGE_BPS,
-        });
-        if (quote.minOutput < targetWei) {
-          // A little extra on top of the exact scale-up ratio so a second
-          // shortfall (further fee/spread drift on the bigger amount) is
-          // very unlikely, without looping re-quotes indefinitely.
-          const scaledUsdc = (usdcToSpendBase * targetWei * 105n) / (quote.minOutput * 100n);
-          if (scaledUsdc > usdcBalance) {
-            return { ok: false, code: "addFundsForGas" };
-          }
-          usdcToSpendBase = scaledUsdc;
-          quote = await fetchBuyQuote({
-            route: ETH_ON_BASE_ROUTE,
-            amount: usdcToSpendBase,
-            recipient: trader,
-            refundTo: trader,
-            slippageBps: SLIPPAGE_BPS,
-          });
-          if (quote.minOutput < targetWei) {
-            return { ok: false, code: "gasSwapFailed" };
-          }
-        }
-        await sendUsdc({
-          chainType: "ethereum",
-          to: quote.depositAddress,
-          amount: usdcToSpendBase,
-          settle: SETTLE_CHAINS.base,
-        });
-        // A poll timeout or a misreported status doesn't necessarily mean
-        // the buy failed — it means Dextopus's status endpoint didn't say
-        // "settled" within the deadline. The chain is the actual source of
-        // truth: fall through to the balance check below either way rather
-        // than failing a top-up whose ETH already landed.
-        await pollDepositSettled(quote.requestId);
-      } catch {
-        return { ok: false, code: "gasSwapFailed" };
-      }
-
-      // Defensive final check: even generous margins can't survive
-      // materially worse-than-quoted slippage, and this doubles as the real
-      // confirmation the poll above is only a status-endpoint proxy for.
-      // Fail clearly rather than sign a batch that reverts on-chain from an
-      // unmet fee.
-      const freshEthWei = await client.getBalance({ address: trader });
-      if (freshEthWei < neededWei) {
-        return { ok: false, code: "gasSwapFailed" };
-      }
-      return { ok: true };
-    },
-    [sendUsdc]
-  );
-
   const ensureGas = useCallback(
     async (trader: `0x${string}`, builds: BuildResult[]): Promise<TopUpOutcome> => {
-      const outcome = await ensureGasInternal(trader, builds);
+      const outcome = await ensureKeeperGas(trader, builds, {
+        sendUsdc: (to, amount) =>
+          sendUsdc({ chainType: "ethereum", to, amount, settle: SETTLE_CHAINS.base }),
+      });
       return outcome.ok ? { ok: true } : { ok: false, error: t(outcome.code) };
     },
-    [ensureGasInternal, t]
+    [sendUsdc, t]
   );
 
   return { ensureGas };

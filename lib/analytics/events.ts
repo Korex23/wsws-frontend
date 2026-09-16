@@ -34,7 +34,8 @@ export type PageName =
   | "prediction"
   | "earn"
   | "arkade"
-  | "arktivity";
+  | "arktivity"
+  | "market_square";
 
 /**
  * Event name -> its properties. `void` means the event takes none.
@@ -45,6 +46,18 @@ export type PageName =
  * do not break.
  */
 export interface AnalyticsEvents {
+  // Migration of money out of the old Privy wallets. Never carries addresses.
+  migration_started: { entry: "balance_card" | "account_modal" | "gate" };
+  migration_linked: void;
+  migration_reviewed: {
+    holdings: number;
+    opted_in: number;
+    settle_later: number;
+    value_usd: number;
+  };
+  migration_step_completed: { venue: string; kind: string };
+  migration_step_failed: { venue: string; kind: string; retryable: boolean };
+  migration_completed: { outcome: "complete" | "partial" | "blocked"; moved_usd: number };
   // Auth and onboarding
   auth_started: void;
   signup_completed: { method: SignupMethod };
@@ -86,6 +99,10 @@ export interface AnalyticsEvents {
     asset: string;
     swap_id: string;
     recorded: string;
+    // The trade service's request id and the on-chain hash, when known: what
+    // the trade team needs to find the swap it recorded wrongly.
+    request_id?: string;
+    hash?: string;
   };
 
   // Perpetuals
