@@ -2,6 +2,7 @@
 
 import { useMigrationStatus } from "@/features/migrate/hooks/use-migration-status";
 import { useLegacyAccount } from "@/features/migrate/hooks/use-legacy-account";
+import { useLegacyWalletFunds } from "@/features/migrate/hooks/use-legacy-wallet-funds";
 import {
   maskBalance,
   offerMigration,
@@ -23,16 +24,24 @@ export function useOfferMigration(): boolean {
   // Does this identity belong to a legacy account at all. The wallet balance it
   // also returns is deliberately unused here — see the note above.
   const legacy = useLegacyAccount();
+  // For a linked account, what is ACTUALLY on the old wallet — read here, not
+  // taken from the service, whose flag also fires on pending ledger re-keys.
+  const walletFunds = useLegacyWalletFunds(
+    status.data?.legacy ?? null,
+    status.data?.linked === true
+  );
   const offer = offerMigration({
     complete,
     localHistory,
     status: status.data,
     legacyAccount: legacy.has,
+    walletFunds: walletFunds.data,
   });
   console.log(
     `[migrate] offer migrate-to-2.0: ${offer ? "YES" : "no"}` +
       ` [already linked: ${status.data === undefined ? "loading" : (status.data.linked ?? "service could not say")}, done on this device: ${complete},` +
       ` privy keys here: ${localHistory}, service reports funds: ${status.data?.hasLegacyFunds ?? "unknown"},` +
+      ` old wallet on chain: ${walletFunds.data === undefined ? "not read" : walletFunds.data === null ? "partial read" : walletFunds.data ? "has funds" : "empty"},` +
       ` directory: ${legacy.has ? "legacy account found" : "no legacy account"}]`
   );
   return offer;

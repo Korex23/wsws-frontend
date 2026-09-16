@@ -257,3 +257,45 @@ describe("offerMigration once the account is linked", () => {
     expect(offerMigration({ ...base, status, legacyAccount: true })).toBe(false);
   });
 });
+
+describe("offerMigration — the frontend's read of the old wallet", () => {
+  const status = (overrides: Partial<typeof EMPTY_MIGRATION_STATUS>) => ({
+    ...EMPTY_MIGRATION_STATUS,
+    ...overrides,
+  });
+
+  // Seen live: 0 ETH / 0 USDC / 0 KSH on chain, four re-keys pending, and the
+  // service's flag alone kept the migration — and the gate — open.
+  it("does not offer a linked account whose old wallet is empty on chain, whatever the service says", () => {
+    expect(
+      offerMigration({
+        complete: true,
+        localHistory: true,
+        status: status({ linked: true, hasLegacyFunds: true }),
+        legacyAccount: true,
+        walletFunds: false,
+      })
+    ).toBe(false);
+  });
+
+  it("offers a linked account whose old wallet still holds something, even if the service says not", () => {
+    expect(
+      offerMigration({
+        complete: true,
+        localHistory: false,
+        status: status({ linked: true, hasLegacyFunds: false }),
+        walletFunds: true,
+      })
+    ).toBe(true);
+  });
+
+  it("falls back to the service when the wallet could not be read", () => {
+    const base = {
+      complete: true,
+      localHistory: false,
+      status: status({ linked: true, hasLegacyFunds: true }),
+    };
+    expect(offerMigration({ ...base, walletFunds: null })).toBe(true);
+    expect(offerMigration({ ...base, walletFunds: undefined })).toBe(true);
+  });
+});

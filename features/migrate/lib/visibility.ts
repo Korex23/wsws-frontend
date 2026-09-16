@@ -112,6 +112,13 @@ export function offerMigration(input: {
    * this decision.
    */
   legacyAccount?: boolean;
+  /**
+   * The frontend's own read of the old wallet, for a linked account: true /
+   * false, or null (undefined) when it could not tell. When known it outranks
+   * the service's `hasLegacyFunds`, which also says "yes" while a ledger
+   * re-key is pending — a queue the user cannot act on.
+   */
+  walletFunds?: boolean | null;
 }): boolean {
   // Money still on the old wallet, or a deposit still landing there, keeps
   // the offer open no matter what else is true — linked or not, flagged done
@@ -120,7 +127,9 @@ export function offerMigration(input: {
   // exactly who this button is for. (The service also reports this while a
   // ledger re-key is unfinished; re-pressing re-drives it, which is the
   // documented retry.)
-  if (input.status?.hasLegacyFunds || input.status?.pendingOnramps.length) return true;
+  const fundsOnChain = input.walletFunds ?? null;
+  const fundsLeft = fundsOnChain !== null ? fundsOnChain : Boolean(input.status?.hasLegacyFunds);
+  if (fundsLeft || input.status?.pendingOnramps.length) return true;
   // Already linked and nothing left on the old side: the mapping exists, the
   // ledgers re-key themselves, and there is nothing left to ask the user for.
   if (input.status?.linked === true) return false;
