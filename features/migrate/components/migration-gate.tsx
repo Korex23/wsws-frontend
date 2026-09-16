@@ -6,6 +6,7 @@ import { useAuthSession } from "@/hooks/use-auth-session";
 import type { VenueAdapter } from "@/lib/migration/types";
 import { useOfferMigration } from "@/features/migrate/hooks/use-offer-migration";
 import { MoveOldMoneyFrame } from "@/features/migrate/components/move-old-money-sheet";
+import { MigrationGateHeader } from "@/features/migrate/components/migration-gate-header";
 import {
   MoveOldMoneyPanel,
   type MigrationProgress,
@@ -72,6 +73,7 @@ export function MigrationGate({ adapters }: { adapters: readonly VenueAdapter[] 
   return (
     <MoveOldMoneyFrame dismissible={false} onClose={ignore}>
       <LegacyPrivyProvider>
+        <MigrationGateHeader stage={progress?.stage ?? "signIn"} done={canFinish} />
         <MoveOldMoneyPanel
           adapters={adapters}
           entry="gate"

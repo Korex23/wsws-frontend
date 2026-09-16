@@ -39,8 +39,12 @@ import { useLegacyWalletFunds } from "@/features/migrate/hooks/use-legacy-wallet
 
 export type MigrationEntry = "balance_card" | "account_modal" | "gate";
 
-/** What a host needs to decide whether the user may leave. */
+export type MigrationStage = "signIn" | "move" | "finish";
+
+/** What a host needs to decide whether the user may leave, and to show where the user is. */
 export interface MigrationProgress {
+  /** Which of the three steps is on screen. */
+  stage: MigrationStage;
   /** The pairing exists — this run linked it, or the service already had it. */
   linked: boolean;
   /** Discovery has answered at least once; before that `remaining` is unknown. */
@@ -192,11 +196,14 @@ export function MoveOldMoneyPanel({
       ),
     [holdings, autoResult, result, now]
   );
-  useEffect(() => {
-    onProgress?.({ linked: linkedNow, discovered, remaining: blocking.length });
-  }, [onProgress, linkedNow, discovered, blocking.length]);
   const checked = optIn ?? defaultOptIn(remaining);
   const groups = useMemo(() => reviewGroups(remaining, checked, now), [remaining, checked, now]);
+  // Which step is on screen — the same choice the render below makes.
+  const finishedNow = result ?? (autoResult && groups.optIn.length === 0 ? autoResult : null);
+  const stage: MigrationStage = !signer ? "signIn" : finishedNow ? "finish" : "move";
+  useEffect(() => {
+    onProgress?.({ stage, linked: linkedNow, discovered, remaining: blocking.length });
+  }, [onProgress, stage, linkedNow, discovered, blocking.length]);
 
   const toggle = (id: string) => {
     const next = new Set(checked);
@@ -342,7 +349,10 @@ export function MoveOldMoneyPanel({
     // looking for a row worth nothing.
     const left = finished.plan.settleLater.filter(worthShowing).length;
     return (
-      <Step title={t(`summary.${finished.outcome}`)} body={t("summaryBody")}>
+      <Step
+        title={t(`summary.${finished.outcome}`)}
+        body={t(locked ? "gateSummaryBody" : "summaryBody")}
+      >
         <div className="ws-inset flex flex-col gap-2 p-3.5 text-[13px]">
           <Row label={t("moved")} value={formatUsd(movedUsd)} />
           <Row label={t("left")} value={String(left)} />

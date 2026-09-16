@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   evm: "0xAbC0000000000000000000000000000000000001" as string | null,
 }));
 
+vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/features/migrate/hooks/use-offer-migration", () => ({
   useOfferMigration: () => state.offer,
 }));
@@ -51,13 +52,25 @@ vi.mock("@/features/migrate/components/move-old-money-panel", () => ({
     onClose: () => void;
   }) => (
     <div data-testid="panel" data-locked={String(locked)} data-can-finish={String(canFinish)}>
-      <button onClick={() => onProgress?.({ linked: true, discovered: true, remaining: 1 })}>
+      <button
+        onClick={() =>
+          onProgress?.({ stage: "move", linked: true, discovered: true, remaining: 1 })
+        }
+      >
         still-money
       </button>
-      <button onClick={() => onProgress?.({ linked: false, discovered: true, remaining: 0 })}>
+      <button
+        onClick={() =>
+          onProgress?.({ stage: "finish", linked: false, discovered: true, remaining: 0 })
+        }
+      >
         not-linked
       </button>
-      <button onClick={() => onProgress?.({ linked: true, discovered: true, remaining: 0 })}>
+      <button
+        onClick={() =>
+          onProgress?.({ stage: "finish", linked: true, discovered: true, remaining: 0 })
+        }
+      >
         all-done
       </button>
       <button onClick={onClose}>exit</button>
@@ -78,6 +91,22 @@ afterEach(() => {
 });
 
 describe("MigrationGate", () => {
+  it("says what it is, and where the user is", () => {
+    render(<MigrationGate adapters={[]} />);
+    expect(screen.getByRole("heading", { name: "gateTitle" })).toBeInTheDocument();
+    // Before the panel reports anything, the first step is the current one.
+    expect(screen.getByText("gateStepSignIn").closest("li")).toHaveAttribute(
+      "aria-current",
+      "step"
+    );
+    fireEvent.click(screen.getByText("still-money"));
+    expect(screen.getByText("gateStepMove").closest("li")).toHaveAttribute("aria-current", "step");
+    expect(screen.getByText("gateStepSignIn").closest("li")).not.toHaveAttribute("aria-current");
+    // Once the exit is allowed every step reads as done and none is current.
+    fireEvent.click(screen.getByText("all-done"));
+    expect(screen.queryByRole("listitem", { current: "step" })).not.toBeInTheDocument();
+  });
+
   it("renders nothing when the migration is not offered", () => {
     state.offer = false;
     render(<MigrationGate adapters={[]} />);
