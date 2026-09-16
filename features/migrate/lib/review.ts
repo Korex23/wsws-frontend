@@ -62,6 +62,20 @@ export function blockingHoldings(
 // from the list and NEVER from the plan — dust with a real amount is still
 // swept, and a row the user is being asked to decide about is still shown
 // whatever it is worth.
+// The money that must cross before the app lets the user in: native (ETH),
+// the stablecoins, and KSH. Everything else — memecoins, spot tokens, perp
+// positions, prediction shares — is the long tail, moved later from the
+// always-open door in the account menu. A revertible memecoin must never hold
+// the app shut.
+const CORE_STABLES = new Set(["USDC", "USDT"]);
+export function isCoreAsset(holding: LegacyHolding): boolean {
+  return (
+    holding.kind === "native" ||
+    holding.venue === "kash" ||
+    CORE_STABLES.has(holding.symbol.toUpperCase())
+  );
+}
+
 const DISPLAY_MIN_USD = 0.01;
 
 export function worthShowing(holding: LegacyHolding): boolean {

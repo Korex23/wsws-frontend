@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useTranslations } from "next-intl";
 import { LegacyPrivyProvider } from "@/components/providers/legacy-privy-provider";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import type { VenueAdapter } from "@/lib/migration/types";
@@ -40,17 +41,21 @@ function writeGateDone(key: string | null): void {
 }
 
 /**
- * The migration as a gate rather than a button: an overlay nobody can close
- * until the old account is linked AND nothing is left to move off it.
+ * The migration as a gate: an overlay nobody can close until the old account
+ * is linked and its CORE money — native, the stablecoins, KSH — has crossed.
  *
- * "Nothing left" is the panel's own discovery, not the service's flag. The
- * service reports funds while any ledger re-key is still pending — which the
- * user cannot act on, and which sits that way for as long as a consumer is
- * down. A gate on that would lock people out of the app for a backend's sake.
- * So the exit is judged on what the user could actually move; once they have,
- * this account is marked done on this device and the gate does not return.
+ * Deliberately not "every last token". A memecoin that reverts on transfer, a
+ * perp position awaiting settlement, a market awaiting resolution — none of
+ * those should hold the whole app shut. They are the long tail, and the
+ * account menu keeps an always-open door to them ("Move money from old
+ * wallet"). The gate is for the money a user would be hurt to leave behind.
+ *
+ * "Core cleared" is the panel's own on-chain discovery, not the service's
+ * flag, which also fires while a ledger re-key is pending — a backend queue
+ * the user cannot act on.
  */
 export function MigrationGate({ adapters }: { adapters: readonly VenueAdapter[] }) {
+  const t = useTranslations("migrate");
   const offer = useOfferMigration();
   const session = useAuthSession();
   const key = gateKey(session.evmAddress);
@@ -58,7 +63,7 @@ export function MigrationGate({ adapters }: { adapters: readonly VenueAdapter[] 
   const [progress, setProgress] = useState<MigrationProgress | null>(null);
 
   const canFinish =
-    progress !== null && progress.linked && progress.discovered && progress.remaining === 0;
+    progress !== null && progress.linked && progress.discovered && progress.coreRemaining === 0;
 
   const finish = useCallback(() => {
     if (!canFinish) return;
@@ -66,10 +71,10 @@ export function MigrationGate({ adapters }: { adapters: readonly VenueAdapter[] 
     setDoneHere(true);
   }, [canFinish, key]);
 
-  // A locked frame gets a no-op: nothing the frame owns may close the gate.
   const ignore = useCallback(() => {}, []);
 
   if (!offer || doneHere) return null;
+  const coreLeft = progress?.linked === true && !canFinish;
   return (
     <MoveOldMoneyFrame dismissible={false} onClose={ignore}>
       <LegacyPrivyProvider>
@@ -78,10 +83,23 @@ export function MigrationGate({ adapters }: { adapters: readonly VenueAdapter[] 
           adapters={adapters}
           entry="gate"
           locked
-          canFinish={canFinish}
           onProgress={setProgress}
           onClose={finish}
         />
+        {(canFinish || coreLeft) && (
+          <div className="mt-5 border-t border-white/10 pt-4">
+            {canFinish ? (
+              <button
+                onClick={finish}
+                className="bg-accent/15 border-accent/40 hover:bg-accent/25 w-full cursor-pointer rounded-xl border px-4 py-3 font-sans text-[14px] font-semibold text-white"
+              >
+                {t("gateFinish")}
+              </button>
+            ) : (
+              <p className="text-[13px] leading-normal text-white/55">{t("gateCoreLeft")}</p>
+            )}
+          </div>
+        )}
       </LegacyPrivyProvider>
     </MoveOldMoneyFrame>
   );

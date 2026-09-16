@@ -25,6 +25,9 @@ vi.mock("@/hooks/use-auth-session", () => ({
 vi.mock("@/components/providers/legacy-privy-provider", () => ({
   LegacyPrivyProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+vi.mock("@/features/migrate/components/migration-gate-header", () => ({
+  MigrationGateHeader: () => <div data-testid="header" />,
+}));
 vi.mock("@/features/migrate/components/move-old-money-sheet", () => ({
   MoveOldMoneyFrame: ({
     children,
@@ -38,44 +41,39 @@ vi.mock("@/features/migrate/components/move-old-money-sheet", () => ({
     </div>
   ),
 }));
-// A stand-in panel the test can drive: report progress, press the exit.
+// A stand-in panel the test drives: report a progress shape, or press onClose.
 vi.mock("@/features/migrate/components/move-old-money-panel", () => ({
   MoveOldMoneyPanel: ({
     locked,
-    canFinish,
     onProgress,
     onClose,
   }: {
     locked?: boolean;
-    canFinish?: boolean;
     onProgress?: (p: MigrationProgress) => void;
     onClose: () => void;
-  }) => (
-    <div data-testid="panel" data-locked={String(locked)} data-can-finish={String(canFinish)}>
-      <button
-        onClick={() =>
-          onProgress?.({ stage: "move", linked: true, discovered: true, remaining: 1 })
-        }
-      >
-        still-money
-      </button>
-      <button
-        onClick={() =>
-          onProgress?.({ stage: "finish", linked: false, discovered: true, remaining: 0 })
-        }
-      >
-        not-linked
-      </button>
-      <button
-        onClick={() =>
-          onProgress?.({ stage: "finish", linked: true, discovered: true, remaining: 0 })
-        }
-      >
-        all-done
-      </button>
-      <button onClick={onClose}>exit</button>
-    </div>
-  ),
+  }) => {
+    const emit = (p: Partial<MigrationProgress>) =>
+      onProgress?.({
+        stage: "move",
+        linked: true,
+        discovered: true,
+        remaining: 0,
+        coreRemaining: 0,
+        ...p,
+      });
+    return (
+      <div data-testid="panel" data-locked={String(locked)}>
+        <button onClick={() => emit({ coreRemaining: 1, remaining: 1 })}>core-left</button>
+        <button onClick={() => emit({ stage: "finish", linked: false, coreRemaining: 0 })}>
+          not-linked
+        </button>
+        <button onClick={() => emit({ coreRemaining: 0, remaining: 3 })}>
+          core-done-tail-left
+        </button>
+        <button onClick={onClose}>panel-exit</button>
+      </div>
+    );
+  },
 }));
 
 import { MigrationGate } from "@/features/migrate/components/migration-gate";
@@ -91,52 +89,40 @@ afterEach(() => {
 });
 
 describe("MigrationGate", () => {
-  it("says what it is, and where the user is", () => {
-    render(<MigrationGate adapters={[]} />);
-    expect(screen.getByRole("heading", { name: "gateTitle" })).toBeInTheDocument();
-    // Before the panel reports anything, the first step is the current one.
-    expect(screen.getByText("gateStepSignIn").closest("li")).toHaveAttribute(
-      "aria-current",
-      "step"
-    );
-    fireEvent.click(screen.getByText("still-money"));
-    expect(screen.getByText("gateStepMove").closest("li")).toHaveAttribute("aria-current", "step");
-    expect(screen.getByText("gateStepSignIn").closest("li")).not.toHaveAttribute("aria-current");
-    // Once the exit is allowed every step reads as done and none is current.
-    fireEvent.click(screen.getByText("all-done"));
-    expect(screen.queryByRole("listitem", { current: "step" })).not.toBeInTheDocument();
-  });
-
   it("renders nothing when the migration is not offered", () => {
     state.offer = false;
     render(<MigrationGate adapters={[]} />);
     expect(screen.queryByTestId("frame")).not.toBeInTheDocument();
   });
 
-  it("opens locked, and the exit does nothing while money is still on the old wallet", () => {
+  it("opens locked and non-dismissable, with no way out while core money is left", () => {
     render(<MigrationGate adapters={[]} />);
     expect(screen.getByTestId("frame")).toHaveAttribute("data-dismissible", "false");
     expect(screen.getByTestId("panel")).toHaveAttribute("data-locked", "true");
-    fireEvent.click(screen.getByText("still-money"));
-    expect(screen.getByTestId("panel")).toHaveAttribute("data-can-finish", "false");
-    fireEvent.click(screen.getByText("exit"));
+    fireEvent.click(screen.getByText("core-left"));
+    expect(screen.queryByText("gateFinish")).not.toBeInTheDocument();
+    expect(screen.getByText("gateCoreLeft")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("panel-exit"));
     expect(screen.getByTestId("frame")).toBeInTheDocument();
   });
 
-  it("stays shut when the money moved but the link never landed", () => {
+  // The point of the core rule: the long tail (memecoins, perps) does not hold
+  // the gate. Core moved, three tail holdings left, and the exit is offered.
+  it("lets the user through once core is clear, even with the long tail remaining", () => {
     render(<MigrationGate adapters={[]} />);
-    fireEvent.click(screen.getByText("not-linked"));
-    fireEvent.click(screen.getByText("exit"));
-    expect(screen.getByTestId("frame")).toBeInTheDocument();
-  });
-
-  it("lets the user through once linked with nothing left, and remembers it for THIS account", () => {
-    render(<MigrationGate adapters={[]} />);
-    fireEvent.click(screen.getByText("all-done"));
-    expect(screen.getByTestId("panel")).toHaveAttribute("data-can-finish", "true");
-    fireEvent.click(screen.getByText("exit"));
+    fireEvent.click(screen.getByText("core-done-tail-left"));
+    expect(screen.getByText("gateFinish")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("gateFinish"));
     expect(screen.queryByTestId("frame")).not.toBeInTheDocument();
     expect(window.localStorage.getItem(KEY)).toBe("1");
+  });
+
+  it("stays shut when core moved but the link never landed", () => {
+    render(<MigrationGate adapters={[]} />);
+    fireEvent.click(screen.getByText("not-linked"));
+    expect(screen.queryByText("gateFinish")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("panel-exit"));
+    expect(screen.getByTestId("frame")).toBeInTheDocument();
   });
 
   it("does not return for an account that finished, even while the service still reports funds", () => {

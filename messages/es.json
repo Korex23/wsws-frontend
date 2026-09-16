@@ -3208,6 +3208,7 @@
     "irreversibleWarning": "Se cierra al precio actual. No se puede deshacer.",
     "nothingToMove": "No queda nada por mover.",
     "gateFinish": "Continuar a Market 2.0",
+    "gateCoreLeft": "Mueve tus USDC, ETH y KSH para continuar. Lo demás puede esperar — lo encontrarás en «Mover dinero de la billetera antigua» en el menú de tu cuenta.",
     "gateTitle": "Pasar a Market 2.0",
     "gateIntro": "Tu cuenta ya está en Market 2.0. Trae lo que queda en tu billetera antigua. Tarda alrededor de un minuto, y la app espera hasta que termine.",
     "gateStepSignIn": "Iniciar sesión en la cuenta antigua",

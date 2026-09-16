@@ -21,6 +21,7 @@ import {
   blockingHoldings,
   byVenue,
   defaultOptIn,
+  isCoreAsset,
   reasonKey,
   reviewGroups,
   VENUE_ORDER,
@@ -51,6 +52,8 @@ export interface MigrationProgress {
   discovered: boolean;
   /** Holdings still on the old side after the automatic run. */
   remaining: number;
+  /** Of those, the core assets (native, stablecoins, KSH) — what the gate waits on. */
+  coreRemaining: number;
 }
 
 export interface MoveOldMoneyPanelProps {
@@ -58,11 +61,10 @@ export interface MoveOldMoneyPanelProps {
   entry: MigrationEntry;
   onClose: () => void;
   /**
-   * Gate mode: hides every "leave without finishing" affordance. The host
-   * owns the exit and says through `canFinish` when it is allowed.
+   * Gate mode: hides the panel's own "leave" affordances. The host owns the
+   * exit (see MigrationGate's footer) and decides when it is allowed.
    */
   locked?: boolean;
-  canFinish?: boolean;
   onProgress?: (progress: MigrationProgress) => void;
 }
 
@@ -83,7 +85,6 @@ export function MoveOldMoneyPanel({
   entry,
   onClose,
   locked = false,
-  canFinish = true,
   onProgress,
 }: MoveOldMoneyPanelProps) {
   const t = useTranslations("migrate");
@@ -201,9 +202,16 @@ export function MoveOldMoneyPanel({
   // Which step is on screen — the same choice the render below makes.
   const finishedNow = result ?? (autoResult && groups.optIn.length === 0 ? autoResult : null);
   const stage: MigrationStage = !signer ? "signIn" : finishedNow ? "finish" : "move";
+  const coreRemaining = blocking.filter(isCoreAsset).length;
   useEffect(() => {
-    onProgress?.({ stage, linked: linkedNow, discovered, remaining: blocking.length });
-  }, [onProgress, stage, linkedNow, discovered, blocking.length]);
+    onProgress?.({
+      stage,
+      linked: linkedNow,
+      discovered,
+      remaining: blocking.length,
+      coreRemaining,
+    });
+  }, [onProgress, stage, linkedNow, discovered, blocking.length, coreRemaining]);
 
   const toggle = (id: string) => {
     const next = new Set(checked);
@@ -385,27 +393,7 @@ export function MoveOldMoneyPanel({
               {t("retry")}
             </button>
           ) : null}
-          {locked ? (
-            canFinish ? (
-              <button onClick={onClose} className={PRIMARY}>
-                {t("gateFinish")}
-              </button>
-            ) : !linkedNow ? (
-              <>
-                <p className="text-[13.5px] text-white/60">{t("gateNotLinked")}</p>
-                <button onClick={link} className={PRIMARY}>
-                  {t("gateLinkAgain")}
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="text-[13.5px] text-white/60">{t("gateNotDone")}</p>
-                <button onClick={() => void holdingsQuery.refetch()} className={SECONDARY}>
-                  {t("gateCheckAgain")}
-                </button>
-              </>
-            )
-          ) : (
+          {locked ? null : (
             <button onClick={onClose} className={SECONDARY}>
               {t("done")}
             </button>

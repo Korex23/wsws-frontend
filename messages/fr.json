@@ -3208,6 +3208,7 @@
     "irreversibleWarning": "Clôture au prix actuel. Irréversible.",
     "nothingToMove": "Plus rien à déplacer.",
     "gateFinish": "Continuer vers Market 2.0",
+    "gateCoreLeft": "Transférez vos USDC, ETH et KSH pour continuer. Le reste peut attendre — vous le retrouverez sous « Transférer l’argent de l’ancien portefeuille » dans votre menu de compte.",
     "gateTitle": "Passer à Market 2.0",
     "gateIntro": "Votre compte est maintenant sur Market 2.0. Rapatriez ce qui reste dans votre ancien portefeuille. Cela prend environ une minute, et l’application attend que ce soit terminé.",
     "gateStepSignIn": "Se connecter à l’ancien compte",
