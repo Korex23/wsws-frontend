@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -40,7 +40,14 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useMarketHandoff } from "@/hooks/use-market-handoff";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { MemeCatalogMore, MemeViewSwitch } from "@/features/trade/components/meme-catalog-controls";
-import { DEFAULT_DISCOVERY_VIEW, type DiscoveryView } from "@/lib/meme/catalog";
+import { MemeScreenerToolbar } from "@/features/trade/components/meme-screener-toolbar";
+import {
+  MemeTrendingStrip,
+  TRENDING_DESK_PAGE_SIZE,
+} from "@/features/trade/components/meme-trending-strip";
+import { useMemeScreener } from "@/features/trade/hooks/use-meme-screener";
+import { DEFAULT_DISCOVERY_VIEW, catalogKey, type DiscoveryView } from "@/lib/meme/catalog";
+import { heatShares, topGainerKeys } from "@/lib/meme/momentum";
 import { scopeOf } from "@/lib/portfolio/fresh-scope";
 import { displaySymbol } from "@/lib/buy";
 import { friendlyError } from "@/lib/errors";
@@ -404,6 +411,7 @@ function MemeBuyTicket({
 function MemeDesk() {
   const t = useTranslations("meme");
   const tErr = useTranslations("tradeErrors");
+  const tScreener = useTranslations("memeScreener");
   // "Add funds" the buy ticket hands upward opens here, the same deposit sheet
   // the RWA desk and dashboard use. The host is mounted at the foot of the desk.
   const modals = useAppModals();
@@ -435,10 +443,16 @@ function MemeDesk() {
   const [view, setView] = useState<DiscoveryView>(DEFAULT_DISCOVERY_VIEW);
   const catalog = useMemeCatalog({ view });
   const search = useMemeSearch(query, view);
+  // Trending and the market screener. While filters or a sort apply, the
+  // screener's filtered list stands in for the catalogue everywhere the list
+  // reads it: rows, paging, the count and the lookahead. A search still takes
+  // priority over both.
+  const screener = useMemeScreener({ view, trendingPageSize: TRENDING_DESK_PAGE_SIZE });
+  const source = screener.active ? screener.list : catalog;
   const portfolio = usePortfolio();
   const { walletFor, phase, error, trade, linkForPreview } = useMemeTrade();
 
-  const rows = search.active ? search.results : catalog.tokens;
+  const rows = search.active ? search.results : source.tokens;
   // The picked coin stays picked while a search narrows the list, but takes
   // the fresher row whenever the catalogue still carries it.
   const sameCoin = (a: MemeToken, b: MemeToken) =>
@@ -451,10 +465,10 @@ function MemeDesk() {
   const { token: freshRead } = useMemeToken(listed);
   const selected = listed && freshRead && sameCoin(freshRead, listed) ? freshRead : listed;
 
-  // A new search or a new view is a different list, so the page someone was on
-  // says nothing about where to open it. A page loaded ahead appends to the
-  // same list, so it keeps the page.
-  const listKey = `${view}|${query}`;
+  // A new search, a new view or newly applied filters make a different list, so
+  // the page someone was on says nothing about where to open it. A page loaded
+  // ahead appends to the same list, so it keeps the page.
+  const listKey = `${view}|${query}|${screener.resetKey}`;
   const [pagedList, setPagedList] = useState(listKey);
   if (listKey !== pagedList) {
     setPagedList(listKey);
@@ -468,7 +482,19 @@ function MemeDesk() {
   // past it.
   const pageCount = Math.max(1, Math.ceil(rows.length / listPageSize));
   const page = Math.min(Math.max(1, requestedPage), pageCount);
-  const pageRows = rows.slice((page - 1) * listPageSize, page * listPageSize);
+  const pageRows = useMemo(
+    () => rows.slice((page - 1) * listPageSize, page * listPageSize),
+    [rows, page, listPageSize]
+  );
+  const topGainers = useMemo(
+    () => topGainerKeys(pageRows, screener.timeframe),
+    [pageRows, screener.timeframe]
+  );
+  // Heat is measured against every trending coin, not just the page showing.
+  const trendingHeat = useMemo(
+    () => heatShares(screener.trending.tokens, screener.timeframe),
+    [screener.trending.tokens, screener.timeframe]
+  );
 
   // No "Load more": the next server page is fetched in the background while
   // the reader is within a few pages of the end of what has loaded, so the
@@ -478,13 +504,13 @@ function MemeDesk() {
   const lookahead = useCatalogLookahead({
     enabled: catalogPaging,
     pagesAhead: pageCount - page,
-    loaded: catalog.loaded,
-    shownCount: catalog.shownCount,
-    hasMore: catalog.hasMore,
-    isLoading: catalog.isLoading,
-    isLoadingMore: catalog.isLoadingMore,
-    failed: catalog.loadMoreFailed,
-    loadMore: catalog.loadMore,
+    loaded: source.loaded,
+    shownCount: source.shownCount,
+    hasMore: source.hasMore,
+    isLoading: source.isLoading,
+    isLoadingMore: source.isLoadingMore,
+    failed: source.loadMoreFailed,
+    loadMore: source.loadMore,
   });
 
   function changePage(next: number) {
@@ -656,30 +682,74 @@ function MemeDesk() {
         onSelect={selectToken}
         query={query}
         onQueryChange={setQuery}
-        isLoading={search.active ? search.searching : catalog.isLoading}
-        failed={search.active ? !!search.error : !!catalog.error}
+        isLoading={search.active ? search.searching : source.isLoading}
+        failed={search.active ? !!search.error : !!source.error}
         // A failed search may sit on a healthy catalogue, so the way back there
         // is clearing the search rather than asking again.
-        onRetry={search.active ? () => setQuery("") : () => void catalog.refetch()}
+        onRetry={search.active ? () => setQuery("") : () => void source.refetch()}
+        // A filtered list that comes back empty or fails says so in the
+        // screener's words, not as though the whole catalogue were empty or down.
+        emptyText={!search.active && screener.active ? tScreener("noMatches") : undefined}
+        unavailableText={
+          !search.active && screener.active ? tScreener("listUnavailable") : undefined
+        }
         page={page}
         pageCount={pageCount}
         onPageChange={changePage}
-        pageMore={catalogPaging && catalog.hasMore}
-        pageLoadingMore={catalogPaging && catalog.isLoadingMore}
+        pageMore={catalogPaging && source.hasMore}
+        pageLoadingMore={catalogPaging && source.isLoadingMore}
         onPageSizeChange={setListPageSize}
         listControls={<MemeViewSwitch value={view} onChange={setView} />}
+        trending={
+          <MemeTrendingStrip
+            variant="desk"
+            tokens={screener.trending.pageTokens}
+            rankOffset={(screener.trending.page - 1) * TRENDING_DESK_PAGE_SIZE}
+            heat={trendingHeat}
+            timeframe={screener.timeframe}
+            page={screener.trending.page}
+            pages={screener.trending.pages}
+            onPageChange={screener.trending.setPage}
+            filtered={screener.trending.filtered}
+            isLoading={screener.trending.isLoading}
+            error={screener.trending.error}
+            onRetry={screener.trending.refetch}
+            selectedKey={selected ? catalogKey(selected) : null}
+            // A card picks its coin into the rail, as a row does.
+            onSelect={selectToken}
+          />
+        }
+        screener={
+          <MemeScreenerToolbar
+            variant="desk"
+            timeframe={screener.timeframe}
+            onTimeframeChange={screener.setTimeframe}
+            filters={screener.filters}
+            count={screener.count}
+            preset={screener.preset}
+            onApply={screener.apply}
+            onSortChange={screener.setSort}
+            onPreset={screener.applyPreset}
+            onClearBound={screener.clearBound}
+            onClearAll={screener.clearAll}
+            paused={search.active}
+          />
+        }
+        timeframe={screener.timeframe}
+        sortMetric={screener.filters.sort?.by ?? null}
+        topGainers={topGainers}
         listStatus={
           // The count describes the catalogue; a search replaces it, so it
           // steps aside while one is showing. Pages load ahead on their own, so
           // the strip only offers a retry, for a page that failed.
           search.active ? null : (
             <MemeCatalogMore
-              loaded={catalog.loaded}
-              total={catalog.total}
-              shownCount={catalog.shownCount}
-              hasMore={catalog.hasMore}
-              loadingMore={catalog.isLoadingMore}
-              failed={catalog.loadMoreFailed}
+              loaded={source.loaded}
+              total={source.total}
+              shownCount={source.shownCount}
+              hasMore={source.hasMore}
+              loadingMore={source.isLoadingMore}
+              failed={source.loadMoreFailed}
               onLoadMore={lookahead.requestMore}
               autoLoads
             />

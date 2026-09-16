@@ -232,3 +232,72 @@ describe("portfolio valuation nulls", () => {
     expect(check("portfolio", { ...PORTFOLIO_PAGE, items: [row] }).ok).toBe(false);
   });
 });
+
+// The screener's per-window activity and the pair's creation time ride on the
+// list and trending rows (ADR-2026-09-15-meme-trending-screener). Both are
+// optional, so a row from before the screener, and every search row, still
+// passes.
+describe("token list activity", () => {
+  const withActivity = (activity: unknown, extra: Record<string, unknown> = {}) => ({
+    ...LIVE_TOKEN_PAGE,
+    items: [{ ...LIVE_LIST_TOKEN, activity, ...extra }],
+  });
+
+  it("accepts a row without activity or pairCreatedAt on both list routes", () => {
+    expect(check("tokens", LIVE_TOKEN_PAGE).ok).toBe(true);
+    expect(check("tokens/trending", LIVE_TRENDING_PAGE).ok).toBe(true);
+  });
+
+  it("accepts a full set of windows and a pair creation time", () => {
+    const window = {
+      volumeUsd: "1200.5",
+      transactions: 40,
+      traders: 12,
+      priceChangePercent: "3.2",
+    };
+    const body = withActivity(
+      { "5m": window, "1h": window, "6h": window, "12h": window, "24h": window },
+      { pairCreatedAt: "2026-09-15T08:00:00.000Z" }
+    );
+    expect(check("tokens", body).ok).toBe(true);
+    expect(check("tokens/trending", body).ok).toBe(true);
+  });
+
+  it("accepts a partial record, sparse windows and null fields", () => {
+    const body = withActivity(
+      { "1h": { volumeUsd: null, transactions: null }, "24h": {} },
+      { pairCreatedAt: null }
+    );
+    expect(check("tokens", body).ok).toBe(true);
+  });
+
+  it("accepts a window the providers left out entirely as null", () => {
+    expect(check("tokens", withActivity({ "6h": null, "24h": { traders: 3 } })).ok).toBe(true);
+  });
+
+  it("does not fail on a window this client does not know", () => {
+    expect(check("tokens", withActivity({ "4h": { traders: 3 }, "1h": { traders: 1 } })).ok).toBe(
+      true
+    );
+  });
+
+  it("accepts negative changes and float artifacts as decimal strings", () => {
+    for (const priceChangePercent of ["-4.5", "12.340000000000002", "-100", "0"]) {
+      const body = withActivity({ "5m": { priceChangePercent } });
+      expect(check("tokens", body).ok, priceChangePercent).toBe(true);
+    }
+  });
+
+  it("rejects a change sent as a number rather than a decimal string", () => {
+    expect(check("tokens", withActivity({ "5m": { priceChangePercent: 4.5 } })).ok).toBe(false);
+  });
+
+  // The catalogue listed fine before these fields were read, so a provider's
+  // odd count must not turn the whole list into a 502. Any number passes the
+  // boundary; the parser reads one that is not a whole count as unavailable.
+  it("accepts any numeric count, and rejects a count sent as text", () => {
+    expect(check("tokens", withActivity({ "5m": { transactions: 1.5 } })).ok).toBe(true);
+    expect(check("tokens", withActivity({ "5m": { traders: -1 } })).ok).toBe(true);
+    expect(check("tokens", withActivity({ "5m": { traders: "3" } })).ok).toBe(false);
+  });
+});

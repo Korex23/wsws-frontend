@@ -164,18 +164,18 @@ describe("MemeGrid discovery view and paging", () => {
 
   const switchGroup = () => screen.getByRole("group", { name: "Which memecoins to list" });
 
-  it("opens curated, and switching to All lists what All keeps, in the catalogue and search", () => {
+  it("opens on All, and switching to Curated narrows the catalogue and the search", () => {
     catalog.tokens = [memeToken({ symbol: "SAFE" })];
     catalog.allTokens = [memeToken({ symbol: "SAFE" }), memeToken({ symbol: "WILD" })];
     renderTable();
-    expect(views.catalog.at(-1)).toBe("curated");
-    expect(screen.queryByText("WILD")).toBeNull();
-
-    fireEvent.click(within(switchGroup()).getByRole("button", { name: "All" }));
-    expect(screen.getByText("WILD")).toBeInTheDocument();
     expect(views.catalog.at(-1)).toBe("all");
-    expect(views.search.at(-1)).toBe("all");
-    expect(within(switchGroup()).getByRole("button", { name: "All" })).toHaveAttribute(
+    expect(screen.getByText("WILD")).toBeInTheDocument();
+
+    fireEvent.click(within(switchGroup()).getByRole("button", { name: "Curated" }));
+    expect(screen.queryByText("WILD")).toBeNull();
+    expect(views.catalog.at(-1)).toBe("curated");
+    expect(views.search.at(-1)).toBe("curated");
+    expect(within(switchGroup()).getByRole("button", { name: "Curated" })).toHaveAttribute(
       "aria-pressed",
       "true"
     );

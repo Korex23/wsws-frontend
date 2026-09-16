@@ -188,10 +188,13 @@ const TRENDING_TIMEOUT_MS = 4_000;
 export async function fetchTrendingTokens(): Promise<Paged<MemeToken>> {
   let trending: Paged<MemeToken> | null = null;
   try {
+    // Curated by name, not by default: these cards sit on the dashboard with
+    // no view switch beside them, so an unrated coin never arrives unasked.
     trending = tradableHere(
       await request("/tokens/trending", "parseTokenPage", {
         signal: AbortSignal.timeout(TRENDING_TIMEOUT_MS),
-      })
+      }),
+      "curated"
     );
   } catch {
     trending = null;
@@ -203,7 +206,8 @@ export async function fetchTrendingTokens(): Promise<Paged<MemeToken>> {
   // chain=base matches the "Trending on Base" heading and keeps every address
   // in the EVM form the token detail routes expect.
   return tradableHere(
-    await request(`/tokens?page=1&limit=${TRENDING_FALLBACK_LIMIT}&chain=base`, "parseTokenPage")
+    await request(`/tokens?page=1&limit=${TRENDING_FALLBACK_LIMIT}&chain=base`, "parseTokenPage"),
+    "curated"
   );
 }
 
@@ -217,6 +221,34 @@ export function fetchTokenCatalogPage(
 ): Promise<Paged<MemeToken>> {
   const scope = chain ? `&chain=${chain}` : "";
   return request(`/tokens?page=${page}&limit=${CATALOG_PAGE_LIMIT}${scope}`, "parseTokenPage");
+}
+
+// The screener's filtered catalogue, a page of 500 at a time: the backend's
+// cost for a filtered read does not depend on the page size, so one request
+// covers what fifty small pages would. `query` is screenerQuery's canonical
+// string. Parsed but not judged, like fetchTokenCatalogPage: the discovery view
+// is applied in the hook, so switching views never asks again.
+export const SCREENER_PAGE_LIMIT = CATALOG_PAGE_LIMIT;
+
+export function fetchScreenerPage(page: number, query: string): Promise<Paged<MemeToken>> {
+  const filters = query === "" ? "" : `&${query}`;
+  return request(`/tokens?page=${page}&limit=${SCREENER_PAGE_LIMIT}${filters}`, "parseTokenPage");
+}
+
+// The Trending strip's source: the service's trending ranking narrowed by
+// trendingQuery's bounds. Unlike fetchTrendingTokens it has no catalogue
+// fallback and no timeout of its own. A failure reaches the hook as an error,
+// and the strip shows its retry state rather than a list that is not trending.
+export const TRENDING_BOARD_LIMIT = 100;
+
+export function fetchTrendingBoard(
+  query: string,
+  limit = TRENDING_BOARD_LIMIT
+): Promise<Paged<MemeToken>> {
+  // Never above the contract's maximum, whatever a surface asks for.
+  const size = Math.min(limit, CATALOG_PAGE_LIMIT);
+  const filters = query === "" ? "" : `&${query}`;
+  return request(`/tokens/trending?limit=${size}${filters}`, "parseTokenPage");
 }
 
 // The catalog is the only discovery route that honours ?chain, and this
@@ -236,7 +268,7 @@ export async function fetchTokenCatalog(
   // Never above the contract's maximum, whatever a surface asks for.
   const size = Math.min(limit, CATALOG_PAGE_LIMIT);
   const page_ = await request(`/tokens?page=${page}&limit=${size}${scope}`, "parseTokenPage");
-  return { ...page_, items: page_.items.filter((token) => isMemecoinHere(token)) };
+  return { ...page_, items: page_.items.filter((token) => isMemecoinHere(token, "curated")) };
 }
 
 export async function searchTokens(

@@ -33,6 +33,24 @@ export interface MemeToken {
   buyEnabled: boolean;
   sellEnabled: boolean;
   warnings: TokenWarning[];
+  // Market activity per window, from the list and trending routes only. A
+  // window the providers do not fill is absent or all null, never estimated
+  // from another window (llms.txt: no 4h for 6h, no 12h from 24h).
+  activity?: Partial<Record<MemeTimeframe, MemeActivity>>;
+  // When the coin's top pair was created (ISO), the screener's "age".
+  pairCreatedAt?: string | null;
+}
+
+// The screener's windows (llms.txt "timeframe").
+export type MemeTimeframe = "5m" | "1h" | "6h" | "12h" | "24h";
+
+// One window of activity. Money and percentages are decimal strings, counts
+// are integers; percentages are points ("12.5" is +12.5%).
+export interface MemeActivity {
+  volumeUsd: string | null;
+  transactions: number | null;
+  traders: number | null;
+  priceChangePercent: string | null;
 }
 
 // GET /tokens/{address}/risk. Advisory: not a guarantee of safety.

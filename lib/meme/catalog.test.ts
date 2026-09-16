@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CATALOG_PAGE_LIMIT,
+  DEFAULT_DISCOVERY_VIEW,
   DISCOVERY_POLICY,
   MIN_DISCOVERY_LIQUIDITY_USD,
   MIN_DISCOVERY_VOLUME_24H_USD,
@@ -354,12 +355,18 @@ describe("discovery keeps only coins that can actually be bought", () => {
   });
 });
 
-// The discovery policy as two named views (ADR-2026-09-14, slice 4). Curated
-// is the maintainers' 2026-09-07 instructions and the default; All is the
-// trade contract's view: every ACTIVE row on a supported chain, with low
-// liquidity a consent flow rather than a hide. Both still keep out what is
-// not a memecoin at all.
+// The discovery policy as two named views (ADR-2026-09-14, slice 4). All is
+// the trade contract's view and what a desk opens on: every ACTIVE row on a
+// supported chain, with low liquidity a consent flow rather than a hide.
+// Curated is the maintainers' 2026-09-07 instructions, now a filter the
+// reader turns on rather than a default that narrows the market unasked; the
+// screener's own liquidity and volume bounds do that job in the open. Both
+// still keep out what is not a memecoin at all.
 describe("DISCOVERY_POLICY", () => {
+  it("opens on All, so a desk lists the market before anything narrows it", () => {
+    expect(DEFAULT_DISCOVERY_VIEW).toBe("all");
+  });
+
   afterEach(() => vi.unstubAllEnvs());
 
   const LOW_LIQUIDITY = { code: "LOW_LIQUIDITY", message: "Liquidity is below $50,000." };

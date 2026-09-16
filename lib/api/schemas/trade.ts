@@ -64,6 +64,35 @@ const identityFields = {
   logoUrl: nullableString,
 };
 
+// One window of market activity. Money and the change are decimal strings
+// like every other market field, so a negative change ("-4.5") or a float
+// artifact ("12.340000000000002") passes as sent. Counts are any number here:
+// the list routes served the catalogue before these fields were read, so a
+// provider's fractional or negative count must not fail the whole page. The
+// parser reads such a count as unavailable. A field the providers do not fill
+// may be null or absent.
+const count = z.number().nullable().optional();
+const activityWindowSchema = z.object({
+  volumeUsd: nullableDecimal.optional(),
+  transactions: count,
+  traders: count,
+  priceChangePercent: nullableDecimal.optional(),
+});
+
+// The screener's windows. An object with optional keys rather than
+// z.record(z.enum(...)): in zod 4 that record requires every key and fails on
+// one it does not list, and a window the service adds (or leaves out, or
+// sends as null) must not turn the whole list into a 502. Unknown windows are
+// dropped by the non-strict object.
+const optionalWindow = activityWindowSchema.nullable().optional();
+const activitySchema = z.object({
+  "5m": optionalWindow,
+  "1h": optionalWindow,
+  "6h": optionalWindow,
+  "12h": optionalWindow,
+  "24h": optionalWindow,
+});
+
 // TokenView on the list and search routes. The live search route omits the
 // whole risk block and status (probed 2026-09-14), so those stay optional here
 // and the client fills them (withRiskDefaults).
@@ -82,6 +111,9 @@ export const tokenListItemSchema = z.object({
   sellEnabled: z.boolean().optional(),
   warnings: z.array(warningSchema).optional(),
   status: tokenStatusSchema.optional(),
+  // Only the list and trending routes carry these; search does not.
+  activity: activitySchema.optional(),
+  pairCreatedAt: nullableString.optional(),
 });
 
 export const tokenListSchema = pageOf(tokenListItemSchema);

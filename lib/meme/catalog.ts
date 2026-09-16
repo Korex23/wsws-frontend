@@ -232,7 +232,14 @@ export function isTokenizedEquity(token: Pick<MemeToken, "chainId" | "address" |
 export type DiscoveryView = "curated" | "all";
 
 export const DISCOVERY_VIEWS: readonly DiscoveryView[] = ["curated", "all"];
-export const DEFAULT_DISCOVERY_VIEW: DiscoveryView = "curated";
+// A desk opens on All: the market as the service lists it. Curated is a filter
+// the reader turns on, not a default that narrows the market unasked, and the
+// screener's own liquidity, volume and risk-free bounds do that job in the
+// open. The function defaults below stay curated on purpose: they are what a
+// caller that names no view gets, and those callers (the dashboard's trending
+// cards, the coin picker) are surfaces where an unrated coin should not appear
+// on its own.
+export const DEFAULT_DISCOVERY_VIEW: DiscoveryView = "all";
 
 export interface DiscoveryRules {
   /** The risk bands listed; null lists every band. */
@@ -287,10 +294,7 @@ function isNotAMemecoin(token: MemeToken): boolean {
   );
 }
 
-export function isMemecoinHere(
-  token: MemeToken,
-  view: DiscoveryView = DEFAULT_DISCOVERY_VIEW
-): boolean {
+export function isMemecoinHere(token: MemeToken, view: DiscoveryView = "curated"): boolean {
   if (isNotAMemecoin(token)) return false;
   // A status is given on the catalogue; the trending and search routes omit it.
   if (token.status !== undefined && token.status !== "ACTIVE") return false;
@@ -307,7 +311,7 @@ export function isMemecoinHere(
 // passed through untouched; the filtered size is `shownCount`.
 export function tradableHere(
   page: Paged<MemeToken>,
-  view: DiscoveryView = DEFAULT_DISCOVERY_VIEW
+  view: DiscoveryView = "curated"
 ): ShownPage<MemeToken> {
   const items = page.items.filter((token) => isMemecoinHere(token, view)).map(withRiskDefaults);
   return { items, meta: page.meta, shownCount: items.length };

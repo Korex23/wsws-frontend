@@ -6,6 +6,8 @@ import { memeToken } from "@/features/trade/lib/meme-fixture";
 import type { SpotMarket } from "@/features/trade/hooks/use-spot-markets";
 import type { MemeToken } from "@/lib/meme/api";
 import { SOLANA_CHAIN_ID } from "@/lib/meme/chain";
+import type { ScreenerFilters } from "@/lib/meme/screener";
+import type { MemeTimeframe } from "@/lib/meme/types";
 
 // The chrome's six keys ship in the `markets` namespace now, so the suite reads
 // the real catalogue rather than a local stand-in. That is the point: a stub
@@ -53,6 +55,65 @@ vi.mock("@/features/trade/hooks/use-meme-tokens", () => ({
   useMemeSearch: (_raw: string, view?: string) => {
     memeViews.search.push(view);
     return memeSearch;
+  },
+}));
+
+// The Memecoins tab's Trending strip and screener read one controller
+// (ADR-2026-09-15-meme-trending-screener, 1.1). Its default here is the
+// inactive screener with nothing trending, so the catalogue cases above and
+// below see the tab exactly as they did before the screener joined it.
+function inactiveScreener() {
+  return {
+    timeframe: "24h" as MemeTimeframe,
+    setTimeframe: vi.fn(),
+    filters: { bounds: {}, sort: null } as ScreenerFilters,
+    active: false,
+    count: 0,
+    preset: null,
+    apply: vi.fn(),
+    setSort: vi.fn(),
+    applyPreset: vi.fn(),
+    clearBound: vi.fn(),
+    clearAll: vi.fn(),
+    listQuery: "",
+    list: {
+      tokens: [] as MemeToken[],
+      total: null as number | null,
+      loaded: 0,
+      shownCount: 0,
+      hasMore: false,
+      loadMore: vi.fn(),
+      isLoadingMore: false,
+      loadMoreFailed: false,
+      isLoading: false,
+      isFetching: false,
+      error: null as unknown,
+      refetch: vi.fn(),
+    },
+    trending: {
+      tokens: [] as MemeToken[],
+      isLoading: false,
+      isFetching: false,
+      error: null as unknown,
+      refetch: vi.fn(),
+      page: 1,
+      pages: 1,
+      pageTokens: [] as MemeToken[],
+      setPage: vi.fn(),
+      filtered: false,
+    },
+    resetKey: "",
+  };
+}
+const screener = vi.hoisted(() => ({
+  state: null as ReturnType<typeof inactiveScreener> | null,
+  calls: [] as { view: string; trendingPageSize: number; enabled?: boolean }[],
+}));
+vi.mock("@/features/trade/hooks/use-meme-screener", () => ({
+  useMemeScreener: (opts: { view: string; trendingPageSize: number; enabled?: boolean }) => {
+    screener.calls.push(opts);
+    if (screener.state === null) throw new Error("The screener mock was not reset.");
+    return screener.state;
   },
 }));
 
@@ -215,7 +276,7 @@ function market(over: Partial<SpotMarket> = {}): SpotMarket {
 function renderView() {
   const onOpenDetail = vi.fn();
   const onOpenBuy = vi.fn();
-  render(
+  const view = () => (
     <NextIntlClientProvider locale="en" messages={messages}>
       <MobileMarketView
         onOpenDetail={onOpenDetail}
@@ -224,7 +285,9 @@ function renderView() {
       />
     </NextIntlClientProvider>
   );
-  return { onOpenDetail, onOpenBuy };
+  const { rerender } = render(view());
+  // Renders again with whatever the mocks hold now, as a hook's new value would.
+  return { onOpenDetail, onOpenBuy, rerender: () => rerender(view()) };
 }
 
 const tabNames = ["Spot", "Leverage", "Memecoins", "Real assets", "Prediction"];
@@ -279,6 +342,8 @@ beforeEach(() => {
   memeSearch.error = null;
   memeViews.catalog = [];
   memeViews.search = [];
+  screener.state = inactiveScreener();
+  screener.calls = [];
   router.push.mockClear();
   router.back.mockClear();
   router.replace.mockClear();
@@ -846,7 +911,7 @@ describe("MobileMarketView, the memecoin tap-to-screen ticket", () => {
 describe("MobileMarketView, the memecoin catalogue", () => {
   const switchGroup = () => screen.getByRole("group", { name: "Which memecoins to list" });
 
-  it("opens curated, and the switch lists what All keeps, in the catalogue and search", () => {
+  it("opens on All, and Curated narrows the catalogue and the search", () => {
     memes.tokens = [memeToken({ symbol: "SAFE", name: "Safe" })];
     memes.allTokens = [
       memeToken({ symbol: "SAFE", name: "Safe" }),
@@ -854,13 +919,13 @@ describe("MobileMarketView, the memecoin catalogue", () => {
     ];
     renderView();
     fireEvent.click(tabs()[MEMES]);
-    expect(memeViews.catalog.at(-1)).toBe("curated");
-    expect(screen.queryByText("WILD")).toBeNull();
-
-    fireEvent.click(within(switchGroup()).getByRole("button", { name: "All" }));
-    expect(screen.getByText("WILD")).toBeInTheDocument();
     expect(memeViews.catalog.at(-1)).toBe("all");
-    expect(memeViews.search.at(-1)).toBe("all");
+    expect(screen.getByText("WILD")).toBeInTheDocument();
+
+    fireEvent.click(within(switchGroup()).getByRole("button", { name: "Curated" }));
+    expect(screen.queryByText("WILD")).toBeNull();
+    expect(memeViews.catalog.at(-1)).toBe("curated");
+    expect(memeViews.search.at(-1)).toBe("curated");
   });
 
   it("counts the loaded rows against the server's total, and loads the next page", () => {
@@ -986,5 +1051,351 @@ describe("MobileMarketView, the memecoin ticket against the trade contract", () 
     act(() => memeTicketProps.last?.onAmountChange("5"));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(memePreview.consented.every((c) => c === true)).toBe(true);
+  });
+});
+
+// The phone Memecoins tab carries the desk's Trending strip and screener
+// (ADR-2026-09-15-meme-trending-screener, 1.1): search, the view switch, the
+// strip, the toolbar, then the list, all in the list's own scroll box. The
+// list reads search results first, then the screener, then the catalogue.
+describe("MobileMarketView, the memecoin Trending strip and screener", () => {
+  function state() {
+    if (screener.state === null) throw new Error("The screener mock was not reset.");
+    return screener.state;
+  }
+
+  function region(name: string): HTMLElement | null {
+    return document.querySelector<HTMLElement>(`[data-region="${name}"]`);
+  }
+
+  function rowFor(symbol: string): HTMLElement {
+    const row = screen.getByText(symbol).closest("button");
+    if (row === null) throw new Error(`No row for ${symbol}.`);
+    return row;
+  }
+
+  const before = (a: Node, b: Node) =>
+    Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it("asks the controller for the phone's trending page in the tab's view", () => {
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(screener.calls.at(-1)).toEqual({ view: "all", trendingPageSize: 4, enabled: true });
+
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Which memecoins to list" })).getByRole("button", {
+        name: "All",
+      })
+    );
+    expect(screener.calls.at(-1)).toEqual({ view: "all", trendingPageSize: 4, enabled: true });
+  });
+
+  it("keeps the screener from asking for data while another tab is open", () => {
+    renderView();
+    expect(screener.calls.at(-1)?.enabled).toBe(false);
+    fireEvent.click(tabs()[MEMES]);
+    expect(screener.calls.at(-1)?.enabled).toBe(true);
+  });
+
+  it("puts the strip and the toolbar between the view switch and the rows, only on this tab", () => {
+    memes.tokens = [memeToken({ symbol: "PEPE", name: "Pepe" })];
+    renderView();
+    expect(region("trending")).toBeNull();
+    expect(region("screener-toolbar")).toBeNull();
+
+    fireEvent.click(tabs()[MEMES]);
+    const list = memeMarketList();
+    const strip = region("trending");
+    const toolbar = region("screener-toolbar");
+    if (strip === null || toolbar === null) throw new Error("The strip or toolbar is missing.");
+    expect(list).toContainElement(strip);
+    expect(list).toContainElement(toolbar);
+
+    const field = screen.getByRole("searchbox", { name: MEME_SEARCH });
+    const switcher = screen.getByRole("group", { name: "Which memecoins to list" });
+    expect(before(field, switcher)).toBe(true);
+    expect(before(switcher, strip)).toBe(true);
+    expect(before(strip, toolbar)).toBe(true);
+    expect(before(toolbar, rowFor("PEPE"))).toBe(true);
+    expect(within(toolbar).getByRole("group", { name: "Time window" })).toBeInTheDocument();
+
+    fireEvent.click(tabs()[PERPS]);
+    expect(region("trending")).toBeNull();
+    expect(region("screener-toolbar")).toBeNull();
+  });
+
+  it("shows the trending page's cards, ranked on from earlier pages", () => {
+    const coins = memeTokens(7);
+    state().trending.tokens = coins;
+    // Page 2 of a four-a-page phone grid: the fifth coin onwards.
+    state().trending.pageTokens = coins.slice(4);
+    state().trending.page = 2;
+    state().trending.pages = 2;
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+
+    const strip = region("trending");
+    if (strip === null) throw new Error("The strip is missing.");
+    expect(within(strip).getByRole("button", { name: /^MEME4, rank 5,/ })).toBeInTheDocument();
+    expect(within(strip).getByRole("button", { name: /^MEME6, rank 7,/ })).toBeInTheDocument();
+    expect(within(strip).queryByRole("button", { name: /^MEME0,/ })).toBeNull();
+
+    fireEvent.click(within(strip).getByRole("button", { name: "Previous trending page" }));
+    expect(state().trending.setPage).toHaveBeenCalledWith(1);
+  });
+
+  it("draws the strip's skeletons while trending loads", () => {
+    state().trending.isLoading = true;
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(document.querySelectorAll('[data-skeleton="trending-card"]')).toHaveLength(4);
+  });
+
+  it("opens the meme ticket for a tapped trending card, as a row does", () => {
+    const hot = memeToken({ symbol: "HOT", name: "Hot", address: "0xhot" });
+    state().trending.tokens = [hot];
+    state().trending.pageTokens = [hot];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+
+    fireEvent.click(screen.getByRole("button", { name: /^HOT, rank 1,/ }));
+    expect(screen.getByTestId("meme-trade-ticket")).toBeInTheDocument();
+    expect(memeTicketProps.last?.token.symbol).toBe("HOT");
+    expect(memeMarketList()).not.toBeVisible();
+  });
+
+  it("lists the screener's rows and counts while it is active", () => {
+    memes.tokens = [memeToken({ symbol: "CATALOG", name: "Catalogue" })];
+    memes.total = 11_502;
+    memes.loaded = 500;
+    memes.shownCount = 156;
+    const s = state();
+    s.active = true;
+    s.count = 1;
+    s.filters = { bounds: { marketCap: { max: "1000000" } }, sort: null };
+    s.list.tokens = [memeToken({ symbol: "SCREENED", name: "Screened" })];
+    s.list.total = 40;
+    s.list.loaded = 40;
+    s.list.shownCount = 38;
+    s.list.hasMore = true;
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+
+    expect(screen.getByText("SCREENED")).toBeInTheDocument();
+    expect(screen.queryByText("CATALOG")).toBeNull();
+    expect(within(memeMarketList()).getByText("40 of 40")).toBeInTheDocument();
+    expect(within(memeMarketList()).getByText("38 shown")).toBeInTheDocument();
+    expect(screen.queryByText("500 of 11,502")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(s.list.loadMore).toHaveBeenCalledOnce();
+    expect(memes.loadMore).not.toHaveBeenCalled();
+  });
+
+  it("shows the screener's loading, empty and error states rather than the catalogue's", () => {
+    memes.tokens = [memeToken({ symbol: "CATALOG", name: "Catalogue" })];
+    const s = state();
+    s.active = true;
+    s.filters = { bounds: {}, sort: { by: "volume", order: "desc" } };
+    s.list.isLoading = true;
+    const { rerender } = renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(screen.queryByText("CATALOG")).toBeNull();
+    expect(memeMarketList().querySelectorAll(".animate-pulse.rounded-full.size-9")).toHaveLength(6);
+
+    s.list.isLoading = false;
+    rerender();
+    expect(
+      screen.getByText("No coins match these filters. Try widening a range.")
+    ).toBeInTheDocument();
+
+    s.list.error = new Error("scan timed out");
+    rerender();
+    expect(screen.getByText("These coins can't be filtered right now.")).toBeInTheDocument();
+    expect(screen.queryByText("No coins match these filters. Try widening a range.")).toBeNull();
+  });
+
+  it("returns the list to page 1 when the applied filters change", () => {
+    const s = state();
+    s.active = true;
+    s.filters = { bounds: {}, sort: { by: "liquidity", order: "desc" } };
+    s.listQuery = "sortBy=liquidity&sortOrder=desc";
+    s.resetKey = s.listQuery;
+    s.list.tokens = memeTokens(9);
+    const { rerender } = renderView();
+    fireEvent.click(tabs()[MEMES]);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    const liveStatus = () => memeMarketList().querySelector('[aria-live="polite"].sr-only');
+    expect(liveStatus()).toHaveTextContent("Page 2 of 2");
+
+    s.filters = { bounds: {}, sort: { by: "liquidity", order: "asc" } };
+    s.listQuery = "sortBy=liquidity&sortOrder=asc";
+    s.resetKey = s.listQuery;
+    rerender();
+    expect(liveStatus()).toHaveTextContent("Page 1 of 2");
+  });
+
+  it("lets a search take the list over while the screener waits, with Trending still showing", () => {
+    const hot = memeToken({ symbol: "HOT", name: "Hot", address: "0xhot" });
+    const s = state();
+    s.active = true;
+    s.count = 1;
+    s.filters = { bounds: { liquidity: { min: "100000" } }, sort: null };
+    s.list.tokens = [memeToken({ symbol: "SCREENED", name: "Screened" })];
+    s.list.total = 40;
+    s.list.loaded = 40;
+    s.trending.tokens = [hot];
+    s.trending.pageTokens = [hot];
+    memeSearch.active = true;
+    memeSearch.results = [memeToken({ symbol: "FOUND", name: "Found" })];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+
+    expect(screen.getByText("FOUND")).toBeInTheDocument();
+    expect(screen.queryByText("SCREENED")).toBeNull();
+    expect(screen.queryByText("40 of 40")).toBeNull();
+    expect(screen.getByText("Filters are paused while you search.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^HOT, rank 1,/ })).toBeInTheDocument();
+  });
+
+  it("does not say the filters are paused when nothing is being searched", () => {
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(screen.queryByText("Filters are paused while you search.")).toBeNull();
+  });
+
+  it("reads each row's change over the selected window, with a bar under it", () => {
+    state().timeframe = "1h";
+    memes.tokens = [
+      memeToken({
+        symbol: "MOVER",
+        name: "Mover",
+        priceChange24hPercent: "4.2",
+        activity: {
+          "1h": { volumeUsd: null, transactions: null, traders: null, priceChangePercent: "12.34" },
+        },
+      }),
+      memeToken({
+        symbol: "QUIET",
+        name: "Quiet",
+        address: "0xquiet",
+        priceChange24hPercent: "4.2",
+      }),
+    ];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+
+    const mover = rowFor("MOVER");
+    expect(within(mover).getByText("+12.34%")).toBeInTheDocument();
+    expect(within(mover).queryByText("+4.20%")).toBeNull();
+    const bar = mover.querySelector<HTMLElement>('[aria-hidden="true"] > .bg-up');
+    expect(bar?.style.width).toBe("12%");
+
+    // No 1h reading is not the 24h one: it stays pending, and draws no bar.
+    const quiet = rowFor("QUIET");
+    expect(within(quiet).getByText("—")).toBeInTheDocument();
+    expect(within(quiet).queryByText("+4.20%")).toBeNull();
+    expect(quiet.querySelector(".bg-up, .bg-down")).toBeNull();
+  });
+
+  it("keeps the 24h change the rows showed before the screener, at 24h", () => {
+    memes.tokens = [memeToken({ symbol: "PEPE", name: "Pepe", priceChange24hPercent: "-3.5" })];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(within(rowFor("PEPE")).getByText("-3.50%")).toBeInTheDocument();
+  });
+
+  it("adds the sorted metric to the name line for a volume sort", () => {
+    const s = state();
+    s.active = true;
+    s.filters = { bounds: {}, sort: { by: "volume", order: "desc" } };
+    s.list.tokens = [memeToken({ symbol: "BUSY", name: "Busy coin", volume24hUsd: "1250000" })];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+
+    const metric = rowFor("BUSY").querySelector('[data-row-metric="volume"]');
+    expect(metric).toHaveTextContent("$1.25M");
+    expect(within(rowFor("BUSY")).getByText("Busy coin")).toBeInTheDocument();
+  });
+
+  // Search results are not in the sort's order, so the figure would explain
+  // nothing there.
+  it("leaves the sorted metric off search results", () => {
+    const s = state();
+    s.active = true;
+    s.filters = { bounds: {}, sort: { by: "volume", order: "desc" } };
+    memeSearch.active = true;
+    memeSearch.results = [memeToken({ symbol: "FOUND", name: "Found", volume24hUsd: "900" })];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(rowFor("FOUND").querySelector("[data-row-metric]")).toBeNull();
+  });
+
+  it("reads an age sort against the clock", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-15T12:00:00Z"));
+    try {
+      const s = state();
+      s.active = true;
+      s.filters = { bounds: {}, sort: { by: "age", order: "asc" } };
+      s.list.tokens = [
+        memeToken({ symbol: "YOUNG", name: "Young", pairCreatedAt: "2026-09-15T10:30:00Z" }),
+      ];
+      renderView();
+      fireEvent.click(tabs()[MEMES]);
+      expect(rowFor("YOUNG").querySelector('[data-row-metric="age"]')).toHaveTextContent("1h");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("adds nothing to the name line for a price or market cap sort, which the row already shows", () => {
+    const s = state();
+    s.active = true;
+    s.filters = { bounds: {}, sort: { by: "price", order: "desc" } };
+    s.list.tokens = [memeToken({ symbol: "PRICEY", name: "Pricey" })];
+    const { rerender } = renderView();
+    fireEvent.click(tabs()[MEMES]);
+    expect(rowFor("PRICEY").querySelector("[data-row-metric]")).toBeNull();
+
+    s.filters = { bounds: {}, sort: { by: "marketCap", order: "desc" } };
+    rerender();
+    expect(rowFor("PRICEY").querySelector("[data-row-metric]")).toBeNull();
+  });
+
+  it("marks the top three gainers of the visible page", () => {
+    memes.tokens = [
+      memeToken({ symbol: "UP10", name: "a", address: "0x1", priceChange24hPercent: "10" }),
+      memeToken({ symbol: "UP50", name: "b", address: "0x2", priceChange24hPercent: "50" }),
+      memeToken({ symbol: "DOWN", name: "c", address: "0x3", priceChange24hPercent: "-5" }),
+      memeToken({ symbol: "UP20", name: "d", address: "0x4", priceChange24hPercent: "20" }),
+      memeToken({ symbol: "UP1", name: "e", address: "0x5", priceChange24hPercent: "1" }),
+    ];
+    renderView();
+    fireEvent.click(tabs()[MEMES]);
+
+    const flame = (symbol: string) =>
+      within(rowFor(symbol)).queryByRole("img", { name: "Top gainer on this page" });
+    expect(flame("UP50")).toBeInTheDocument();
+    expect(flame("UP20")).toBeInTheDocument();
+    expect(flame("UP10")).toBeInTheDocument();
+    expect(flame("UP1")).toBeNull();
+    expect(flame("DOWN")).toBeNull();
+  });
+
+  it("keeps a ticket opened from Trending on the fresher trending copy", () => {
+    const hot = memeToken({ symbol: "HOT", name: "Hot", address: "0xhot", priceUsd: "1.11" });
+    const s = state();
+    s.trending.tokens = [hot];
+    s.trending.pageTokens = [hot];
+    const { rerender } = renderView();
+    fireEvent.click(tabs()[MEMES]);
+    fireEvent.click(screen.getByRole("button", { name: /^HOT, rank 1,/ }));
+    expect(memeTicketProps.last?.token).toBe(hot);
+
+    const fresher = { ...hot, priceUsd: "2.22" };
+    s.trending.tokens = [fresher];
+    s.trending.pageTokens = [fresher];
+    rerender();
+    expect(memeTicketProps.last?.token).toBe(fresher);
   });
 });

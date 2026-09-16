@@ -4,9 +4,13 @@ const apiFetchMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api", () => ({ apiFetch: apiFetchMock }));
 
 import {
+  SCREENER_PAGE_LIMIT,
+  TRENDING_BOARD_LIMIT,
   TradeApiError,
+  fetchScreenerPage,
   fetchSwapStatus,
   fetchToken,
+  fetchTrendingBoard,
   searchTokens,
   isValidTradeAmount,
   newIdempotencyKey,
@@ -14,6 +18,7 @@ import {
   withRiskDefaults,
 } from "@/lib/meme/api";
 import type { MemeToken } from "@/lib/meme/api";
+import { LIVE_TOKEN_PAGE } from "@/lib/api/schemas/trade.fixtures";
 
 describe("newIdempotencyKey", () => {
   it("returns a v4 UUID", () => {
@@ -222,5 +227,99 @@ describe("responses are parsed, not cast", () => {
     answer({ chainId: 8453, address: "0xaaa", name: null, symbol: null });
     const thrown = await fetchToken("0xaaa", 8453).catch((e: unknown) => e);
     expect((thrown as TradeApiError).code).toBe("BAD_RESPONSE");
+  });
+});
+
+// The screener's two reads. The query string is built by lib/meme/screener and
+// is passed through as given; these only put it on the right route with the
+// right page size, parse the page, and let a failure through untouched.
+describe("screener reads", () => {
+  afterEach(() => apiFetchMock.mockReset());
+
+  // A fresh Response per call, since a body can only be read once.
+  function answerPage(status = 200, body: unknown = { success: true, data: LIVE_TOKEN_PAGE }) {
+    apiFetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json" },
+        })
+    );
+  }
+
+  const requestedPath = () => apiFetchMock.mock.calls[0][0] as string;
+
+  it("asks for a filtered catalogue page of 500 with the query appended", async () => {
+    answerPage();
+    await fetchScreenerPage(2, "maxMarketCapUsd=1000000&sortBy=volume&sortOrder=desc");
+    expect(SCREENER_PAGE_LIMIT).toBe(500);
+    expect(requestedPath()).toBe(
+      "/api/trade/tokens?page=2&limit=500&maxMarketCapUsd=1000000&sortBy=volume&sortOrder=desc"
+    );
+  });
+
+  it("asks for a plain catalogue page when the query is empty", async () => {
+    answerPage();
+    await fetchScreenerPage(1, "");
+    expect(requestedPath()).toBe("/api/trade/tokens?page=1&limit=500");
+  });
+
+  it("asks trending for 100 rows by default, with the query appended", async () => {
+    answerPage();
+    await fetchTrendingBoard("minLiquidityUsd=10000");
+    expect(TRENDING_BOARD_LIMIT).toBe(100);
+    expect(requestedPath()).toBe("/api/trade/tokens/trending?limit=100&minLiquidityUsd=10000");
+  });
+
+  it("asks trending without a trailing separator when the query is empty", async () => {
+    answerPage();
+    await fetchTrendingBoard("", 40);
+    expect(requestedPath()).toBe("/api/trade/tokens/trending?limit=40");
+  });
+
+  it("never asks trending for more than the contract's 500", async () => {
+    answerPage();
+    await fetchTrendingBoard("", 2_000);
+    expect(requestedPath()).toBe("/api/trade/tokens/trending?limit=500");
+  });
+
+  it("parses both pages through the token page mapper and keeps the server's meta", async () => {
+    answerPage();
+    const screener = await fetchScreenerPage(1, "");
+    answerPage();
+    const trending = await fetchTrendingBoard("");
+    for (const page of [screener, trending]) {
+      expect(page.meta).toEqual({ page: 1, limit: 2, total: 105200 });
+      // Parsed, not judged: the HIGH risk Solana row the curated view would
+      // drop is still here, because the view is applied in the hook.
+      expect(page.items.map((token) => token.symbol)).toEqual(["$HACHIKO", "MENTE"]);
+      expect(page.items[0].warnings[0].code).toBe("LOW_LIQUIDITY");
+    }
+  });
+
+  it("turns a drifted page into a BAD_RESPONSE rather than a half-shaped list", async () => {
+    answerPage(200, { success: true, data: { items: LIVE_TOKEN_PAGE.items } });
+    const thrown = await fetchTrendingBoard("").catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(TradeApiError);
+    expect((thrown as TradeApiError).code).toBe("BAD_RESPONSE");
+  });
+
+  it("lets a service failure through as a TradeApiError, with no fallback read", async () => {
+    answerPage(503, {
+      success: false,
+      error: { code: "PROVIDER_ERROR", message: "down", requestId: "req-trend-1" },
+    });
+    const trending = await fetchTrendingBoard("").catch((e: unknown) => e);
+    expect(trending).toBeInstanceOf(TradeApiError);
+    expect((trending as TradeApiError).code).toBe("PROVIDER_ERROR");
+    expect((trending as TradeApiError).status).toBe(503);
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+
+    const screener = await fetchScreenerPage(1, "sortBy=age&sortOrder=asc").catch(
+      (e: unknown) => e
+    );
+    expect(screener).toBeInstanceOf(TradeApiError);
+    expect((screener as TradeApiError).requestId).toBe("req-trend-1");
+    expect(apiFetchMock).toHaveBeenCalledTimes(2);
   });
 });

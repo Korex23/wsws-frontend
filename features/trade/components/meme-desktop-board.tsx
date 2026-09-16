@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { Disclosure } from "@/components/ui/disclosure";
 import { ChartBarsIcon, ChevronLeftIcon, SearchIcon, TrendIcon } from "@/components/ui/icons";
 import { NumberedPagination } from "@/components/ui/numbered-pagination";
 import { MemeCoin, PctChange, priceLabel } from "@/features/trade/components/meme-bits";
+import {
+  ChangeBar,
+  formatMetric,
+  timeframeLabelKey,
+} from "@/features/trade/components/meme-gamified-bits";
+import { METRIC_KEYS } from "@/features/trade/components/meme-sort-menu";
 import { useFittedRowCount } from "@/hooks/use-fitted-row-count";
 import { compactUsd, type MemeToken } from "@/lib/meme/api";
+import { catalogKey } from "@/lib/meme/catalog";
+import { changeFor } from "@/lib/meme/momentum";
+import { metricValue, type ScreenerMetric } from "@/lib/meme/screener";
+import type { MemeTimeframe } from "@/lib/meme/types";
 
 // The 2.0 desktop memecoin board: the catalogue on the left, the coin being
 // traded on the right.
@@ -106,6 +116,28 @@ export interface MemeDesktopBoardProps {
    * cut to what fits: this board never draws a row it has no room for.
    */
   onPageSizeChange?: (rows: number) => void;
+  /**
+   * The Trending strip, drawn at the top of the left column. Passing it or
+   * `screener` puts the list in that column under them; the rail is unchanged.
+   */
+  trending?: ReactNode;
+  /** The screener toolbar, drawn between Trending and the list. */
+  screener?: ReactNode;
+  /** The window the change column reads. Defaults to 24h, today's column. */
+  timeframe?: MemeTimeframe;
+  /**
+   * The applied sort. A metric the table does not already show gets a fifth
+   * column, so the reader can see why the rows are in this order.
+   */
+  sortMetric?: ScreenerMetric | null;
+  /** The clock the age column reads, for tests. Defaults to the wall clock. */
+  now?: number;
+  /** catalogKeys of the page's top gainers, each marked after its symbol. */
+  topGainers?: Set<string>;
+  /** Replaces the empty list's message, e.g. when filters matched nothing. */
+  emptyText?: string;
+  /** Replaces the unavailable message, e.g. when the filtered list failed. */
+  unavailableText?: string;
 }
 
 // Rows per page of the catalogue before the panel has been measured.
@@ -146,6 +178,78 @@ export const MEME_LIST_ROW_HEIGHT = 57;
 // scrollbar in at wider screens. The figures still fit: "$0.00₄1234" in 88px,
 // "-12.34%" in 110px, "$103.24B" in 121px.
 const COLUMNS = "grid grid-cols-[minmax(0,1fr)_88px_110px_121px] items-center pr-[26px] pl-[15px]";
+
+// The same four with a 96px column for a sorted metric the table does not
+// already show. Written out whole so Tailwind finds the class. The list's
+// minimum width grows by the column, so the route's horizontal scroll starts
+// 96px sooner while such a sort is applied.
+const COLUMNS_WITH_METRIC =
+  "grid grid-cols-[minmax(0,1fr)_88px_110px_121px_96px] items-center pr-[26px] pl-[15px]";
+
+// Price and market cap already have columns of their own.
+const SHOWN_METRICS: ReadonlySet<ScreenerMetric> = new Set<ScreenerMetric>(["price", "marketCap"]);
+
+const MINUTE_MS = 60_000;
+
+function subscribeToMinute(onStoreChange: () => void): () => void {
+  const id = setInterval(onStoreChange, MINUTE_MS);
+  return () => clearInterval(id);
+}
+
+function subscribeToNothing(): () => void {
+  return () => undefined;
+}
+
+// Quantised to whole minutes, the unit the age column prints, so the snapshot
+// is stable between reads within a render.
+function readMinute(): number {
+  return Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS;
+}
+
+function readNothing(): number {
+  return 0;
+}
+
+// The wall clock for the age column, read as an external store the way the
+// live transactions card reads it. It only ticks while that column is showing.
+// The server's snapshot is zero, which ageMinutes reads as unknown, so the
+// first frame prints a dash rather than an age the client would disagree with.
+function useMinuteClock(enabled: boolean): number {
+  return useSyncExternalStore(
+    enabled ? subscribeToMinute : subscribeToNothing,
+    enabled ? readMinute : readNothing,
+    readNothing
+  );
+}
+
+// The left column once Trending or the screener is passed: they stack above
+// the list, and the 682px floor and the stretch move here from the list panel
+// (ADR-2026-09-15-meme-trending-screener, section 1). No overflow is clipped,
+// because the toolbar's Sort and Filters popovers hang down over the list.
+// Without either slot the list panel is the column itself, as it always was.
+function DeskLeftColumn({
+  slotted,
+  trending,
+  screener,
+  children,
+}: {
+  slotted: boolean;
+  trending: ReactNode;
+  screener: ReactNode;
+  children: ReactNode;
+}) {
+  if (!slotted) return <>{children}</>;
+  return (
+    <div
+      data-region="left-column"
+      className="flex min-h-[682px] min-w-0 flex-1 flex-col gap-3 self-stretch"
+    >
+      {trending}
+      {screener}
+      {children}
+    </div>
+  );
+}
 
 function Chevron({ open }: { open: boolean }) {
   // The icon set ships a left chevron only; a quarter turn points it down, and
@@ -224,9 +328,18 @@ export function MemeDesktopBoard({
   pageMore = false,
   pageLoadingMore = false,
   onPageSizeChange,
+  trending,
+  screener,
+  timeframe = "24h",
+  sortMetric = null,
+  now,
+  topGainers,
+  emptyText,
+  unavailableText,
 }: MemeDesktopBoardProps) {
   const t = useTranslations("meme");
   const tMarkets = useTranslations("markets");
+  const tScreener = useTranslations("memeScreener");
   const chartPanelId = `meme-desk-chart-${useId()}`;
 
   // How many rows the panel holds at this window height. The rows block carries
@@ -263,6 +376,16 @@ export function MemeDesktopBoard({
   // and past the bottom of the card.
   const rowsOnScreen = tokens.slice(0, fittedRows);
 
+  const slotted = trending !== undefined || screener !== undefined;
+  const metricColumn = sortMetric !== null && !SHOWN_METRICS.has(sortMetric) ? sortMetric : null;
+  const columns = metricColumn === null ? COLUMNS : COLUMNS_WITH_METRIC;
+  const clock = useMinuteClock(now === undefined && metricColumn === "age");
+  // Without the slots the heading stays the catalogue's own 24h label, word
+  // for word; the screener's window labels take over once it is on the desk.
+  const changeHeading =
+    !slotted && timeframe === "24h" ? t("col24h") : tScreener(timeframeLabelKey(timeframe));
+  const unavailable = unavailableText ?? t("unavailable");
+
   return (
     // `grow` here and on the columns row below is what carries the desk's
     // height down to the list panel's `self-stretch`. Both leave the basis at
@@ -288,10 +411,17 @@ export function MemeDesktopBoard({
         {listControls ? <div data-region="list-controls">{listControls}</div> : null}
       </div>
 
-      {/* `items-start` keeps the rail hugging its own content while the list
-          alone stretches, so an open chart lengthens the rail and a closed one
-          does not leave it padded out to the list's height. */}
-      <div data-region="desk-columns" className="flex grow items-start gap-[28px]">
+      {/* The two columns sit side by side from lg. Below that they stack: the
+          rail alone is 468px and the table asks for about 360px, so on a tablet
+          they cannot share a row without the page scrolling sideways. Stacked,
+          the table takes the full width and the rail with its ticket follows it.
+          From lg, `items-start` keeps the rail hugging its own content while
+          the list alone stretches, so an open chart lengthens the rail and a
+          closed one does not leave it padded out to the list's height. */}
+      <div
+        data-region="desk-columns"
+        className="flex grow flex-col gap-4 lg:flex-row lg:items-start lg:gap-[28px]"
+      >
         {/* The list panel is sized by whole rows. The design's 682px is a floor
             here, not a cap, and nothing inside it scrolls. A fixed 682px box
             with the rows scrolling inside it sliced a row in half: 641px of room
@@ -339,36 +469,51 @@ export function MemeDesktopBoard({
             louder defect of the two, and the pager is still honest about where
             the reader is; the spot list holds its nine because its panel is the
             taller of the two columns to begin with, so there was nothing to
-            gain there. */}
-        <section
-          data-region="token-list"
-          className="border-hairline bg-surface rounded-card flex min-h-[682px] min-w-0 flex-1 flex-col self-stretch overflow-hidden border"
-        >
-          <div
-            className={`${COLUMNS} border-rule h-[41px] shrink-0 border-b font-serif text-[10.6px] font-medium tracking-[0.04em] text-white/40 uppercase`}
-          >
-            <span>{tMarkets("asset")}</span>
-            <span className="text-right capitalize">{t("colPrice")}</span>
-            <span className="text-right capitalize">{t("col24h")}</span>
-            <span className="text-right capitalize">{t("colMcap")}</span>
-          </div>
+            gain there.
 
-          {failed && rowsShowing ? (
-            <div className="border-rule flex shrink-0 items-center justify-between gap-3 border-b px-[15px] py-2 font-sans text-[11px] text-white/45">
-              <span>{t("unavailable")}</span>
-              {onRetry ? (
-                <button
-                  type="button"
-                  onClick={onRetry}
-                  className="cursor-pointer rounded-full border border-white/15 px-3 py-1 text-[11px] font-medium text-white/80 transition-colors hover:border-white/30 hover:text-white"
-                >
-                  {t("retry")}
-                </button>
+            With Trending and the screener on the desk, the floor and the
+            stretch move to the left column around them, and the panel takes
+            what they leave with `flex-1 min-h-0`. The rows block is still the
+            box that is measured, so the same fitting holds with fewer rows. */}
+        <DeskLeftColumn slotted={slotted} trending={trending} screener={screener}>
+          <section
+            data-region="token-list"
+            className={
+              slotted
+                ? "border-hairline bg-surface rounded-card flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border"
+                : "border-hairline bg-surface rounded-card flex min-h-[682px] min-w-0 flex-1 flex-col self-stretch overflow-hidden border"
+            }
+          >
+            <div
+              className={`${columns} border-rule h-[41px] shrink-0 border-b font-serif text-[10.6px] font-medium tracking-[0.04em] text-white/40 uppercase`}
+            >
+              <span>{tMarkets("asset")}</span>
+              <span className="text-right capitalize">{t("colPrice")}</span>
+              <span className="text-right capitalize">{changeHeading}</span>
+              <span className="text-right capitalize">{t("colMcap")}</span>
+              {metricColumn !== null ? (
+                <span className="truncate text-right capitalize">
+                  {tScreener(METRIC_KEYS[metricColumn])}
+                </span>
               ) : null}
             </div>
-          ) : null}
 
-          {/* The measured box, and the reason the count cannot run away: it is
+            {failed && rowsShowing ? (
+              <div className="border-rule flex shrink-0 items-center justify-between gap-3 border-b px-[15px] py-2 font-sans text-[11px] text-white/45">
+                <span>{unavailable}</span>
+                {onRetry ? (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="cursor-pointer rounded-full border border-white/15 px-3 py-1 text-[11px] font-medium text-white/80 transition-colors hover:border-white/30 hover:text-white"
+                  >
+                    {t("retry")}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* The measured box, and the reason the count cannot run away: it is
               empty in flow. The rows are laid out in the absolutely positioned
               layer inside it, which contributes nothing to anyone's height, so
               this box is left with `flex-1` against a header and a pager of
@@ -388,120 +533,160 @@ export function MemeDesktopBoard({
               `overflow-hidden` is the backstop, not the mechanism. The count is
               floored and the list is cut to it, so the rows drawn always fit the
               height they were counted from and there is nothing to clip. */}
-          <div
-            ref={rowsRef}
-            data-region="token-rows"
-            className="relative min-h-0 flex-1 overflow-hidden"
-          >
-            <div data-region="token-rows-layer" className="absolute inset-0 flex flex-col">
-              {isLoading ? (
-                <div role="status" aria-label={t("loading")} className="shrink-0">
-                  {Array.from({ length: fittedRows }, (_, i) => (
-                    <div key={i} className="border-rule h-[57px] border-b px-[15px] py-[12px]">
-                      <div className="h-full w-full animate-pulse rounded-[10px] bg-white/6" />
-                    </div>
-                  ))}
-                </div>
-              ) : blocked ? (
-                <div className="grid flex-1 place-items-center gap-3 px-4 text-center font-sans text-[13px] font-normal text-white/45">
-                  <span>{t("unavailable")}</span>
-                  {onRetry ? (
-                    <button
-                      type="button"
-                      onClick={onRetry}
-                      className="cursor-pointer rounded-full border border-white/15 px-4 py-1.5 font-sans text-[12.5px] font-medium text-white/80 transition-colors hover:border-white/30 hover:text-white"
-                    >
-                      {t("retry")}
-                    </button>
-                  ) : null}
-                </div>
-              ) : rowsShowing ? (
-                rowsOnScreen.map((token) => {
-                  const picked =
-                    selected?.address === token.address && selected?.chainId === token.chainId;
-                  return (
-                    <button
-                      key={`${token.chainId}:${token.address}`}
-                      type="button"
-                      onClick={() => onSelect(token)}
-                      aria-current={picked ? "true" : undefined}
-                      className={`${COLUMNS} border-rule h-[57px] w-full shrink-0 cursor-pointer border-b text-left transition-colors ${
-                        picked ? "bg-white/6" : "hover:bg-white/4"
-                      }`}
-                    >
-                      <span className="flex min-w-0 items-center gap-[11px]">
-                        <MemeCoin token={token} size={33} />
-                        <span className="flex min-w-0 flex-col gap-[2px]">
-                          <span className="truncate font-serif text-[13.4px] font-medium text-white">
-                            {token.symbol ?? "?"}
-                          </span>
-                          <span className="truncate font-sans text-[11px] font-normal text-white/50">
-                            {token.name ?? "—"}
+            <div
+              ref={rowsRef}
+              data-region="token-rows"
+              className="relative min-h-0 flex-1 overflow-hidden"
+            >
+              <div data-region="token-rows-layer" className="absolute inset-0 flex flex-col">
+                {isLoading ? (
+                  <div role="status" aria-label={t("loading")} className="shrink-0">
+                    {Array.from({ length: fittedRows }, (_, i) => (
+                      <div key={i} className="border-rule h-[57px] border-b px-[15px] py-[12px]">
+                        <div className="h-full w-full animate-pulse rounded-[10px] bg-white/6" />
+                      </div>
+                    ))}
+                  </div>
+                ) : blocked ? (
+                  <div className="grid flex-1 place-items-center gap-3 px-4 text-center font-sans text-[13px] font-normal text-white/45">
+                    <span>{unavailable}</span>
+                    {onRetry ? (
+                      <button
+                        type="button"
+                        onClick={onRetry}
+                        className="cursor-pointer rounded-full border border-white/15 px-4 py-1.5 font-sans text-[12.5px] font-medium text-white/80 transition-colors hover:border-white/30 hover:text-white"
+                      >
+                        {t("retry")}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : rowsShowing ? (
+                  rowsOnScreen.map((token) => {
+                    const picked =
+                      selected?.address === token.address && selected?.chainId === token.chainId;
+                    const change = changeFor(token, timeframe);
+                    const gainer = topGainers?.has(catalogKey(token)) ?? false;
+                    const symbol = (
+                      <span className="truncate font-serif text-[13.4px] font-medium text-white">
+                        {token.symbol ?? "?"}
+                      </span>
+                    );
+                    return (
+                      <button
+                        key={`${token.chainId}:${token.address}`}
+                        type="button"
+                        onClick={() => onSelect(token)}
+                        aria-current={picked ? "true" : undefined}
+                        className={`${columns} border-rule h-[57px] w-full shrink-0 cursor-pointer border-b text-left transition-colors ${
+                          picked ? "bg-white/6" : "hover:bg-white/4"
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-[11px]">
+                          <MemeCoin token={token} size={33} />
+                          <span className="flex min-w-0 flex-col gap-[2px]">
+                            {gainer ? (
+                              <span className="flex min-w-0 items-center gap-[4px]">
+                                {symbol}
+                                <span
+                                  role="img"
+                                  aria-label={tScreener("topGainer")}
+                                  className="shrink-0 text-[11px] leading-none"
+                                >
+                                  🔥
+                                </span>
+                              </span>
+                            ) : (
+                              symbol
+                            )}
+                            <span className="truncate font-sans text-[11px] font-normal text-white/50">
+                              {token.name ?? "—"}
+                            </span>
                           </span>
                         </span>
-                      </span>
-                      <span className="tnum truncate text-right font-sans text-[12.9px] font-semibold text-white">
-                        {priceLabel(token.priceUsd)}
-                      </span>
-                      <span className="truncate text-right font-sans text-[12.5px] font-semibold">
-                        <PctChange value={token.priceChange24hPercent} />
-                      </span>
-                      <span className="tnum truncate text-right font-serif text-[11px] font-medium text-white/50">
-                        {compactUsd(token.marketCapUsd)}
-                      </span>
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="grid flex-1 place-items-center px-4 text-center font-sans text-[13px] font-normal text-white/45">
-                  {query.trim() ? t("noResults") : t("empty")}
-                </div>
-              )}
+                        <span className="tnum truncate text-right font-sans text-[12.9px] font-semibold text-white">
+                          {priceLabel(token.priceUsd)}
+                        </span>
+                        {slotted ? (
+                          // The bar's 2px box is kept when there is no change to
+                          // draw, so a dash sits level with the figures beside it.
+                          <span className="flex min-w-0 flex-col items-end gap-[4px] text-right font-sans text-[12.5px] font-semibold">
+                            <span className="max-w-full truncate">
+                              <PctChange value={change} />
+                            </span>
+                            <span className="block h-[2px] w-full max-w-[56px]">
+                              <ChangeBar change={change} />
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="truncate text-right font-sans text-[12.5px] font-semibold">
+                            <PctChange value={change} />
+                          </span>
+                        )}
+                        <span className="tnum truncate text-right font-serif text-[11px] font-medium text-white/50">
+                          {compactUsd(token.marketCapUsd)}
+                        </span>
+                        {metricColumn !== null ? (
+                          <span className="tnum truncate text-right font-serif text-[11px] font-medium text-white/50">
+                            {formatMetric(
+                              metricValue(token, metricColumn, timeframe, now ?? clock),
+                              tScreener
+                            )}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="grid flex-1 place-items-center px-4 text-center font-sans text-[13px] font-normal text-white/45">
+                    {query.trim() ? t("noResults") : (emptyText ?? t("empty"))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
-          {onPageChange ? (
-            // The catalogue runs to thousands of coins, so the bar numbers its
-            // pages rather than saying "Page 2 of 3" beside a Load more: the
-            // reader sees how far the list goes, and the route loads the pages
-            // ahead as they are reached. Its Prev and Next are ListPagination's
-            // own, so the bar is the height the row-fitting measurement above
-            // assumes. It draws its own top rule and hides itself on a single
-            // page with nothing more to load.
-            // `mt-auto` is the second guarantee that it sits on the floor of
-            // the panel: the rows block above already takes the spare height,
-            // and this holds the bar down if a later state ever stops it.
-            //
-            // The catalogue's status rides above the bar, inside the same
-            // footer, so the rows block above measures around both and the
-            // count never pushes a row out of the frame.
-            <div data-region="list-footer" className="mt-auto shrink-0">
-              {listStatus ? (
-                <div className="border-rule border-t px-[15px] py-2">{listStatus}</div>
-              ) : null}
-              <NumberedPagination
-                page={page}
-                pages={pageCount}
-                onPage={onPageChange}
-                more={pageMore}
-                loadingMore={pageLoadingMore}
-              />
-            </div>
-          ) : listFooter || listStatus ? (
-            <div data-region="list-footer" className="mt-auto shrink-0">
-              {listStatus ? (
-                <div className="border-rule border-t px-[15px] py-2">{listStatus}</div>
-              ) : null}
-              {listFooter ? (
-                <div className="border-rule text-grey-100 border-t p-[13px] text-center font-serif text-[12px] font-medium">
-                  {listFooter}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </section>
+            {onPageChange ? (
+              // The catalogue runs to thousands of coins, so the bar numbers its
+              // pages rather than saying "Page 2 of 3" beside a Load more: the
+              // reader sees how far the list goes, and the route loads the pages
+              // ahead as they are reached. Its Prev and Next are ListPagination's
+              // own, so the bar is the height the row-fitting measurement above
+              // assumes. It draws its own top rule and hides itself on a single
+              // page with nothing more to load.
+              // `mt-auto` is the second guarantee that it sits on the floor of
+              // the panel: the rows block above already takes the spare height,
+              // and this holds the bar down if a later state ever stops it.
+              //
+              // The catalogue's status rides above the bar, inside the same
+              // footer, so the rows block above measures around both and the
+              // count never pushes a row out of the frame.
+              <div data-region="list-footer" className="mt-auto shrink-0">
+                {listStatus ? (
+                  <div className="border-rule border-t px-[15px] py-2">{listStatus}</div>
+                ) : null}
+                <NumberedPagination
+                  page={page}
+                  pages={pageCount}
+                  onPage={onPageChange}
+                  more={pageMore}
+                  loadingMore={pageLoadingMore}
+                />
+              </div>
+            ) : listFooter || listStatus ? (
+              <div data-region="list-footer" className="mt-auto shrink-0">
+                {listStatus ? (
+                  <div className="border-rule border-t px-[15px] py-2">{listStatus}</div>
+                ) : null}
+                {listFooter ? (
+                  <div className="border-rule text-grey-100 border-t p-[13px] text-center font-serif text-[12px] font-medium">
+                    {listFooter}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        </DeskLeftColumn>
 
-        <section className="border-hairline bg-surface rounded-card w-[468px] shrink-0 border px-[18px] py-[15px]">
+        <section className="border-hairline bg-surface rounded-card w-full border px-[18px] py-[15px] lg:w-[468px] lg:shrink-0">
           {selected ? (
             <div className="flex flex-col gap-[13px]">
               <div className="flex items-center justify-between gap-3">

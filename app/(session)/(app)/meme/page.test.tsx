@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@/messages/en.json";
@@ -52,6 +52,64 @@ vi.mock("@/features/trade/hooks/use-meme-tokens", () => ({
   useMemeToken: (identity: { address: string; chainId: number } | null) => {
     fresh.identities.push(identity);
     return { token: fresh.token, isLoading: false, unavailable: null };
+  },
+}));
+
+// The screener controller. Inactive by default, so the desk reads the
+// catalogue exactly as it did before the screener existed.
+const screenerList = vi.hoisted(() => ({
+  tokens: [] as MemeToken[],
+  total: null as number | null,
+  loaded: 0,
+  shownCount: 0,
+  hasMore: false,
+  loadMore: vi.fn(),
+  isLoadingMore: false,
+  loadMoreFailed: false,
+  isLoading: false,
+  isFetching: false,
+  error: null as unknown,
+  refetch: vi.fn(),
+}));
+const screener = vi.hoisted(() => ({
+  active: false,
+  resetKey: "",
+  timeframe: "24h" as "5m" | "1h" | "6h" | "12h" | "24h",
+  sort: null as { by: "volume" | "price"; order: "asc" | "desc" } | null,
+  trending: [] as MemeToken[],
+  calls: [] as unknown[],
+}));
+vi.mock("@/features/trade/hooks/use-meme-screener", () => ({
+  useMemeScreener: (opts: unknown) => {
+    screener.calls.push(opts);
+    return {
+      timeframe: screener.timeframe,
+      setTimeframe: vi.fn(),
+      filters: { bounds: {}, sort: screener.sort },
+      active: screener.active,
+      count: screener.sort === null ? 0 : 1,
+      preset: null,
+      apply: vi.fn(),
+      setSort: vi.fn(),
+      applyPreset: vi.fn(),
+      clearBound: vi.fn(),
+      clearAll: vi.fn(),
+      listQuery: screener.resetKey,
+      list: screenerList,
+      trending: {
+        tokens: screener.trending,
+        pageTokens: screener.trending,
+        page: 1,
+        pages: 1,
+        setPage: vi.fn(),
+        filtered: false,
+        isLoading: false,
+        isFetching: false,
+        error: null,
+        refetch: vi.fn(),
+      },
+      resetKey: screener.resetKey,
+    };
   },
 }));
 
@@ -204,6 +262,23 @@ beforeEach(() => {
   search.active = false;
   search.results = [];
   search.error = null;
+  screener.active = false;
+  screener.resetKey = "";
+  screener.timeframe = "24h";
+  screener.sort = null;
+  screener.trending = [];
+  screener.calls = [];
+  screenerList.tokens = [];
+  screenerList.total = null;
+  screenerList.loaded = 0;
+  screenerList.shownCount = 0;
+  screenerList.hasMore = false;
+  screenerList.isLoadingMore = false;
+  screenerList.loadMoreFailed = false;
+  screenerList.isLoading = false;
+  screenerList.error = null;
+  screenerList.loadMore.mockClear();
+  screenerList.refetch.mockClear();
 });
 
 describe("the memecoin desk", () => {
@@ -354,17 +429,17 @@ describe("the memecoin desk", () => {
 describe("the memecoin desk's catalogue", () => {
   const switchGroup = () => screen.getByRole("group", { name: "Which memecoins to list" });
 
-  it("opens curated, and the switch lists what All keeps, in the catalogue and search", () => {
+  it("opens on All, and Curated narrows the catalogue and the search", () => {
     const wild = memeToken({ symbol: "WILD", riskLevel: "HIGH" });
     catalog.allTokens = [aaa, bbb, wild];
     renderDesk();
-    expect(views.catalog.at(-1)).toBe("curated");
-    expect(screen.queryByRole("button", { name: /WILD/ })).toBeNull();
-
-    fireEvent.click(within(switchGroup()).getByRole("button", { name: "All" }));
-    expect(screen.getByRole("button", { name: /WILD/ })).toBeInTheDocument();
     expect(views.catalog.at(-1)).toBe("all");
-    expect(views.search.at(-1)).toBe("all");
+    expect(screen.getByRole("button", { name: /WILD/ })).toBeInTheDocument();
+
+    fireEvent.click(within(switchGroup()).getByRole("button", { name: "Curated" }));
+    expect(screen.queryByRole("button", { name: /WILD/ })).toBeNull();
+    expect(views.catalog.at(-1)).toBe("curated");
+    expect(views.search.at(-1)).toBe("curated");
   });
 
   it("counts the loaded rows against the server's total and shows the view's size", () => {
@@ -530,5 +605,158 @@ describe("the memecoin desk against the trade contract", () => {
     fireEvent.change(screen.getByLabelText("You pay"), { target: { value: "5" } });
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(preview.calls.every((call) => call.consented)).toBe(true);
+  });
+});
+
+// ADR-2026-09-15-meme-trending-screener: Trending and the screener join the
+// table on the left. The list reads search results first, then the screener's
+// filtered list while filters apply, then the catalogue.
+describe("the memecoin desk's screener", () => {
+  const ccc = memeToken({ symbol: "CCC" });
+  const listPanel = () => document.querySelector('[data-region="token-list"]') as HTMLElement;
+
+  it("asks the controller for the desk's Trending page size and view", () => {
+    renderDesk();
+    expect(screener.calls.at(-1)).toEqual({ view: "all", trendingPageSize: 4 });
+  });
+
+  it("draws Trending and the toolbar in the left column, beside the rail", () => {
+    renderDesk();
+    const column = document.querySelector('[data-region="left-column"]') as HTMLElement;
+    expect(within(column).getByRole("heading", { name: "Trending now" })).toBeInTheDocument();
+    expect(column.querySelector('[data-region="screener-toolbar"]')).not.toBeNull();
+    expect(column).toContainElement(listPanel());
+    expect(column).not.toContainElement(screen.getByRole("button", { name: "Buy AAA" }));
+  });
+
+  it("lists the screener's coins while filters apply, and counts and loads those", () => {
+    catalog.total = 11_502;
+    catalog.loaded = 500;
+    catalog.shownCount = 156;
+    catalog.hasMore = true;
+    screener.active = true;
+    screenerList.tokens = [ccc];
+    screenerList.total = 57;
+    screenerList.loaded = 40;
+    screenerList.shownCount = 12;
+    screenerList.hasMore = true;
+    renderDesk();
+
+    expect(screen.getByRole("button", { name: /CCC coin/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /AAA coin/ })).toBeNull();
+    // With no coin picked, the rail trades the first row of the live list.
+    expect(screen.getByRole("button", { name: "Buy CCC" })).toBeInTheDocument();
+    expect(screen.getByText("40 of 57")).toBeInTheDocument();
+    expect(screen.getByText("12 shown")).toBeInTheDocument();
+    expect(screen.queryByText("500 of 11,502")).toBeNull();
+    expect(screen.getByText("More pages")).toBeInTheDocument();
+    expect(screenerList.loadMore).toHaveBeenCalled();
+    expect(catalog.loadMore).not.toHaveBeenCalled();
+  });
+
+  it("draws placeholders while the filtered list loads", () => {
+    screener.active = true;
+    screenerList.isLoading = true;
+    renderDesk();
+    expect(within(listPanel()).getByLabelText("Loading\u2026")).toBeInTheDocument();
+  });
+
+  it("says filters matched nothing rather than that there are no tokens", () => {
+    screener.active = true;
+    renderDesk();
+    expect(screen.getByText(messages.memeScreener.noMatches)).toBeInTheDocument();
+    expect(screen.queryByText(messages.meme.empty)).toBeNull();
+  });
+
+  it("says the filtered list failed, and retries the filtered list", () => {
+    screener.active = true;
+    screenerList.error = new Error("down");
+    renderDesk();
+    expect(screen.getByText(messages.memeScreener.listUnavailable)).toBeInTheDocument();
+    fireEvent.click(within(listPanel()).getByRole("button", { name: messages.meme.retry }));
+    expect(screenerList.refetch).toHaveBeenCalled();
+  });
+
+  it("returns the list to page 1 when the applied filters change", () => {
+    const coins = Array.from({ length: 25 }, (_, i) =>
+      memeToken({ symbol: `C${String(i).padStart(2, "0")}` })
+    );
+    catalog.tokens = coins;
+    screenerList.tokens = coins;
+    renderDesk();
+    fireEvent.click(screen.getByRole("button", { name: "Page 3" }));
+    // Another render that changes nothing about the list keeps the page.
+    fireEvent.click(screen.getByRole("button", { name: "Market Metrics" }));
+    expect(screen.getByRole("button", { name: "Page 3" })).toHaveAttribute("aria-current", "page");
+
+    screener.active = true;
+    screener.resetKey = "sortBy=volume&sortOrder=desc&timeframe=24h";
+    fireEvent.click(screen.getByRole("button", { name: "Market Metrics" }));
+    expect(screen.getByRole("button", { name: "Page 1" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("lets a search take over the list from the screener", () => {
+    screener.active = true;
+    screenerList.tokens = [ccc];
+    screenerList.total = 57;
+    screenerList.loaded = 40;
+    screenerList.hasMore = true;
+    search.active = true;
+    search.results = [aaa];
+    renderDesk();
+    expect(screen.getByRole("button", { name: /AAA coin/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /CCC coin/ })).toBeNull();
+    expect(screen.queryByText("40 of 57")).toBeNull();
+    expect(screenerList.loadMore).not.toHaveBeenCalled();
+  });
+
+  it("tells the toolbar its filters are paused while a search is showing", () => {
+    renderDesk();
+    expect(screen.queryByText(messages.memeScreener.pausedBySearch)).toBeNull();
+    cleanup();
+    search.active = true;
+    search.results = [aaa];
+    renderDesk();
+    expect(screen.getByText(messages.memeScreener.pausedBySearch)).toBeInTheDocument();
+  });
+
+  it("trades a Trending coin in the rail when its card is picked", () => {
+    const ddd = memeToken({ symbol: "DDD" });
+    screener.trending = [ddd];
+    renderDesk();
+    const card = screen.getByRole("button", { name: /^DDD, rank 1/ });
+    fireEvent.click(card);
+    expect(screen.getByRole("button", { name: "Buy DDD" })).toBeInTheDocument();
+    expect(screen.getByText("DDD/USDC")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^DDD, rank 1/ })).toHaveAttribute(
+      "aria-current",
+      "true"
+    );
+  });
+
+  it("heads the change column with the window and adds the sorted metric", () => {
+    screener.active = true;
+    screener.timeframe = "1h";
+    screener.sort = { by: "volume", order: "desc" };
+    screenerList.tokens = [ccc];
+    renderDesk();
+    const header = listPanel().firstElementChild as HTMLElement;
+    expect(header.children[2]).toHaveTextContent(/^1h$/);
+    expect(header.children[4]).toHaveTextContent("Volume");
+  });
+
+  it("marks the page's top gainers", () => {
+    catalog.tokens = [aaa, memeToken({ symbol: "DOWN", priceChange24hPercent: "-5" })];
+    renderDesk();
+    expect(
+      within(screen.getByRole("button", { name: /AAA coin/ })).getByRole("img", {
+        name: messages.memeScreener.topGainer,
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("button", { name: /DOWN coin/ })).queryByRole("img", {
+        name: messages.memeScreener.topGainer,
+      })
+    ).toBeNull();
   });
 });

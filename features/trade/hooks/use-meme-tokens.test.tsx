@@ -162,9 +162,10 @@ describe("useMemeCatalog walks the catalogue a page at a time", () => {
     expect(result.current.total).toBe(TOTAL);
     expect(result.current.loaded).toBe(500);
     expect(result.current.hasMore).toBe(true);
-    // Curated keeps 450 of the first 500.
-    expect(result.current.shownCount).toBe(450);
-    expect(result.current.tokens).toHaveLength(450);
+    // The default view is All, so all 500 rows of page 1 are listed. The
+    // curated case is the test below.
+    expect(result.current.shownCount).toBe(500);
+    expect(result.current.tokens).toHaveLength(500);
   });
 
   it("loads page 2 and appends it without a duplicate row", async () => {

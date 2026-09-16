@@ -14,10 +14,12 @@ import {
   parseWalletChallenge,
 } from "@/lib/meme/parse";
 import {
+  LIVE_LIST_TOKEN,
   LIVE_SEARCH_ROW,
   LIVE_TOKEN_DETAIL,
   LIVE_TOKEN_PAGE,
   LIVE_TRADABILITY,
+  LIVE_TRENDING_PAGE,
   SOLANA_SWAP_QUOTE,
   SUBMISSION,
   SWAP_PAGE,
@@ -156,5 +158,91 @@ describe("swap mappers", () => {
     })();
     expect(error).toBeInstanceOf(TradeShapeError);
     expect((error as TradeShapeError).message).toContain("status");
+  });
+});
+
+describe("token activity", () => {
+  const pageWith = (row: Record<string, unknown>) => ({
+    items: [{ ...LIVE_LIST_TOKEN, ...row }],
+    meta: LIVE_TOKEN_PAGE.meta,
+  });
+
+  it("fills every window the row carries to all four fields, null where absent", () => {
+    const [token] = parseTokenPage(
+      pageWith({
+        activity: {
+          "1h": { volumeUsd: "1200.5", transactions: 40 },
+          "24h": { volumeUsd: "9000", transactions: 300, traders: 80, priceChangePercent: "-4.5" },
+        },
+        pairCreatedAt: "2026-09-15T08:00:00.000Z",
+      })
+    ).items;
+    expect(token.activity).toEqual({
+      "1h": { volumeUsd: "1200.5", transactions: 40, traders: null, priceChangePercent: null },
+      "24h": { volumeUsd: "9000", transactions: 300, traders: 80, priceChangePercent: "-4.5" },
+    });
+    expect(token.pairCreatedAt).toBe("2026-09-15T08:00:00.000Z");
+  });
+
+  // A window the providers do not fill is not estimated from another one.
+  it("leaves a window out rather than inventing one", () => {
+    const [token] = parseTokenPage(
+      pageWith({ activity: { "5m": {}, "6h": null, "4h": {} } })
+    ).items;
+    expect(token.activity).toEqual({
+      "5m": { volumeUsd: null, transactions: null, traders: null, priceChangePercent: null },
+    });
+  });
+
+  it("keeps the change exactly as the service wrote it", () => {
+    const [token] = parseTokenPage(
+      pageWith({ activity: { "5m": { priceChangePercent: "12.340000000000002" } } })
+    ).items;
+    expect(token.activity?.["5m"]?.priceChangePercent).toBe("12.340000000000002");
+  });
+
+  it("reads a count that is not a whole, non-negative number as unavailable", () => {
+    const [token] = parseTokenPage(
+      pageWith({ activity: { "1h": { transactions: 1.5, traders: -2 }, "24h": { traders: 7 } } })
+    ).items;
+    expect(token.activity?.["1h"]?.transactions).toBeNull();
+    expect(token.activity?.["1h"]?.traders).toBeNull();
+    expect(token.activity?.["24h"]?.traders).toBe(7);
+  });
+
+  it("reads a null pair creation time as null", () => {
+    const [token] = parseTokenPage(pageWith({ activity: {}, pairCreatedAt: null })).items;
+    expect(token.activity).toEqual({});
+    expect(token.pairCreatedAt).toBeNull();
+  });
+
+  it("maps trending rows the same way", () => {
+    const [token] = parseTokenPage({
+      ...LIVE_TRENDING_PAGE,
+      items: [{ ...LIVE_TRENDING_PAGE.items[0], activity: { "12h": { traders: 5 } } }],
+    }).items;
+    expect(token.activity?.["12h"]?.traders).toBe(5);
+    expect(token.pairCreatedAt).toBeNull();
+  });
+
+  // Search rows carry neither field. They stay undefined so a search row is
+  // never mistaken for a coin with no activity at all.
+  it("leaves both fields undefined on a row that carries neither", () => {
+    const [row] = parseTokenSearch([LIVE_SEARCH_ROW]);
+    expect(row).not.toHaveProperty("activity");
+    expect(row).not.toHaveProperty("pairCreatedAt");
+    const [listed] = parseTokenPage(LIVE_TOKEN_PAGE).items;
+    expect(listed).not.toHaveProperty("activity");
+    expect(listed).not.toHaveProperty("pairCreatedAt");
+  });
+
+  it("does not add either field to the detail read", () => {
+    const token = parseTokenView({
+      ...LIVE_TOKEN_DETAIL,
+      activity: { "24h": { traders: 1 } },
+      pairCreatedAt: "2026-09-15T08:00:00.000Z",
+    });
+    expect(token).not.toHaveProperty("activity");
+    expect(token).not.toHaveProperty("pairCreatedAt");
   });
 });
