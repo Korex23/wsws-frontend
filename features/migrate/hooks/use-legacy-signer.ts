@@ -3,13 +3,14 @@
 import { useMemo } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import type { EIP1193Provider } from "viem";
-import { getWalletAddress } from "@/lib/user";
+import { getEmbeddedWallets, getWalletAddress } from "@/lib/user";
 import type { LegacySigner } from "@/lib/migration/types";
 import {
   useLegacyEvmSendBatch,
   useLegacySendToken,
 } from "@/features/migrate/hooks/use-legacy-send";
 import { useFreshLegacySession } from "@/features/migrate/hooks/use-fresh-legacy-session";
+import { useMigrationStatus } from "@/features/migrate/hooks/use-migration-status";
 
 // The old Privy wallets as a plain signer object, so venue adapters (which
 // never import Privy) can spend from them. Null until the user has signed in
@@ -26,10 +27,24 @@ export function useLegacySigner(): LegacySigner | null {
   // handed out until the inherited one has been discarded and the old account
   // has signed in again.
   const fresh = useFreshLegacySession();
+  // The wallet the backend linked and that provably holds the funds. When the
+  // signed-in account has more than one embedded EVM wallet, getWalletAddress
+  // returns the FIRST — which need not be the funded one, so discovery reads an
+  // empty wallet and the review says "nothing to move" while the money sits at
+  // the recorded address. Prefer that recorded address whenever it is one of
+  // this account's own wallets; otherwise the account simply differs, and the
+  // first wallet is the right fallback.
+  const recordedEvm = useMigrationStatus().data?.legacy?.evm ?? null;
 
   return useMemo(() => {
     if (!fresh || !ready || !authenticated) return null;
-    const evm = getWalletAddress(user, "ethereum");
+    const ownEvm = getEmbeddedWallets(user)
+      .filter((w) => w.chainType === "ethereum")
+      .map((w) => w.address.toLowerCase());
+    const evm =
+      recordedEvm && ownEvm.includes(recordedEvm.toLowerCase())
+        ? recordedEvm
+        : getWalletAddress(user, "ethereum");
     const solana = getWalletAddress(user, "solana");
     if (!evm && !solana) return null;
     // The ADDRESS is on the user record the moment sign-in lands; the wallet
@@ -38,16 +53,22 @@ export function useLegacySigner(): LegacySigner | null {
     // connected", "iframe not initialized" — which is exactly what the
     // automatic sweep did when it fired on the first render after login. So no
     // signer until the wallet it would spend from is actually here.
-    if (evm && !wallets.some((w) => w.walletClientType === "privy")) return null;
+    const matchesChosen = (w: (typeof wallets)[number]) =>
+      w.walletClientType === "privy" &&
+      Boolean(evm) &&
+      w.address.toLowerCase() === evm!.toLowerCase();
+    // The SPECIFIC funded wallet must be present, not merely any privy wallet:
+    // signing from the wrong one of two embedded wallets moves nothing.
+    if (evm && !wallets.some(matchesChosen)) return null;
     return {
       addresses: { evm, solana },
       sendBatch,
       sendToken,
       async getEthereumProvider() {
-        const wallet = wallets.find((w) => w.walletClientType === "privy");
+        const wallet = wallets.find(matchesChosen);
         if (!wallet) throw new Error("Your old wallet is not connected. Sign in again.");
         return (await wallet.getEthereumProvider()) as unknown as EIP1193Provider;
       },
     };
-  }, [fresh, ready, authenticated, user, wallets, sendBatch, sendToken]);
+  }, [fresh, ready, authenticated, user, wallets, recordedEvm, sendBatch, sendToken]);
 }
