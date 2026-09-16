@@ -4,10 +4,11 @@ import { forwardMigration, migrationServiceEnabled, unauthorized } from "@/lib/s
 
 // What the service knows about the signed-in account's old wallet. With the
 // flag off, or for an account the service has never heard of, the answer is
-// the empty status: not linked, nothing known. The client treats both the
-// same, so shipping the frontend ahead of the service changes nothing.
+// the empty status: nothing known. `linked` is null rather than false on
+// purpose — "could not say" and "said no" are different facts, and the offer
+// only lets a real "no" overrule what this device remembers.
 const EMPTY_STATUS = {
-  linked: false,
+  linked: null,
   legacy: null,
   hasLegacyFunds: false,
   legacyFundsUsd: 0,

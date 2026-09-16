@@ -15,7 +15,13 @@ export type RekeyState = "done" | "pending" | "failed" | "none";
 // (not linked, nothing known) until the account is linked or while the
 // service is not deployed; the flow works from the on-chain venues either way.
 export interface MigrationStatus {
-  linked: boolean;
+  /**
+   * Whether this account is mapped to a legacy one. `null` means the service
+   * could not say — not deployed, unconfigured, or it has never heard of the
+   * account — which is a different fact from `false`, and the offer treats
+   * them differently: only a real `false` outranks the device's own memory.
+   */
+  linked: boolean | null;
   legacy: LegacyAddresses | null;
   hasLegacyFunds: boolean;
   legacyFundsUsd: number;
@@ -32,7 +38,7 @@ export interface MigrationLink {
 }
 
 export const EMPTY_MIGRATION_STATUS: MigrationStatus = {
-  linked: false,
+  linked: null,
   legacy: null,
   hasLegacyFunds: false,
   legacyFundsUsd: 0,

@@ -43,12 +43,52 @@ describe("offerMigration", () => {
     ...overrides,
   });
 
-  it("never offers once complete, whatever the server says", () => {
+  // The device flag is per browser, not per account, and can be written by a
+  // sweep whose link never landed. So it only fills the gap the service
+  // leaves; a real "not linked" from the service outranks it.
+  it("offers when the service says not linked, even if this device says done", () => {
+    expect(
+      offerMigration({
+        complete: true,
+        localHistory: true,
+        status: status({ linked: false }),
+      })
+    ).toBe(true);
+  });
+
+  it("offers a NEW account on a device another account finished on", () => {
+    expect(
+      offerMigration({
+        complete: true,
+        localHistory: false,
+        status: status({ linked: false }),
+        legacyAccount: true,
+      })
+    ).toBe(true);
+  });
+
+  it("keeps the device flag when the service could not say", () => {
+    // EMPTY_MIGRATION_STATUS carries linked: null — "no answer", not "no".
     expect(
       offerMigration({
         complete: true,
         localHistory: true,
         status: status({ hasLegacyFunds: true }),
+      })
+    ).toBe(false);
+  });
+
+  it("keeps the device flag before the status has loaded", () => {
+    expect(offerMigration({ complete: true, localHistory: true, status: undefined })).toBe(false);
+  });
+
+  it("never offers once the service says linked, whatever the device says", () => {
+    expect(
+      offerMigration({
+        complete: false,
+        localHistory: true,
+        status: status({ linked: true, hasLegacyFunds: true }),
+        legacyAccount: true,
       })
     ).toBe(false);
   });

@@ -103,11 +103,16 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
   // upstream, so every opening may post it; a service that is not deployed
   // yet is simply not there.
   const linked = useRef(false);
+  // Set only by a successful link, never by starting one. The device flag
+  // below must not be written on a sweep whose link failed — that is exactly
+  // how a device ends up "done" for an account the service never mapped.
+  const linkLanded = useRef(false);
   useEffect(() => {
     if (!signer || linked.current) return;
     linked.current = true;
     linkLegacyAccount()
       .then(() => {
+        linkLanded.current = true;
         track("migration_linked");
         void refetchStatus();
       })
@@ -167,7 +172,9 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
         `[migrate] moved: ${outcome.outcome}, $${outcome.movedUsd.toFixed(2)} across ${outcome.movedCount} item(s)`
       );
       track("migration_completed", { outcome: outcome.outcome, moved_usd: outcome.movedUsd });
-      if (outcome.outcome === "complete") markMigrationComplete();
+      if (outcome.outcome === "complete" && (linkLanded.current || status.data?.linked === true)) {
+        markMigrationComplete();
+      }
       // Anything that landed is the user's money in their new wallet, so it
       // stops being hidden even when the run as a whole is unfinished.
       if (outcome.movedCount > 0) markFundsMoved();

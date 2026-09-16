@@ -53,7 +53,7 @@ describe("migration routes", () => {
     expect(await res.json()).toEqual({
       success: true,
       data: {
-        linked: false,
+        linked: null, // "could not say", not "no" — see the route's EMPTY_STATUS
         legacy: null,
         hasLegacyFunds: false,
         legacyFundsUsd: 0,
@@ -83,7 +83,7 @@ describe("migration routes", () => {
     upstream(404, { success: false, error: { code: "NOT_FOUND" } });
     const unknown = await status.GET(makeReq({ authorization: "Bearer d" }));
     expect(unknown.status).toBe(200);
-    expect((await unknown.json()).data.linked).toBe(false);
+    expect((await unknown.json()).data.linked).toBe(null);
   });
 
   it("refuses to link while the service is off", async () => {

@@ -31,7 +31,7 @@ export function useOfferMigration(): boolean {
   });
   console.log(
     `[migrate] offer migrate-to-2.0: ${offer ? "YES" : "no"}` +
-      ` [already linked: ${status.data?.linked ?? "unknown"}, done on this device: ${complete},` +
+      ` [already linked: ${status.data === undefined ? "loading" : (status.data.linked ?? "service could not say")}, done on this device: ${complete},` +
       ` privy keys here: ${localHistory}, service reports funds: ${status.data?.hasLegacyFunds ?? "unknown"},` +
       ` directory: ${legacy.has ? "legacy account found" : "no legacy account"}]`
   );

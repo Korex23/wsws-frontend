@@ -14,6 +14,7 @@ import type { LegacyHolding, VenueAdapter } from "@/lib/migration/types";
 import { discoverHoldings, ethPriceFromPortfolio } from "@/features/migrate/lib/discover";
 import { markFundsMoved, markMigrationComplete } from "@/features/migrate/lib/visibility";
 import { useOfferMigration } from "@/features/migrate/hooks/use-offer-migration";
+import { useMigrationStatus } from "@/features/migrate/hooks/use-migration-status";
 import { useLegacySigner } from "@/features/migrate/hooks/use-legacy-signer";
 import { legacyHoldingsKey } from "@/features/migrate/hooks/use-legacy-holdings";
 import { useMigrationRun } from "@/features/migrate/hooks/use-migration-run";
@@ -59,6 +60,9 @@ function UpdateBalanceInner({ adapters }: { adapters: readonly VenueAdapter[] })
   const privy = usePrivy();
   const signer = useLegacySigner();
   const session = useAuthSession();
+  const migrationStatus = useMigrationStatus();
+  // A real "linked" from the service, never the device's memory of one.
+  const migrationLinked = migrationStatus.data?.linked === true;
   const newPortfolio = usePortfolio();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
@@ -130,7 +134,9 @@ function UpdateBalanceInner({ adapters }: { adapters: readonly VenueAdapter[] })
       // review, no failed sweep, no deposit still in flight. Skipped holdings
       // sit on networks the sponsor does not cover and keeping the button
       // forever would not change that, so they do not hold it open.
-      if (!hasReviewWork && sweepError === null && pendingOnramps === 0) {
+      // And only for an account the service confirms is linked: a device flag
+      // written without a link is a lie the next user of this browser inherits.
+      if (!hasReviewWork && sweepError === null && pendingOnramps === 0 && migrationLinked) {
         markMigrationComplete();
       }
 
@@ -170,7 +176,18 @@ function UpdateBalanceInner({ adapters }: { adapters: readonly VenueAdapter[] })
     } finally {
       setBusy(false);
     }
-  }, [signer, current, legacy, ethPriceUsd, adapters, queryClient, runner, newPortfolio, t]);
+  }, [
+    signer,
+    current,
+    legacy,
+    ethPriceUsd,
+    adapters,
+    queryClient,
+    runner,
+    newPortfolio,
+    t,
+    migrationLinked,
+  ]);
 
   useEffect(() => {
     if (resumeAfterLogin.current && signer) {

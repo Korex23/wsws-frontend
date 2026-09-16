@@ -116,10 +116,15 @@ export function offerMigration(input: {
   // Already linked: the mapping exists, the ledgers re-key themselves, and
   // there is nothing left to ask the user for. `linked` is the whole test,
   // because linking is what the offer is FOR.
-  if (input.status?.linked) return false;
-  // Marked done on this device, for a user the service cannot answer about
-  // (it is not deployed, or they were never mapped).
-  if (input.complete) return false;
+  if (input.status?.linked === true) return false;
+  // Marked done on this device. That flag only fills the gap the service
+  // leaves (not loaded, or could not say): when the service has answered
+  // "not linked", its answer wins. The flag is per DEVICE, not per user — an
+  // earlier account finishing on this browser says nothing about the one
+  // signed in now — and it can be set by a sweep whose link never landed.
+  // Either way the service, not localStorage, knows whether THIS account is
+  // still on the old identity.
+  if (input.complete && input.status?.linked !== false) return false;
 
   // Anything below means "still on the old identity".
   //
