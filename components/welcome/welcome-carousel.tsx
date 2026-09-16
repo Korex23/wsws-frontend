@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { Wordmark } from "@/components/ui/wordmark";
 
 // The three welcome slides, in the order the design runs them. Each image is a
-// file in public/, exported from the design file at 2x.
+// file in public/, exported from the design file at 2x.hgghg
 const SLIDES = [
   { key: "slide1", image: "/carousel_one.png" },
   { key: "slide2", image: "/carousel_two.png" },
