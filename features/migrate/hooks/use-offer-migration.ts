@@ -35,13 +35,13 @@ export function useOfferMigration(): boolean {
     localHistory,
     status: status.data,
     legacyAccount: legacy.has,
-    walletFunds: walletFunds.data,
+    walletFunds: walletFunds.data === undefined ? undefined : (walletFunds.data?.hasFunds ?? null),
   });
   console.log(
     `[migrate] offer migrate-to-2.0: ${offer ? "YES" : "no"}` +
       ` [already linked: ${status.data === undefined ? "loading" : (status.data.linked ?? "service could not say")}, done on this device: ${complete},` +
       ` privy keys here: ${localHistory}, service reports funds: ${status.data?.hasLegacyFunds ?? "unknown"},` +
-      ` old wallet on chain: ${walletFunds.data === undefined ? "not read" : walletFunds.data === null ? "partial read" : walletFunds.data ? "has funds" : "empty"},` +
+      ` old wallet on chain: ${walletFunds.data === undefined ? "not read" : walletFunds.data === null ? "partial read" : walletFunds.data.hasFunds ? `$${walletFunds.data.usd.toFixed(2)} left` : "empty"},` +
       ` directory: ${legacy.has ? "legacy account found" : "no legacy account"}]`
   );
   return offer;

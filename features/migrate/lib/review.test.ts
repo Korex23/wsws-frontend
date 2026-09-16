@@ -151,4 +151,12 @@ describe("blockingHoldings", () => {
   it("is empty with nothing discovered", () => {
     expect(blockingHoldings([], [], 0)).toEqual([]);
   });
+
+  // A sub-cent token that reverts on transfer must not hold the gate shut.
+  it("never blocks on dust below the display floor", () => {
+    const dust = holding("d", "wallet", { valueUsd: 0.001 });
+    const real = holding("r", "wallet", { valueUsd: 0.5 });
+    expect(blockingHoldings([dust, real], [], 0)).toEqual([real]);
+    expect(blockingHoldings([dust], [], 0)).toEqual([]);
+  });
 });

@@ -51,7 +51,10 @@ export function blockingHoldings(
 ): LegacyHolding[] {
   const unsettled = holdings.filter((h) => !runs.some((r) => r.results.get(h.id)?.ok));
   const groups = reviewGroups(unsettled, new Set(), now);
-  return [...groups.automatic, ...groups.optIn];
+  // Below the review's own display floor is not a reason to keep anyone here:
+  // a sub-cent token that reverts on transfer would otherwise hold the gate
+  // shut forever. The sweep still attempts it.
+  return [...groups.automatic, ...groups.optIn].filter(worthShowing);
 }
 
 // A holding worth less than a cent renders as "$0.00", which is noise: the

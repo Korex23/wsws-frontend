@@ -35,6 +35,7 @@ import {
 } from "@/features/migrate/hooks/use-legacy-holdings";
 import { useMigrationRun } from "@/features/migrate/hooks/use-migration-run";
 import { useMigrationStatus } from "@/features/migrate/hooks/use-migration-status";
+import { useLegacyWalletFunds } from "@/features/migrate/hooks/use-legacy-wallet-funds";
 
 export type MigrationEntry = "balance_card" | "account_modal" | "gate";
 
@@ -107,6 +108,10 @@ export function MoveOldMoneyPanel({
     () => ({ evm: session.evmAddress, solana: session.solanaAddress }),
     [session.evmAddress, session.solanaAddress]
   );
+  // What the old wallet holds, read here rather than from the service, whose
+  // probe sees ETH and USDC only. Known before the old sign-in for a linked
+  // account, whose addresses the server already has.
+  const walletFunds = useLegacyWalletFunds(legacy, legacy.evm !== null || legacy.solana !== null);
   const runnerInput = { adapters, legacy, current, signer, ethPriceUsd };
   const holdingsQuery = useLegacyHoldings(runnerInput);
   const runner = useMigrationRun(runnerInput);
@@ -264,7 +269,8 @@ export function MoveOldMoneyPanel({
   };
 
   if (!signer) {
-    const known = status.data?.hasLegacyFunds ? status.data.legacyFundsUsd : 0;
+    const known =
+      walletFunds.data?.usd ?? (status.data?.hasLegacyFunds ? status.data.legacyFundsUsd : 0);
     // There is no signer for two unrelated reasons, and showing one screen for
     // both is what made this button do nothing: signed in to an account that
     // never had an old wallet, privy.login() returns without opening anything,

@@ -4,18 +4,26 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import type { Portfolio } from "@/lib/server/alchemy";
 import { walletHoldings } from "@/features/migrate/lib/venues/wallet";
-import { legacyWalletHasFunds } from "@/features/migrate/lib/legacy-funds";
+import { legacyWalletHasFunds, legacyWalletUsd } from "@/features/migrate/lib/legacy-funds";
 
 interface Addresses {
   evm: string | null;
   solana: string | null;
 }
 
+export interface LegacyWalletFunds {
+  /** Anything sweepable and worth a cent is still there. */
+  hasFunds: boolean;
+  /** Display total of what could move. */
+  usd: number;
+}
+
 /**
- * The old wallet's balance, read by the frontend, as "is there anything left
- * to move": true, false, or null for "could not tell" (a partial read is a
- * floor, not an answer). Same read the wallet venue's discovery makes, so the
- * offer and the sweep can never disagree about what is there.
+ * The old wallet's balance, read by the frontend: what is left to move and
+ * what it is worth, or null for "could not tell" (a partial read is a floor,
+ * not an answer). Same read the wallet venue's discovery makes, so the offer,
+ * the figure on the badge and the sweep can never disagree about what is
+ * there.
  *
  * Only for a linked account — before the link, the old addresses are not
  * known here, and the offer is about linking rather than money anyway.
@@ -23,7 +31,7 @@ interface Addresses {
 export function useLegacyWalletFunds(legacy: Addresses | null, enabled: boolean) {
   const evm = legacy?.evm ?? null;
   const solana = legacy?.solana ?? null;
-  return useQuery<boolean | null>({
+  return useQuery<LegacyWalletFunds | null>({
     queryKey: ["legacyWalletFunds", evm, solana],
     enabled: enabled && (evm !== null || solana !== null),
     staleTime: 60_000,
@@ -38,7 +46,8 @@ export function useLegacyWalletFunds(legacy: Addresses | null, enabled: boolean)
       if (!res.ok) throw new Error("Couldn't read the old wallet's balances.");
       const portfolio = (await res.json()) as Portfolio;
       if (portfolio.missing?.length) return null;
-      return legacyWalletHasFunds(walletHoldings(portfolio.tokens));
+      const holdings = walletHoldings(portfolio.tokens);
+      return { hasFunds: legacyWalletHasFunds(holdings), usd: legacyWalletUsd(holdings) };
     },
   });
 }

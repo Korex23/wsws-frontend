@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { legacyWalletHasFunds } from "@/features/migrate/lib/legacy-funds";
+import {
+  legacyWalletHasFunds,
+  legacyWalletMovable,
+  legacyWalletUsd,
+} from "@/features/migrate/lib/legacy-funds";
 import type { LegacyHolding } from "@/lib/migration/types";
 
 function holding(id: string, overrides: Partial<LegacyHolding> = {}): LegacyHolding {
@@ -20,18 +24,36 @@ function holding(id: string, overrides: Partial<LegacyHolding> = {}): LegacyHold
   };
 }
 
-describe("legacyWalletHasFunds", () => {
-  it("is false for an empty wallet", () => {
+describe("the old wallet, read by the frontend", () => {
+  it("is empty with nothing, or nothing above zero", () => {
     expect(legacyWalletHasFunds([])).toBe(false);
     expect(legacyWalletHasFunds([holding("a", { amount: 0n })])).toBe(false);
+    expect(legacyWalletUsd([])).toBe(0);
   });
 
-  it("is true for any sweepable balance, however small", () => {
-    expect(legacyWalletHasFunds([holding("dust", { amount: 1n, valueUsd: 0 })])).toBe(true);
+  // The wallet that prompted this: cbXRP $0.92, CHIP $0.40, BLUESCREEN $0.12,
+  // DOBBY $0.015 and 17 tokens worth less than a cent. The service saw $0.
+  it("counts every sweepable token worth a cent, whatever it is", () => {
+    const list = [
+      holding("cbXRP", { symbol: "cbXRP", valueUsd: 0.92 }),
+      holding("CHIP", { symbol: "CHIP", valueUsd: 0.4 }),
+      holding("DOBBY", { symbol: "DOBBY", valueUsd: 0.015 }),
+    ];
+    expect(legacyWalletHasFunds(list)).toBe(true);
+    expect(legacyWalletUsd(list)).toBeCloseTo(1.335, 6);
   });
 
-  // A balance on a network the sponsor does not cover cannot be moved, so it
-  // must not keep open an offer the user has no way to finish.
+  // Dust cannot hold a gate shut: one sub-cent token that reverts on transfer
+  // would otherwise keep the user here forever.
+  it("ignores dust below the review's display floor", () => {
+    const dust = [
+      holding("PPOLY", { amount: 9n, valueUsd: 6.7e-26 }),
+      holding("BRIAN", { amount: 3n, valueUsd: 6.9e-17 }),
+    ];
+    expect(legacyWalletHasFunds(dust)).toBe(false);
+    expect(legacyWalletMovable(dust)).toEqual([]);
+  });
+
   it("ignores what cannot move", () => {
     expect(
       legacyWalletHasFunds([

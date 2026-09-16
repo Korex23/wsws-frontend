@@ -7,6 +7,7 @@ import type { VenueAdapter } from "@/lib/migration/types";
 import { formatUsd } from "@/lib/currency";
 import { MoveOldMoneySheet } from "@/features/migrate/components/move-old-money-sheet";
 import { useMigrationStatus } from "@/features/migrate/hooks/use-migration-status";
+import { useLegacyWalletFunds } from "@/features/migrate/hooks/use-legacy-wallet-funds";
 
 // The row on its own, with the sheet left to the caller. Needed wherever the
 // door lives inside something that unmounts: the sheet portals to document.body
@@ -23,7 +24,10 @@ export function MoveOldMoneyButton({
 }) {
   const t = useTranslations("migrate");
   const status = useMigrationStatus();
-  const left = status.data?.hasLegacyFunds ? status.data.legacyFundsUsd : 0;
+  // The frontend's own read of the old wallet when it has one (every token,
+  // not the service's ETH-and-USDC probe), else the service's figure.
+  const wallet = useLegacyWalletFunds(status.data?.legacy ?? null, status.data?.linked === true);
+  const left = wallet.data?.usd ?? (status.data?.hasLegacyFunds ? status.data.legacyFundsUsd : 0);
   return (
     <button onClick={onClick} className={`${className} text-white`}>
       <WalletIcon size={20} />
