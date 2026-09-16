@@ -309,9 +309,18 @@ export interface PreparedBridge {
 
 // ── Withdrawal (HyperCore -> Arbitrum) ───────────────────────────────────
 
-export interface PreparedWithdrawal {
-  action: HlWithdraw3Action;
+/** The platform fee collected alongside a withdrawal: a sendAsset to the
+ *  perps treasury, signed by the user beside the withdraw3 (llms.txt §6b). */
+export interface PreparedWithdrawalFee {
+  action: HlSendAssetAction;
   nonce: number;
+  amountUsdc: string;
+}
+
+/** `fee` is null when the backend has no platform fee configured. */
+export interface PreparedWithdrawal {
+  withdraw: { action: HlWithdraw3Action; nonce: number };
+  fee: PreparedWithdrawalFee | null;
 }
 
 /** A withdrawal that landed on Arbitrum but never finished forwarding on to
@@ -405,25 +414,24 @@ export function isBridgeMinimumDetails(details: unknown): details is BridgeMinim
   );
 }
 
-// ── Dextopus funding (Base -> Arbitrum) ──────────────────────────────────
-// One static, reusable deposit address per wallet; the client sends a plain
-// USDC transfer to it with its own embedded wallet (same one-click,
-// no-popup feel as every other write in this app — see
-// HyperliquidFundModal), and Dextopus bridges whatever lands there to the
-// wallet's own Arbitrum address. A prior Circle CCTP V2 integration lived
-// here (native burn/mint, its own relayer key) — removed once Dextopus's
-// perps-specific fee dropped to make it unnecessary. See apps/perp's root
-// README ("Funding (Base -> Arbitrum, via Dextopus)") for the backend side.
+// ── CCTP deposit (Base -> HyperCore, one hop; llms.txt §6a) ──────────────
+// The burn on Base is signed and sent client-side. The backend says who pays
+// the mint relay, records the burn by its hash, and reports its progress.
 
-export interface DepositAddress {
-  address: string;
-  originChainId: number;
-  originAsset: string;
+export interface CctpDepositConfig {
+  /** true: Circle's Forwarding Service relays the mint and takes its fee from
+   *  the deposit. false: the platform relays it for free. */
+  userPaysDepositFee: boolean;
+  /** CCTP V2 source domain for deposits (6 is Base). */
+  sourceDomain: number;
 }
 
-export type DepositMovementStatus = "pending" | "confirmed" | "failed" | "stuck";
+export type CctpDepositMovementStatus = "pending" | "confirmed" | "failed" | "stuck";
 
-export interface DepositStatus {
-  status: DepositMovementStatus;
-  destTxHash: string | null;
+export interface CctpDepositStatus {
+  treasuryMovementId: string;
+  amountUsdc: string;
+  status: CctpDepositMovementStatus;
+  burnTxHash: string | null;
+  mintTxHash: string | null;
 }

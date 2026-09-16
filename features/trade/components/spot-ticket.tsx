@@ -25,9 +25,9 @@ import { tokenBg } from "@/lib/trade/assets";
 import { formatUsd, fromBaseUnits, toBaseUnits } from "@/lib/trade/math";
 import type { SellPayload } from "@/lib/modal-types";
 
-// Dynamic: the chart pulls lightweight-charts and the panel starts collapsed,
-// so those bytes only arrive once someone opens "View Chart". The desktop desk
-// loads it the same way.
+// Dynamic: the chart pulls lightweight-charts, which stays out of the page's
+// first bundle and arrives with the ticket instead. The desktop desk loads it
+// the same way.
 const AssetChart = dynamic(() => import("@/components/ui/asset-chart").then((m) => m.AssetChart), {
   ssr: false,
 });
@@ -133,7 +133,8 @@ export function SpotTicket({ market, onChangeMarket, onAddFunds }: SpotTicketPro
 
   const [amount, setAmount] = useState("");
   const [side, setSide] = useState<SpotSide>("buy");
-  const [chartExpanded, setChartExpanded] = useState(false);
+  // Open on arrival, as on every ticket: the price is in view before a trade.
+  const [chartExpanded, setChartExpanded] = useState(true);
   // True when the amount came from the Max shortcut, so a chain that has moved
   // under us can preserve that intent while still asking for another look.
   const [maxRequested, setMaxRequested] = useState(false);

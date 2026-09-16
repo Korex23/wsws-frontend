@@ -522,7 +522,7 @@ describe("PerpOrderTicket", () => {
     expect(sell).toBeEnabled();
     expect(
       screen.getByText(
-        "More than your HyperCore margin. The rest is bridged when you place the order."
+        "More than your perps margin. The rest is moved over when you place the order."
       )
     ).toBeInTheDocument();
 
@@ -540,7 +540,7 @@ describe("PerpOrderTicket", () => {
       const ids = (action.getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean);
       const texts = ids.map((id) => document.getElementById(id)?.textContent ?? "");
       expect(texts).toContain(
-        "More than your HyperCore margin. The rest is bridged when you place the order."
+        "More than your perps margin. The rest is moved over when you place the order."
       );
     }
   });
@@ -562,7 +562,7 @@ describe("PerpOrderTicket", () => {
     expect(screen.getByText("Not enough USDC")).toBeInTheDocument();
     expect(
       screen.queryByText(
-        "More than your HyperCore margin. The rest is bridged when you place the order."
+        "More than your perps margin. The rest is moved over when you place the order."
       )
     ).not.toBeInTheDocument();
   });
@@ -600,7 +600,7 @@ describe("PerpOrderTicket", () => {
     expect(sell).toBeDisabled();
     expect(
       screen.getByText(
-        "More than your HyperCore margin. The rest is bridged when you place the order."
+        "More than your perps margin. The rest is moved over when you place the order."
       )
     ).toBeInTheDocument();
     expect(screen.getByText("Sell: Take profit sits above the entry price")).toBeInTheDocument();
@@ -1015,5 +1015,29 @@ describe("PerpOrderTicket at phone width", () => {
     const price = screen.getByRole("textbox", { name: "Limit price" });
 
     expect(price).toHaveClass("text-[13px]", "sm:text-[15px]");
+  });
+});
+
+// The top strip is the narrowest row on the desk: at 390px the pill, the 24h
+// change and the Limit/Market toggle share roughly 320px, and the toggle used
+// to be cut off at the screen edge. Type sizes are covered where those
+// components live; what is locked here is that the row cannot clip the toggle
+// whatever the pair or locale makes the cluster beside it.
+describe("PerpOrderTicket top strip", () => {
+  it("gives the order mode toggle a width it never has to yield", () => {
+    renderTicket({ initialQuantity: "500" });
+
+    const toggle = screen.getByRole("group", { name: "Order type" });
+
+    expect(toggle).toHaveClass("shrink-0");
+  });
+
+  it("lets the change reading give up width before the row overruns", () => {
+    renderTicket({ initialQuantity: "500" });
+
+    const change = screen.getByText("-2.20%").parentElement as HTMLElement;
+
+    expect(change).toHaveClass("truncate");
+    expect(change.parentElement).toHaveClass("min-w-0");
   });
 });

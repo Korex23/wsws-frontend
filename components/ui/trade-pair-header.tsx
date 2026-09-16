@@ -21,7 +21,7 @@ const CHANGE_TONE: Record<ChangeDirection, string> = {
 // perps trigger so the two never drift apart. A plain `border` renders the edge
 // at 1px, which is why the weight is spelled out.
 const PILL_SHAPE =
-  "ws-discovery-title border-hairline bg-surface text-grey-100 flex h-[40.5px] items-center gap-[5.5px] rounded-2xl border-[1.686px] px-[11px] text-[15px] whitespace-nowrap";
+  "ws-discovery-title border-hairline bg-surface text-grey-100 flex h-[34px] shrink-0 items-center gap-[5.5px] rounded-2xl border-[1.686px] px-[9px] text-[13px] whitespace-nowrap sm:h-[40.5px] sm:px-[11px] sm:text-[15px]";
 
 export interface TokenBadgeProps {
   // Whatever the composer wants named in the pill, already formatted. The badge

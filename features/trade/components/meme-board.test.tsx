@@ -176,20 +176,23 @@ describe("the screen's two disclosures", () => {
   // The chart is the one panel that must not stay mounted: it resolves a
   // CoinGecko id and boots a chart. So the box animates and the chart itself
   // stays gated inside it, which is the split Disclosure documents.
-  it("animates the chart panel open while leaving the chart itself unmounted when closed", async () => {
+  // The ticket opens on the chart. The panel folds shut on request and the
+  // chart inside it unmounts, so a closed chart resolves and draws nothing.
+  it("opens on the chart, and folds the panel shut with the chart unmounted", async () => {
     renderBoard();
-    const toggle = await screen.findByRole("button", { name: "View Chart" });
+    const toggle = await screen.findByRole("button", { name: "Close Chart" });
     const panel = document.getElementById(
       toggle.getAttribute("aria-controls") as string
     ) as HTMLElement;
 
-    expect(panel.className).toContain("[grid-template-rows:0fr]");
+    expect(panel.className).toContain("[grid-template-rows:1fr]");
     expect(panel.className).toContain("transition-[grid-template-rows,opacity]");
-    expect(document.querySelector('[data-region="meme-chart"]')).toBeNull();
+    expect(document.querySelector('[data-region="meme-chart"]')).not.toBeNull();
 
     fireEvent.click(toggle);
-    expect(panel.className).toContain("[grid-template-rows:1fr]");
-    expect(document.querySelector('[data-region="meme-chart"]')).not.toBeNull();
+    expect(panel.className).toContain("[grid-template-rows:0fr]");
+    expect(document.querySelector('[data-region="meme-chart"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "View Chart" })).toBeInTheDocument();
   });
 
   // The metrics are figures the board already holds, so they stay mounted and

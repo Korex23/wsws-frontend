@@ -85,4 +85,28 @@ describe("MemeCatalogMore", () => {
     const { container } = wrap(<MemeCatalogMore {...props} total={null} />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  // The desk pages with numbered pages and loads ahead on its own, so the strip
+  // keeps the count and drops the button it would otherwise need pressing.
+  describe("on a list that loads its pages ahead", () => {
+    it("offers no Load more while more exist", () => {
+      wrap(<MemeCatalogMore {...props} autoLoads />);
+      expect(screen.getByText("500 of 11,502")).toBeInTheDocument();
+      expect(screen.queryByRole("button")).toBeNull();
+    });
+
+    it("says a page is loading while one is on its way", () => {
+      wrap(<MemeCatalogMore {...props} autoLoads loadingMore />);
+      expect(screen.getByRole("status")).toHaveTextContent("Loading more…");
+      expect(screen.queryByRole("button")).toBeNull();
+    });
+
+    it("offers a retry when a page failed, since nothing retries on its own", () => {
+      const onLoadMore = vi.fn();
+      wrap(<MemeCatalogMore {...props} autoLoads failed onLoadMore={onLoadMore} />);
+      expect(screen.getByText("Couldn't load more.")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(onLoadMore).toHaveBeenCalledOnce();
+    });
+  });
 });

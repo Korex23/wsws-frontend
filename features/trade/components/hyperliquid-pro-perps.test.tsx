@@ -118,6 +118,8 @@ const trading = {
   },
   walletId: "wallet-1" as string | null,
   refetchAll: vi.fn(),
+  refetchOrders: vi.fn(),
+  refreshBalances: vi.fn(),
   waitForPositionsChange: vi.fn(),
   waitForOrdersChange: vi.fn(),
   actions: {
@@ -125,6 +127,7 @@ const trading = {
     updateLeverage: vi.fn(),
     bridge: vi.fn(),
     withdraw: vi.fn(),
+    depositToPerps: vi.fn(),
     closePosition: vi.fn(),
     updateTriggerOrder: vi.fn(),
     cancelOrder: vi.fn(),
@@ -140,6 +143,10 @@ vi.mock("@/features/trade/hooks/use-hyperliquid-market-contexts", () => ({
 // tokens is here because the desk now renders HyperliquidFundModal beside the
 // ticket, and that modal looks for the user's Base USDC to fund a top up. The
 // desk itself only needs refetchFresh.
+// The fund modal renders for real here; its fee read is a query of its own.
+vi.mock("@/features/trade/hooks/use-cctp-deposit-fee", () => ({
+  useCctpDepositFee: () => ({ userPaysFee: false, maxFeeFor: () => null }),
+}));
 vi.mock("@/hooks/use-portfolio", () => ({
   usePortfolio: () => ({ refetchFresh: vi.fn(), tokens: [] }),
 }));
@@ -206,6 +213,13 @@ beforeEach(() => {
   trading.prices = { BTC: "64000", ETH: "3200" };
   marketContexts = [btcContext];
   ticketProps.mockClear();
+  trading.refetchAll.mockClear();
+  trading.refetchOrders.mockClear();
+  trading.refreshBalances.mockClear();
+  trading.actions.withdraw.mockReset();
+  trading.actions.cancelOrder.mockReset();
+  trading.actions.updateTriggerOrder.mockReset();
+  trading.actions.closePosition.mockReset();
 });
 
 describe("HyperliquidProPerps", () => {
@@ -505,6 +519,44 @@ describe("HyperliquidProPerps", () => {
   // CHANGE 1: the two account actions used to stack full width under the
   // ticket, a mint-green Top up over a dark Withdraw. They are one row now, in
   // the geometry PerpOrderTicket gives Buy and Sell directly above them.
+  // llms.txt §10: refetch what an action changed, not everything. A cancel or
+  // a trigger edit touches only orders; opening or closing a trade moves
+  // margin, positions and orders together.
+  describe("refreshing after an action", () => {
+    const order = { id: "order-1", status: "open" } as never;
+    const position = { id: "position-1" } as never;
+
+    it("refreshes only the orders after a cancel", async () => {
+      renderDesk();
+      const props = ordersListProps.mock.calls.at(-1)?.[0] as {
+        onCancel: (o: unknown) => Promise<void>;
+      };
+      await act(async () => props.onCancel(order));
+      expect(trading.actions.cancelOrder).toHaveBeenCalledWith("order-1");
+      expect(trading.refetchOrders).toHaveBeenCalled();
+      expect(trading.refetchAll).not.toHaveBeenCalled();
+    });
+
+    it("refreshes only the orders after a trigger edit", async () => {
+      renderDesk();
+      const props = positionsListProps.mock.calls.at(-1)?.[0] as {
+        onEditTrigger: (p: unknown, kind: string, price: string, id?: string) => Promise<void>;
+      };
+      await act(async () => props.onEditTrigger(position, "take_profit", "70000", undefined));
+      expect(trading.refetchOrders).toHaveBeenCalled();
+      expect(trading.refetchAll).not.toHaveBeenCalled();
+    });
+
+    it("refreshes everything after a close", async () => {
+      renderDesk();
+      const props = positionsListProps.mock.calls.at(-1)?.[0] as {
+        onClosePosition: (p: unknown, siblings: string[]) => Promise<void>;
+      };
+      await act(async () => props.onClosePosition(position, []));
+      expect(trading.refetchAll).toHaveBeenCalled();
+    });
+  });
+
   describe("top up and withdraw", () => {
     const topUp = () => screen.getByRole("button", { name: "Top up" });
     const withdraw = () => screen.getByRole("button", { name: "Withdraw" });
@@ -546,6 +598,20 @@ describe("HyperliquidProPerps", () => {
         expect(button.className).not.toContain("bg-up");
         expect(button.className).not.toContain("bg-down");
       }
+    });
+
+    it("hands the withdraw modal the exact free balance and withdraws the typed total", async () => {
+      trading.actions.withdraw.mockResolvedValue({ treasuryMovementId: "movement-1" });
+      renderDesk();
+      fireEvent.click(withdraw());
+      expect(screen.getByText("500 USDC available")).toBeInTheDocument();
+
+      fireEvent.change(screen.getByPlaceholderText("0"), { target: { value: "100" } });
+      const confirm = screen.getAllByRole("button", { name: "Withdraw" }).at(-1) as HTMLElement;
+      await act(async () => fireEvent.click(confirm));
+
+      expect(trading.actions.withdraw).toHaveBeenCalledWith("100", expect.any(Function));
+      expect(trading.refreshBalances).toHaveBeenCalled();
     });
 
     it("still opens the fund modal", () => {

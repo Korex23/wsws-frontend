@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it, vi } from "vitest";
 
@@ -329,18 +329,21 @@ describe("RwaTicket issuer access", () => {
 });
 
 describe("RwaTicket chart", () => {
-  it("wires the disclosure to its panel and draws nothing while shut", () => {
+  // The chart is open when the ticket first draws, so the price is in view
+  // before anyone reaches for it; the disclosure still folds it away.
+  it("opens on the chart, wired to its panel, and folds it away on request", async () => {
     ticket = stub();
     renderTicket();
 
     const trigger = screen.getByRole("button", { name: "View Chart" });
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(trigger).toHaveAttribute("aria-controls", "rwa-ticket-chart");
-    expect(screen.queryByText("No price history yet.")).toBeNull();
+    expect(screen.getByText("No price history yet.")).toBeInTheDocument();
 
     fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("No price history yet.")).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // Disclosure holds the body for one fold animation, then drops it.
+    await waitFor(() => expect(screen.queryByText("No price history yet.")).toBeNull());
   });
 });
 

@@ -1,6 +1,6 @@
 # Comprehensive WSWS API Endpoint Catalog
 
-This document is the complete inventory of all 50 API route handlers implemented in `app/api/`, their upstream base URLs, HTTP methods, authentication levels, and backend handoff status.
+This document is the complete inventory of all 51 API route handlers implemented in `app/api/`, their upstream base URLs, HTTP methods, authentication levels, and backend handoff status.
 
 ---
 
@@ -16,32 +16,33 @@ This document is the complete inventory of all 50 API route handlers implemented
 | **6. Multi-Chain RPC**  | Alchemy / Helius / ZeroDev                |      4      | `ALCHEMY_API_KEY`, `HELIUS_API_KEY`, `ZERODEV_PROJECT_ID`    |     **YES** (Move to Backend)     |
 | **7. Market Data / FX** | CoinGecko, GeckoTerminal, Open-ER         |      8      | Public / Rate-Limited External CDNs                          |      Keep on BFF / CDN Cache      |
 | **8. Auth & Dev Labs**  | Privy Server SDK / Local Fixtures         |      2      | `PRIVY_APP_SECRET`                                           |  Keep on BFF (Frontend Session)   |
+| **9. Circle CCTP**      | `https://iris-api.circle.com`             |      1      | None (public attestation service)                            |   Keep on BFF (validation only)   |
 
 ---
 
-## Detailed Endpoint Catalog (1 to 50)
+## Detailed Endpoint Catalog (1 to 51)
 
 ### 1. WSWS Gateway Microservices
 
-| #   | Route Path                     |            Methods             | Upstream Base URL & Path                     | Auth Requirement                           | Purpose & Description                                                                                         |
-| --- | ------------------------------ | :----------------------------: | -------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| 1   | `/api/trade/[...path]`         |         `GET`, `POST`          | `wsapiService("trade")/${path}`              | Public GETs / Privy Bearer for trades      | Spot token trading & meme swaps on Base.                                                                      |
-| 2   | `/api/perp/[...path]`          |         `GET`, `POST`          | `wsapiService("perp")/${path}`               | Public reads / Session-verified for trades | Hyperliquid perpetuals (Ark): markets, marks, wallet state, and prepare/submit steps the user's wallet signs. |
-| 3   | `/api/rwa/[...path]`           |         `GET`, `POST`          | `wsapiService("rwa")/${path}`                | Public reads / Session-verified for quotes | Real-world asset catalog, quoting, and transaction construction.                                              |
-| 4   | `/api/rwa-prices`              |             `GET`              | Alchemy Token API + RWA Registry             | Session-gated (`verifyRequest`)            | Live USD pricing for all tracked RWA tokens.                                                                  |
-| 5   | `/api/rwa-chart`               |             `GET`              | Alchemy Token History                        | Session-gated (`verifyRequest`)            | Price and yield history chart points for individual RWAs.                                                     |
-| 6   | `/api/kash/[...path]`          |      `GET`, `POST`, `PUT`      | `wsapiService("kash")/${path}`               | Public quotes / Wallet ownership gate      | Kash rewards engine (purchases, tiers, subscriptions, conversions).                                           |
-| 7   | `/api/chess/[...path]`         | `GET`, `POST`, `PUT`, `DELETE` | `wsapiService("chess")/${path}`              | Public spectator / Session for players     | Chess game lobby, boards, moves, clock, cashier, and tournaments.                                             |
-| 8   | `/api/draughts/[...path]`      | `GET`, `POST`, `PUT`, `DELETE` | `wsapiService("chess")/draughts/${path}`     | Public spectator / Session for players     | Checkers match module sharing chess cashier and identity.                                                     |
-| 9   | `/api/vault/[...path]`         |             `GET`              | `wsapiService("world-street-vault")/${path}` | Public (short TTL cache)                   | King of the Night / Last Man Standing game lobby and round state.                                             |
-| 10  | `/api/market-square/[...path]` | `GET`, `POST`, `PUT`, `DELETE` | `wsapiService("market-square")/${path}`      | Session-gated (Privy Bearer)               | Ecosystem social feeds, live streams, and community posts.                                                    |
-| 11  | `/api/earn/[...path]`          |         `GET`, `POST`          | `wsapiService("earn")/${path}`               | Public for feeds / Session for actions     | Bounty listings, company profiles, and bounty submissions.                                                    |
-| 12  | `/api/earn-upload`             |             `POST`             | `*.s3.filebase.com`                          | Session-gated (`verifyRequest`)            | Proxies binary file uploads to signed S3 URLs for earn submissions.                                           |
-| 13  | `/api/payment/[...path]`       |         `GET`, `POST`          | `wsapiService("payment")/${path}`            | Session-gated (`verifyRequest`)            | Off-ramp payment corridors, quotes, and recipient bank validation.                                            |
-| 14  | `/api/ramping/[...path]`       |         `GET`, `POST`          | `wsapiService("ramping")/${path}`            | Session-gated (`verifyRequest`)            | Difference rail NGN on/offramp order creation and status tracking.                                            |
-| 15  | `/api/waitlist`                |             `POST`             | `wsapiService("perp")/waitlist`              | Public                                     | Marketing waitlist signups from pre-launch gate.                                                              |
-| 16  | `/api/prediction/[...path]`    |         `GET`, `POST`          | `wsapiService("prediction-market")/${path}`  | Open Relay                                 | Prediction market metadata and categories reader.                                                             |
-| 17  | `/api/dashboard/feed`          |             `GET`              | Composed internally from multiple services   | Public (`s-maxage=20`)                     | Aggregated dashboard marquee, briefs, live events, and spot prices.                                           |
+| #   | Route Path                     |            Methods             | Upstream Base URL & Path                                 | Auth Requirement                           | Purpose & Description                                                                                                                                       |
+| --- | ------------------------------ | :----------------------------: | -------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `/api/trade/[...path]`         |         `GET`, `POST`          | `wsapiService("trade")/${path}`                          | Public GETs / Privy Bearer for trades      | Spot token trading & meme swaps on Base.                                                                                                                    |
+| 2   | `/api/perp/[...path]`          |         `GET`, `POST`          | `${PERP_API_BASE_URL or WSAPI_BASE_URL}/v1/perp/${path}` | Public reads / Session-verified for trades | Hyperliquid perpetuals (Ark): markets, marks, wallet state, prepare/submit steps the user's wallet signs, and the CCTP deposit rail (`ark/deposit/cctp/*`). |
+| 3   | `/api/rwa/[...path]`           |         `GET`, `POST`          | `wsapiService("rwa")/${path}`                            | Public reads / Session-verified for quotes | Real-world asset catalog, quoting, and transaction construction.                                                                                            |
+| 4   | `/api/rwa-prices`              |             `GET`              | Alchemy Token API + RWA Registry                         | Session-gated (`verifyRequest`)            | Live USD pricing for all tracked RWA tokens.                                                                                                                |
+| 5   | `/api/rwa-chart`               |             `GET`              | Alchemy Token History                                    | Session-gated (`verifyRequest`)            | Price and yield history chart points for individual RWAs.                                                                                                   |
+| 6   | `/api/kash/[...path]`          |      `GET`, `POST`, `PUT`      | `wsapiService("kash")/${path}`                           | Public quotes / Wallet ownership gate      | Kash rewards engine (purchases, tiers, subscriptions, conversions).                                                                                         |
+| 7   | `/api/chess/[...path]`         | `GET`, `POST`, `PUT`, `DELETE` | `wsapiService("chess")/${path}`                          | Public spectator / Session for players     | Chess game lobby, boards, moves, clock, cashier, and tournaments.                                                                                           |
+| 8   | `/api/draughts/[...path]`      | `GET`, `POST`, `PUT`, `DELETE` | `wsapiService("chess")/draughts/${path}`                 | Public spectator / Session for players     | Checkers match module sharing chess cashier and identity.                                                                                                   |
+| 9   | `/api/vault/[...path]`         |             `GET`              | `wsapiService("world-street-vault")/${path}`             | Public (short TTL cache)                   | King of the Night / Last Man Standing game lobby and round state.                                                                                           |
+| 10  | `/api/market-square/[...path]` | `GET`, `POST`, `PUT`, `DELETE` | `wsapiService("market-square")/${path}`                  | Session-gated (Privy Bearer)               | Ecosystem social feeds, live streams, and community posts.                                                                                                  |
+| 11  | `/api/earn/[...path]`          |         `GET`, `POST`          | `wsapiService("earn")/${path}`                           | Public for feeds / Session for actions     | Bounty listings, company profiles, and bounty submissions.                                                                                                  |
+| 12  | `/api/earn-upload`             |             `POST`             | `*.s3.filebase.com`                                      | Session-gated (`verifyRequest`)            | Proxies binary file uploads to signed S3 URLs for earn submissions.                                                                                         |
+| 13  | `/api/payment/[...path]`       |         `GET`, `POST`          | `wsapiService("payment")/${path}`                        | Session-gated (`verifyRequest`)            | Off-ramp payment corridors, quotes, and recipient bank validation.                                                                                          |
+| 14  | `/api/ramping/[...path]`       |         `GET`, `POST`          | `wsapiService("ramping")/${path}`                        | Session-gated (`verifyRequest`)            | Difference rail NGN on/offramp order creation and status tracking.                                                                                          |
+| 15  | `/api/waitlist`                |             `POST`             | `wsapiService("perp")/waitlist`                          | Public                                     | Marketing waitlist signups from pre-launch gate.                                                                                                            |
+| 16  | `/api/prediction/[...path]`    |         `GET`, `POST`          | `wsapiService("prediction-market")/${path}`              | Open Relay                                 | Prediction market metadata and categories reader.                                                                                                           |
+| 17  | `/api/dashboard/feed`          |             `GET`              | Composed internally from multiple services               | Public (`s-maxage=20`)                     | Aggregated dashboard marquee, briefs, live events, and spot prices.                                                                                         |
 
 ---
 
@@ -124,3 +125,11 @@ This document is the complete inventory of all 50 API route handlers implemented
 | --- | -------------------------------------- | :-----: | ----------------------------------- | -------------------------------------- | --------------------------------------------------------------- |
 | 49  | `/api/auth/me`                         |  `GET`  | Privy Server SDK (`@privy-io/node`) | Session-gated (`verifyRequest`)        | Resolves user identity, linked accounts, and embedded wallets.  |
 | 50  | `/api/labs/chess-puzzle-coach/[asset]` |  `GET`  | Local filesystem test fixtures      | Dev-only (`NODE_ENV !== "production"`) | Serves audio and wasm assets for local chess coach lab testing. |
+
+---
+
+### 9. Circle CCTP
+
+| #   | Route Path            | Methods | Upstream Base URL & Path                                                                 | Auth Requirement                | Purpose & Description                                                                                               |
+| --- | --------------------- | :-----: | ---------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 51  | `/api/cctp/[...path]` |  `GET`  | `https://iris-api.circle.com/v2/messages/:domain` and `/v2/burn/USDC/fees/:source/:dest` | Session-gated (`verifyRequest`) | Burn attestations and live transfer fees for the perps top-up and withdrawal rail; allowlisted, validated with Zod. |

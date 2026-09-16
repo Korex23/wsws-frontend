@@ -52,13 +52,18 @@ function expectIconsInheritColour(container: HTMLElement) {
 // both are held to them here.
 function expectPillShape(pill: HTMLElement) {
   for (const shape of [
-    "h-[40.5px]",
+    // The design's measurements, which the pill keeps from sm up. Below that
+    // it draws a step smaller so the perps ticket's top strip fits a phone.
+    "sm:h-[40.5px]",
+    "sm:px-[11px]",
+    "sm:text-[15px]",
+    "h-[34px]",
+    "px-[9px]",
+    "text-[13px]",
     "rounded-2xl",
-    "px-[11px]",
     "gap-[5.5px]",
     "border-[1.686px]",
     "ws-discovery-title",
-    "text-[15px]",
     "text-grey-100",
   ]) {
     expect(pill).toHaveClass(shape);

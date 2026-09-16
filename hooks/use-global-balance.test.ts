@@ -84,4 +84,33 @@ describe("useGlobalBalance", () => {
     expect(result.current.perpsUsd).toBe(0);
     expect(result.current.totalUsd).toBe(100);
   });
+
+  // llms.txt §10: the perps balance is not polled in the background. It is
+  // refreshed on window focus and after money moves (perpsBalanceQueryKey).
+  it("reads the perps balance once rather than on a timer", async () => {
+    mockRoutes({ portfolio: portfolioResponse(100), perps: perpsResponse("25.5") });
+    const perpsCalls = () =>
+      apiFetch.mock.calls.filter(([path]) => !String(path).includes("/api/portfolio")).length;
+
+    // Fake timers from the start, so any interval the query sets up is one the
+    // test controls.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { result } = renderHook(() => useGlobalBalance(), { wrapper });
+      await waitFor(() => expect(result.current.perpsUsd).toBe(25.5));
+      const afterFirstRead = perpsCalls();
+
+      await vi.advanceTimersByTimeAsync(90_000);
+
+      expect(perpsCalls()).toBe(afterFirstRead);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("names its query so a money move elsewhere can refresh it", async () => {
+    const { perpsBalanceQueryKey } = await import("@/hooks/use-global-balance");
+    expect(perpsBalanceQueryKey("0xEvm")).toEqual(["perps-balance", "0xEvm"]);
+    expect(perpsBalanceQueryKey()).toEqual(["perps-balance"]);
+  });
 });

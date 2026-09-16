@@ -12,8 +12,8 @@ import { chartUp } from "@/lib/meme/format";
 const CHART_DRAW_HEIGHT = 150;
 const CHART_AREA_HEIGHT = 212;
 
-// The chart pulls lightweight-charts (~168KB) and the panel starts collapsed,
-// so the bundle only arrives once someone opens "View Chart".
+// The chart pulls lightweight-charts (~168KB), so it loads as its own chunk
+// after the board rather than inside the page's first bundle.
 const AssetChart = dynamic(() => import("@/components/ui/asset-chart").then((m) => m.AssetChart), {
   ssr: false,
 });

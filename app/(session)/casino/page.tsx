@@ -2,11 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { ArkadeDesktop, ArkadeMobile, CasinoPage } from "@/features/casino";
+import { AppModalHost, useAppModals } from "@/components/layout/modals/app-modals";
 import { TRACKED_GAMES, type CasinoGame } from "@/features/casino/lib/games";
 import { track } from "@/lib/analytics/mixpanel";
 
 export default function CasinoHubPage() {
   const router = useRouter();
+  const modals = useAppModals();
 
   // ArkadeDesktop is presentational, so opening a game is the route's job. The
   // hrefs come from the static catalogue, never from user input.
@@ -29,26 +31,24 @@ export default function CasinoHubPage() {
           markup rather than a viewport hook. Exactly one catalogue renders at
           any width: ArkadeDesktop replaced HubSection here. */}
       <div className="md:hidden">
-        <ArkadeMobile />
+        <ArkadeMobile onSelectGame={openGame} onAddFunds={modals.openFunds} />
       </div>
-      {/* The row is a three column grid, so this container's width is the card
-          width. It fills the shell with the app's standard page padding, 16px,
-          24px from sm, 32px from lg, and nothing else: the old 1200px cap was
-          narrower than every other surface in the app and boxed the grid into
-          a column with empty gutters on a wide monitor.
-
-          The cap that replaces it is the perps terminal's 1920px, the widest
-          container in the repo. It does not engage at any mainstream desktop
-          width: with the 248px sidebar taken off, a 1920px viewport leaves
-          1672px, so the grid runs edge to edge there and at 1440. It only
-          bites past roughly 2200px, where three cards of the comp's fixed
-          204px height would pass 3:1 and the artwork would crop to a strip. */}
-      <div className="mx-auto hidden w-full max-w-[1920px] p-4 sm:p-6 md:block lg:p-8">
+      {/* Arkade follows the portfolio flow: the same centred column the rest of
+          the app uses — mx-auto, max-w-[1520px], and the standard page padding
+          (16px, 24px from sm, 32px from lg). Matching portfolio keeps the two
+          surfaces on one edge instead of Arkade running wider on a big monitor. */}
+      <div className="mx-auto hidden w-full max-w-[1520px] p-4 sm:p-6 md:block lg:p-8">
         {/* The catalogue is a static module constant, so there is nothing to
             wait on: `loading` stays at its false default rather than being
             wired to a query this route does not have. */}
-        <ArkadeDesktop onSelectGame={openGame} />
+        <ArkadeDesktop onSelectGame={openGame} onAddFunds={modals.openFunds} />
       </div>
+      <AppModalHost
+        active={modals.modal}
+        onClose={modals.close}
+        onConfirmed={modals.showDone}
+        onOpenFunds={modals.openFunds}
+      />
     </CasinoPage>
   );
 }

@@ -23,11 +23,12 @@ import {
   type CashierLockBuckets,
 } from "@/features/casino/lib/api/cashier";
 import { fetchLotteryTickets, type LotteryTicket } from "@/features/casino/lib/api/lottery";
-import { readGame } from "@/features/casino/hooks/use-vault-actions";
 import {
   encodeVaultClaim,
   encodeVaultSettle,
+  GAME_ASSET,
   isVaultConfigured,
+  readGame,
   readNextGameId,
   readVaultPendingWithdrawal,
   VAULT_CHAIN_ID,
@@ -222,19 +223,24 @@ export interface VaultGame {
   gameId: number;
   starter: string;
   king: string;
-  potWei: bigint;
+  /** The pot in the game's own base units — USDC (6 dp) on v5, not wei. */
+  pot: bigint;
+  /** The game's own decimals, read from the contract rather than assumed. */
+  decimals: number;
   endTime: number;
   settled: boolean;
 }
 
-const ETH_DECIMALS = 18;
-
-function ethHolding(
+// v5 games are played in USDC, so a pot is priced at a dollar a unit rather
+// than through an ETH oracle. Reading a 6-decimal USDC pot as 18-decimal ETH
+// under-reports it by twelve orders of magnitude — a $40 pot shows as $0.00
+// and the migration quietly leaves it behind.
+function vaultHolding(
   kind: VaultRef["kind"],
   refKey: string,
   label: string,
   amount: bigint,
-  ethPriceUsd: number,
+  decimals: number,
   ref: VaultRef
 ): LegacyHolding<VaultRef> {
   return {
@@ -244,9 +250,9 @@ function ethHolding(
     label,
     chainId: VAULT_CHAIN_ID,
     amount,
-    decimals: ETH_DECIMALS,
-    symbol: "ETH",
-    valueUsd: (Number(amount) / 10 ** ETH_DECIMALS) * ethPriceUsd,
+    decimals,
+    symbol: GAME_ASSET.symbol,
+    valueUsd: Number(amount) / 10 ** decimals,
     deterministic: true,
     irreversible: false,
     settleability: { state: "now" },
@@ -261,9 +267,9 @@ function ethHolding(
 export function classifyVault(input: {
   wallet: string;
   games: VaultGame[];
-  pendingWei: bigint;
+  /** Credited-but-unclaimed balance, in GAME_ASSET base units. */
+  pending: bigint;
   nowSeconds: number;
-  ethPriceUsd: number;
 }): LegacyHolding<VaultRef>[] {
   const holdings: LegacyHolding<VaultRef>[] = [];
   const me = input.wallet.toLowerCase();
@@ -273,26 +279,28 @@ export function classifyVault(input: {
     const isStarter = game.starter.toLowerCase() === me;
     if (!isKing && !isStarter) continue;
     holdings.push(
-      ethHolding(
+      vaultHolding(
         "settle",
         String(game.gameId),
         isKing
           ? `Last Standing game #${game.gameId} (won)`
           : `Last Standing game #${game.gameId} (started)`,
-        game.potWei,
-        input.ethPriceUsd,
+        game.pot,
+        game.decimals,
         { kind: "settle", gameId: game.gameId }
       )
     );
   }
-  if (input.pendingWei > 0n) {
+  if (input.pending > 0n) {
     holdings.push(
-      ethHolding(
+      vaultHolding(
         "claim",
         "pending",
         "Last Standing winnings waiting to be claimed",
-        input.pendingWei,
-        input.ethPriceUsd,
+        input.pending,
+        // The pending balance is read per token and this one is GAME_ASSET's,
+        // so its decimals are the asset's, not any single game's.
+        GAME_ASSET.decimals,
         { kind: "claim" }
       )
     );
@@ -307,10 +315,10 @@ const VAULT_LOOKBACK = 50;
 export const vaultMigrationAdapter: VenueAdapter<VaultRef> = {
   venue: "vault",
   requiresLegacySession: false,
-  async discover({ legacy, ethPriceUsd }) {
+  async discover({ legacy }) {
     const wallet = legacy.evm;
     if (!wallet || !isVaultConfigured()) return [];
-    const [nextId, pendingWei] = await Promise.all([
+    const [nextId, pending] = await Promise.all([
       readNextGameId(),
       readVaultPendingWithdrawal(wallet),
     ]);
@@ -321,17 +329,16 @@ export const vaultMigrationAdapter: VenueAdapter<VaultRef> = {
         ids.map(async (gameId): Promise<VaultGame | null> => {
           const game = await readGame(gameId);
           if (!game || !game.exists) return null;
-          const { starter, king, potWei, endTime, settled } = game;
-          return { gameId, starter, king, potWei, endTime, settled };
+          const { starter, king, pot, decimals, endTime, settled } = game;
+          return { gameId, starter, king, pot, decimals, endTime, settled };
         })
       )
     ).filter((g): g is VaultGame => g !== null);
     return classifyVault({
       wallet,
       games,
-      pendingWei,
+      pending,
       nowSeconds: Math.floor(Date.now() / 1000),
-      ethPriceUsd,
     });
   },
   async settle(holdings, ctx) {

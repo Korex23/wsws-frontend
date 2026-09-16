@@ -29,6 +29,7 @@ import {
 import { tradingViewSymbolForAsset } from "@/features/trade/lib/hyperliquid-tradingview";
 import { formatUsd, openFee, toBaseUnits } from "@/lib/trade/math";
 import { friendlyError } from "@/lib/errors";
+import { scrubVenue } from "@/features/trade/lib/venue-scrub";
 import type { GatewayApiError } from "@/lib/api/envelope";
 import {
   hlPairLabel,
@@ -201,8 +202,10 @@ export function HyperliquidProPerps({ initialSymbol = "" }: HyperliquidProPerpsP
   // confirmation window, then the on-chain leg back to the main wallet) is
   // real transfer time that can't be sped up; this just removes the extra,
   // avoidable lag on top of it.
+  // A top-up or withdrawal moves only balances (llms.txt §10): the perps
+  // balance, and the main wallet on the chains the money crosses.
   const handleWalletChanged = () => {
-    trading.refetchAll();
+    trading.refreshBalances();
     void portfolio.refetchFresh(PERPS_FUNDING_SCOPE);
   };
 
@@ -242,7 +245,9 @@ export function HyperliquidProPerps({ initialSymbol = "" }: HyperliquidProPerpsP
   // order the venue rejects outright for being too small.
   const minNotionalMet = !(notionalUsdc > 0 && notionalUsdc < MIN_ORDER_NOTIONAL_USDC);
 
-  const withdrawableUsdc = trading.clearinghouse ? Number(trading.clearinghouse.withdrawable) : 0;
+  // The free balance exactly as the clearinghouse reports it: the withdraw
+  // modal does its arithmetic in base units.
+  const withdrawableUsdc = trading.clearinghouse?.withdrawable ?? "0";
   const collateralBalance = trading.clearinghouse
     ? toBaseUnits(trading.clearinghouse.withdrawable, COLLATERAL_DECIMALS)
     : 0n;
@@ -369,7 +374,8 @@ export function HyperliquidProPerps({ initialSymbol = "" }: HyperliquidProPerpsP
       try {
         await trading.actions.updateTriggerOrder(position.id, kind, triggerPrice, existingOrderId);
       } finally {
-        trading.refetchAll();
+        // A trigger edit changes orders only (llms.txt §10).
+        trading.refetchOrders();
       }
     });
 
@@ -378,7 +384,8 @@ export function HyperliquidProPerps({ initialSymbol = "" }: HyperliquidProPerpsP
       try {
         await trading.actions.cancelOrder(order.id);
       } finally {
-        trading.refetchAll();
+        // A cancel changes orders only (llms.txt §10).
+        trading.refetchOrders();
       }
     });
 
@@ -471,7 +478,10 @@ export function HyperliquidProPerps({ initialSymbol = "" }: HyperliquidProPerpsP
           });
           return;
         }
-        setOrderStatus({ text: friendlyError(error, t("tradeOpenFailed")), kind: "error" });
+        setOrderStatus({
+          text: scrubVenue(friendlyError(error, t("tradeOpenFailed"))),
+          kind: "error",
+        });
       } finally {
         setPendingSide(null);
         setPendingStatus(null);
@@ -842,7 +852,7 @@ export function HyperliquidProPerps({ initialSymbol = "" }: HyperliquidProPerpsP
                 <button
                   type="button"
                   onClick={() => setWithdrawOpen(true)}
-                  disabled={!trading.walletId || busy || withdrawableUsdc <= 0}
+                  disabled={!trading.walletId || busy || collateralBalance <= 0n}
                   className="border-hairline hover:bg-surface flex h-12 min-w-0 flex-1 shrink-0 cursor-pointer items-center justify-center rounded-3xl border-2 bg-transparent font-[family-name:var(--font-sportsbook)] text-[16px] font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   {t("withdraw")}
@@ -853,7 +863,9 @@ export function HyperliquidProPerps({ initialSymbol = "" }: HyperliquidProPerpsP
                 open={fundOpen}
                 onClose={() => setFundOpen(false)}
                 walletId={trading.walletId}
-                onBridge={() => withBusy(() => trading.actions.bridge())}
+                onDeposit={(amountUsdc, onStage) =>
+                  withBusy(() => trading.actions.depositToPerps(amountUsdc, onStage))
+                }
                 onFunded={handleWalletChanged}
               />
               <HyperliquidWithdrawModal
@@ -861,8 +873,8 @@ export function HyperliquidProPerps({ initialSymbol = "" }: HyperliquidProPerpsP
                 onClose={() => setWithdrawOpen(false)}
                 walletId={trading.walletId}
                 availableUsdc={withdrawableUsdc}
-                onWithdraw={(amountUsdc, onStatus) =>
-                  withBusy(() => trading.actions.withdraw(amountUsdc, onStatus))
+                onWithdraw={(total, onStatus) =>
+                  withBusy(() => trading.actions.withdraw(total, onStatus))
                 }
                 onWithdrawn={handleWalletChanged}
               />

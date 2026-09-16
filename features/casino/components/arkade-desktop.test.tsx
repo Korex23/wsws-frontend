@@ -6,6 +6,11 @@ import enMessages from "@/messages/en.json";
 import type { CasinoGame } from "@/features/casino/lib/games";
 
 vi.mock("@/lib/analytics/mixpanel", () => ({ track: vi.fn() }));
+// The head shows the wallet balance; the balance is not under test, so the hook
+// is stubbed to a settled, empty portfolio.
+vi.mock("@/hooks/use-portfolio", () => ({
+  usePortfolio: () => ({ tokens: [], loading: false, totalUsd: 0 }),
+}));
 
 import { track } from "@/lib/analytics/mixpanel";
 import { ArkadeDesktop } from "@/features/casino/components/arkade-desktop";
@@ -190,18 +195,18 @@ describe("ArkadeDesktopRow", () => {
     expect(tracked).not.toHaveBeenCalled();
   });
 
-  it("draws the rail with the shared card, as buttons", () => {
+  it("draws the rail with the shared desktop card, as buttons", () => {
     renderWithIntl(<ArkadeDesktopRow games={[chess, arkball]} label="Row 1" />);
 
     for (const item of screen.getAllByRole("listitem")) {
       const card = item.firstElementChild as HTMLElement;
-      expect(card.className).toContain("ws-card");
+      expect(card.className).toContain("border-[1.66px]");
       expect(card.className).toContain("h-[204px]");
       expect(card.tagName).toBe("BUTTON");
     }
-    // Desktop metrics: the badge and the pill are sized by padding here, not
-    // by a fixed height the way the phone's are.
-    expect(screen.getAllByText("Play now")[0].className).toContain("py-2.5");
+    // chess is head-to-head, so its action reads Challenge over the dark pill —
+    // the desktop card's action, not the phone's chrome CTA.
+    expect(screen.getByText(enMessages.casino.hub.challenge).className).toContain("bg-[#2d2f31]");
   });
 
   it("draws cover art with object-fit cover, so nothing figurative is stretched", () => {
@@ -228,8 +233,10 @@ describe("ArkadeDesktop", () => {
   it("renders every game in the catalogue it is handed", () => {
     renderWithIntl(<ArkadeDesktop games={catalogue} />);
 
+    // The featured game's name also shows in the banner, so a name can appear
+    // more than once; each must appear at least once.
     for (const name of ["Chess", "ArkBall", "Checkers", "The Last Man", "Poker"]) {
-      expect(screen.getByText(name)).toBeInTheDocument();
+      expect(screen.getAllByText(name).length).toBeGreaterThan(0);
     }
   });
 

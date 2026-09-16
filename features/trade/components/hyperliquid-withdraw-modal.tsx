@@ -1,36 +1,53 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { SuccessPanel } from "@/components/ui/success-panel";
-import { estimatedWithdrawalFee, formatAmount, formatUsd } from "@/lib/trade/math";
+import type { WithdrawStep } from "@/features/trade/lib/hyperliquid-actions";
+import { planWithdrawal } from "@/features/trade/lib/perps-withdrawal";
+import { scrubVenue } from "@/features/trade/lib/venue-scrub";
 import { friendlyError } from "@/lib/errors";
+import { formatDecimalString } from "@/lib/trade/amount";
+import { fromBaseUnits, toBaseUnits } from "@/lib/trade/math";
 
 interface HyperliquidWithdrawModalProps {
   open: boolean;
   onClose: () => void;
   walletId: string | null;
-  availableUsdc: number;
+  /** The perps wallet's free balance, exactly as the clearinghouse reports it. */
+  availableUsdc: string;
+  /** Withdraws `total`, the amount that leaves the perps wallet. */
   onWithdraw: (
-    amountUsdc: string,
-    onStatus?: (status: string) => void
+    total: string,
+    onStatus?: (step: WithdrawStep) => void
   ) => Promise<{ treasuryMovementId: string }>;
   onWithdrawn: () => void;
 }
 
-const DECIMAL_INPUT = /^\d*\.?\d*$/;
+const USDC_DECIMALS = 6;
+const CENT = 10_000n;
+const DECIMAL_INPUT = /^\d*\.?\d{0,6}$/;
 const PERCENTS = [25, 50, 75, 100];
 
-type Stage = { name: "form" } | { name: "sending" } | { name: "done"; amount: string };
-const DEFAULT_SENDING_STATUS = "Withdrawing…";
+const STEP_KEY = {
+  withdrawing: "stepWithdrawing",
+  waiting: "stepWaiting",
+  moving: "stepMoving",
+  confirming: "stepConfirming",
+  finishing: "stepFinishing",
+} as const satisfies Record<WithdrawStep, string>;
 
-// Moves funds from the perps wallet back to your main wallet — same plain,
-// chain-agnostic tone as HyperliquidFundModal's "Top up". Under the hood
-// this signs a withdraw3 action and the backend polls for the Arbitrum
-// credit (see apps/perp/src/signing/README.md), but that's an
-// implementation detail the user shouldn't have to reason about to move
-// their own money.
+type Stage =
+  { name: "form" } | { name: "sending"; step: WithdrawStep } | { name: "done"; receive: string };
+
+const usdc = (value: string) => formatDecimalString(value, USDC_DECIMALS);
+
+// Moves funds from the perps wallet back to the main wallet (llms.txt §6b).
+// The typed amount is the total that leaves; every figure on screen comes from
+// planWithdrawal, in exact base units, so what the reader is shown is what the
+// withdrawal does.
 export function HyperliquidWithdrawModal({
   open,
   onClose,
@@ -39,32 +56,20 @@ export function HyperliquidWithdrawModal({
   onWithdraw,
   onWithdrawn,
 }: HyperliquidWithdrawModalProps) {
+  const t = useTranslations("perpsFunds");
   const [amount, setAmount] = useState("");
   const [stage, setStage] = useState<Stage>({ name: "form" });
   const [error, setError] = useState<string | null>(null);
-  const [sendingStatus, setSendingStatus] = useState(DEFAULT_SENDING_STATUS);
 
-  const amountNum = Number(amount);
-  const validAmount = amount !== "" && Number.isFinite(amountNum) && amountNum > 0;
   const busy = stage.name === "sending";
-  // Once a withdrawal is actually running, the live perps balance keeps
-  // falling as the money leaves — comparing the (now-frozen) typed amount
-  // against it would spuriously flag "exceeds your balance" for a transfer
-  // that's already underway. The amount was already validated against the
-  // balance the moment the user confirmed, so freeze the check there.
-  const withinBalance = validAmount && (busy || amountNum <= availableUsdc);
-  // A rounded, up-front estimate of the combined cost of moving funds all
-  // the way back to the main wallet — shown as one number so the user isn't
-  // left guessing what they'll actually receive.
-  const platformFee = withinBalance ? estimatedWithdrawalFee(amountNum) : 0;
-  const netReceive = withinBalance ? Math.max(0, amountNum - platformFee) : 0;
-  const canSubmit = Boolean(walletId) && withinBalance && !busy;
+  const plan = planWithdrawal({ total: amount, withdrawable: availableUsdc });
+  const availableRaw = toBaseUnits(availableUsdc, USDC_DECIMALS);
+  const canSubmit = Boolean(walletId) && plan.kind === "ok" && !busy;
 
   const close = () => {
     setStage({ name: "form" });
     setAmount("");
     setError(null);
-    setSendingStatus(DEFAULT_SENDING_STATUS);
     onClose();
   };
 
@@ -73,22 +78,24 @@ export function HyperliquidWithdrawModal({
     if (next === "" || DECIMAL_INPUT.test(next)) setAmount(next);
   };
 
+  // A share of the free balance, floored to the cent so it never exceeds it.
   const setPercent = (pct: number) => {
-    if (availableUsdc <= 0) return;
-    setAmount((Math.floor(((availableUsdc * pct) / 100) * 100) / 100).toFixed(2));
+    if (availableRaw <= 0n) return;
+    const share = (availableRaw * BigInt(pct)) / 100n;
+    setAmount(fromBaseUnits((share / CENT) * CENT, USDC_DECIMALS));
   };
 
   const submit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || plan.kind !== "ok") return;
+    const receive = plan.receive;
     setError(null);
-    setSendingStatus(DEFAULT_SENDING_STATUS);
-    setStage({ name: "sending" });
+    setStage({ name: "sending", step: "withdrawing" });
     try {
-      await onWithdraw(amount, setSendingStatus);
-      setStage({ name: "done", amount });
+      await onWithdraw(amount, (step) => setStage({ name: "sending", step }));
+      setStage({ name: "done", receive });
       onWithdrawn();
     } catch (err) {
-      setError(friendlyError(err, "Withdrawal failed."));
+      setError(scrubVenue(friendlyError(err, t("withdrawFailed"))));
       setStage({ name: "form" });
     }
   };
@@ -97,16 +104,15 @@ export function HyperliquidWithdrawModal({
     <ModalShell open={open} onClose={busy ? () => {} : close} size="lg">
       <div className="p-5 sm:p-6">
         {stage.name === "done" ? (
-          <SuccessPanel title="Funds on the way" onDone={close}>
-            {formatAmount(Number(stage.amount))} USDC is moving to your main wallet — it should land
-            within a few minutes.
+          <SuccessPanel title={t("withdrawDoneTitle")} onDone={close}>
+            {t("withdrawDoneBody", { amount: usdc(stage.receive) })}
           </SuccessPanel>
         ) : (
           <div className="flex flex-col gap-6">
             <div className="text-center">
-              <div className="ws-display text-[18px]">Withdraw</div>
+              <div className="ws-display text-[18px]">{t("withdrawTitle")}</div>
               <p className="mt-1 text-[12.5px] font-normal text-white/50">
-                Moves funds from your perps wallet back to your main wallet.
+                {busy ? t("withdrawWaitHint") : t("withdrawSubtitle")}
               </p>
             </div>
 
@@ -125,17 +131,22 @@ export function HyperliquidWithdrawModal({
                 />
               </div>
               <div className="tnum text-[12.5px] font-normal text-white/45">
-                {formatAmount(availableUsdc)} USDC available
+                {t("available", { amount: usdc(availableUsdc) })}
               </div>
-              {validAmount && !withinBalance ? (
+              {plan.kind === "exceedsBalance" && !busy ? (
                 <p className="text-down text-[12px] font-normal">
-                  Exceeds your available {formatAmount(availableUsdc)} USDC.
+                  {t("exceedsBalance", { amount: usdc(availableUsdc) })}
                 </p>
-              ) : null}
-              {withinBalance ? (
+              ) : plan.kind === "belowMinimum" && !busy ? (
+                <p className="text-down text-[12px] font-normal">
+                  {t("belowWithdrawMinimum", { amount: usdc(plan.minimum) })}
+                </p>
+              ) : plan.kind === "ok" ? (
                 <p className="tnum text-center text-[12px] font-normal text-white/45">
-                  Platform fee (est.) {formatUsd(platformFee)} · You&apos;ll receive about{" "}
-                  {formatUsd(netReceive)}
+                  {t("withdrawFeeLine", {
+                    fee: `${usdc(plan.totalFee)} USDC`,
+                    receive: `${usdc(plan.receive)} USDC`,
+                  })}
                 </p>
               ) : null}
             </div>
@@ -144,31 +155,35 @@ export function HyperliquidWithdrawModal({
               {PERCENTS.map((pct) => (
                 <button
                   key={pct}
+                  type="button"
                   onClick={() => setPercent(pct)}
-                  disabled={availableUsdc <= 0 || busy}
+                  disabled={availableRaw <= 0n || busy}
                   className="tnum cursor-pointer rounded-full border border-white/12 bg-white/5 px-3.5 py-1.5 text-[12px] font-medium text-white/65 transition-colors hover:border-white/25 hover:bg-white/8 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {pct === 100 ? "Max" : `${pct}%`}
+                  {pct === 100 ? t("max") : `${pct}%`}
                 </button>
               ))}
             </div>
 
             {error ? (
-              <p className="text-down text-center text-[12px] font-normal">{error}</p>
+              <p role="alert" className="text-down text-center text-[12px] font-normal">
+                {error}
+              </p>
             ) : null}
 
             <button
+              type="button"
               onClick={() => void submit()}
               disabled={!canSubmit}
               className="text-ink mx-auto flex w-auto cursor-pointer items-center justify-center gap-2 rounded-full bg-white px-8 py-3 font-sans text-[14.5px] font-semibold hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {busy ? (
+              {stage.name === "sending" ? (
                 <>
                   <ButtonSpinner />
-                  {sendingStatus}
+                  {t(STEP_KEY[stage.step])}
                 </>
               ) : (
-                "Withdraw"
+                t("withdrawCta")
               )}
             </button>
           </div>

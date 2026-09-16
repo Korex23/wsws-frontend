@@ -33,6 +33,10 @@ export interface CasinoGame {
   // Cover artwork (remote URL) and its accent as an rgb triplet ("52 211 153"),
   // composed into tint gradients at varying alphas by the tile.
   image?: string;
+  // Wide backdrop for the featured banner, distinct from the card cover (the
+  // comp gives Last Man a golden hero here, not its hourglass tile). Falls back
+  // to `image` when unset.
+  featuredImage?: string;
   tintRgb?: string;
   // Keeps branded artwork vivid even when the game is still coming soon.
   preserveImageColor?: boolean;
@@ -53,8 +57,8 @@ export const CASINO_GAMES: CasinoGame[] = [
     category: "New",
     size: "hero",
     glyph: "⌛",
-    image:
-      "https://images.unsplash.com/photo-1518281420975-50db6e5d0a97?w=900&q=80&auto=format&fit=crop",
+    image: "/casino/arkade/last-standing.png",
+    featuredImage: "/casino/arkade/featured-bg.png",
     tintRgb: "251 191 36",
     href: "/casino/last-standing",
     note: "Outlast everyone, winner takes the pot",
@@ -68,8 +72,7 @@ export const CASINO_GAMES: CasinoGame[] = [
     category: "Skill",
     size: "tall",
     glyph: "♞",
-    image:
-      "https://images.unsplash.com/photo-1529699211952-734e80c4d42b?w=1600&q=80&auto=format&fit=crop",
+    image: "/casino/arkade/chess.png",
     tintRgb: "52 211 153",
     isNew: true,
     href: "/casino/chess",
@@ -82,7 +85,7 @@ export const CASINO_GAMES: CasinoGame[] = [
     category: "Draws",
     size: "tall",
     glyph: "●",
-    image: "/casino/arkball/hero.png",
+    image: "/casino/arkade/arkball.png",
     tintRgb: "225 29 53",
     isNew: true,
     href: "/casino/arkball",

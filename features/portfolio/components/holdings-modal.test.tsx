@@ -2,6 +2,7 @@ import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenBalance } from "@/hooks/use-portfolio";
+import type { MemeToken } from "@/lib/meme/api";
 
 // The modal reads copy from the portfolio catalog. The real English strings are
 // returned rather than the key names, so the assertions below are the words a
@@ -31,6 +32,9 @@ const MESSAGES: Record<string, Record<string, string>> = {
     kindRwa: "RWA",
     kindToken: "Token",
     valuationUnavailable: "Valuation unavailable",
+    holdingsViewsLabel: "What you hold",
+    holdingsViewCoins: "Coins",
+    holdingsViewMemecoins: "Memecoins",
   },
 };
 vi.mock("next-intl", () => ({
@@ -52,6 +56,43 @@ vi.mock("@/components/ui/currency-select", () => ({
 
 const portfolio = vi.hoisted(() => ({ usePortfolio: vi.fn() }));
 vi.mock("@/hooks/use-portfolio", () => portfolio);
+
+// The Memecoins view has its own suite (meme-positions.test.tsx). Here it is a
+// stand-in that says it mounted and offers one sale, which is all the sheet is
+// responsible for: when it mounts, and where that sale goes.
+const memeView = vi.hoisted(() => ({
+  mounts: 0,
+  token: {
+    chainId: 8453,
+    address: "0x4cd9a847f39106e19a4e41aea8a232e915c82af5",
+    name: "Ethoswarm",
+    symbol: "MENTE",
+    decimals: 18,
+    logoUrl: null,
+    priceUsd: "1.5",
+    liquidityUsd: "80000",
+    volume24hUsd: "1000",
+    priceChange24hPercent: "3",
+    marketCapUsd: null,
+    fdvUsd: null,
+    pairAddress: "0xpair",
+    dexName: "Uniswap",
+    riskLevel: "LOW",
+    buyEnabled: true,
+    sellEnabled: true,
+    warnings: [],
+  } satisfies MemeToken,
+}));
+vi.mock("@/features/portfolio/components/meme-positions", () => ({
+  MemePositions: ({ onSell }: { onSell: (token: MemeToken) => void }) => {
+    memeView.mounts += 1;
+    return (
+      <button type="button" onClick={() => onSell(memeView.token)}>
+        Sell MENTE position
+      </button>
+    );
+  },
+}));
 
 import { HoldingsModal } from "@/features/portfolio/components/holdings-modal";
 
@@ -451,7 +492,9 @@ describe("HoldingsModal sizing and hover", () => {
     renderModal();
     const list = screen.getByText("LINK").closest("button")?.parentElement as HTMLElement;
     // The old cap, min(52vh,420px), showed about five rows on a 900px screen.
-    expect(list.className).toContain("max-h-[min(88vh_-_160px,660px)]");
+    // The view switch above the search field costs about 55px, so the list's
+    // budget grows by the same to keep the panel itself from scrolling.
+    expect(list.className).toContain("max-h-[min(88vh_-_215px,660px)]");
     expect(list.className).toContain("overflow-y-auto");
   });
 
@@ -465,5 +508,45 @@ describe("HoldingsModal sizing and hover", () => {
     // The movement goes, the feedback stays, and it still cross-fades.
     expect(row.className).toContain("hover:bg-white/6");
     expect(row.className).toContain("transition-colors");
+  });
+});
+
+describe("HoldingsModal views", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    memeView.mounts = 0;
+    setPortfolio({ tokens: [token()] });
+  });
+
+  it("opens on Coins, and asks nothing of the memecoin service until Memecoins is picked", () => {
+    renderModal();
+    expect(screen.getByRole("tab", { name: "Coins" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("searchbox", { name: "Search your holdings" })).toBeInTheDocument();
+    expect(screen.getByText("LINK")).toBeInTheDocument();
+    expect(memeView.mounts).toBe(0);
+  });
+
+  it("swaps the coin list for the memecoin positions, and back", () => {
+    renderModal();
+    fireEvent.click(screen.getByRole("tab", { name: "Memecoins" }));
+
+    expect(screen.getByRole("tab", { name: "Memecoins" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Memecoins");
+    expect(screen.getByRole("button", { name: "Sell MENTE position" })).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByText("LINK")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Coins" }));
+    expect(screen.getByText("LINK")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sell MENTE position" })).toBeNull();
+  });
+
+  it("closes the sheet and hands a memecoin position's sale to the meme trade sheet", () => {
+    const { onClose, onOpenMemeSell } = renderModal();
+    fireEvent.click(screen.getByRole("tab", { name: "Memecoins" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sell MENTE position" }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOpenMemeSell).toHaveBeenCalledWith(memeView.token);
   });
 });

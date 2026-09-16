@@ -1,7 +1,7 @@
 import { createServiceClient } from "@/lib/api/service";
 import type {
-  DepositAddress,
-  DepositStatus,
+  CctpDepositConfig,
+  CctpDepositStatus,
   HlAbstractionModeStatus,
   HlAllMids,
   HlApproveBuilderFeeAction,
@@ -259,15 +259,19 @@ export async function prepareWithdrawal(
   return perp.post<PreparedWithdrawal>("/ark/withdrawals/prepare", { walletId, amountUsdc });
 }
 
+// `fee` is the platform fee leg, signed beside the withdraw3, or null when the
+// backend prepared none. The backend relays the withdrawal first, then the fee.
 export async function submitWithdrawal(
   walletId: string,
   action: HlWithdraw3Action,
-  signature: HlSignature
+  signature: HlSignature,
+  fee: { action: HlSendAssetAction; signature: HlSignature } | null
 ): Promise<{ treasuryMovementId: string }> {
   return perp.post<{ treasuryMovementId: string }>("/ark/withdrawals/submit", {
     walletId,
     action,
     signature,
+    fee,
   });
 }
 
@@ -323,15 +327,26 @@ export async function submitAbstractionMode(
   });
 }
 
-// ── Dextopus funding (Base -> Arbitrum) ──────────────────────────────────
+// ── CCTP deposit (Base -> HyperCore, one hop; llms.txt §6a) ──────────────
 
-export async function getDepositAddress(address: string): Promise<DepositAddress> {
-  return perp.authedGet<DepositAddress>(`/funding/deposit-address/${address}`);
+export async function getCctpDepositConfig(): Promise<CctpDepositConfig> {
+  return perp.get<CctpDepositConfig>("/ark/deposit/cctp/config");
 }
 
-// `data: null` (no matching movement recorded yet) reads as "still pending",
-// not an error — the caller's own tx hash existing is not in question, only
-// whether the webhook has landed and been processed yet.
-export async function getDepositStatus(txHash: string): Promise<DepositStatus | null> {
-  return perp.authedGet<DepositStatus | null>(`/funding/deposit-status/${txHash}`);
+export async function recordCctpDeposit(
+  walletId: string,
+  burnTxHash: string,
+  amountUsdc: string
+): Promise<{ treasuryMovementId: string }> {
+  return perp.post<{ treasuryMovementId: string }>("/ark/deposit/cctp/record", {
+    walletId,
+    burnTxHash,
+    amountUsdc,
+  });
+}
+
+// `data: null` means the backend has not seen the burn yet, which reads as
+// still pending, not as an error.
+export async function getCctpDepositStatus(txHash: string): Promise<CctpDepositStatus | null> {
+  return perp.authedGet<CctpDepositStatus | null>(`/ark/deposit/cctp/status/${txHash}`);
 }

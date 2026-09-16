@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { Disclosure } from "@/components/ui/disclosure";
 import { ChartBarsIcon, ChevronLeftIcon, SearchIcon, TrendIcon } from "@/components/ui/icons";
-import { ListPagination } from "@/components/ui/list-pagination";
+import { NumberedPagination } from "@/components/ui/numbered-pagination";
 import { MemeCoin, PctChange, priceLabel } from "@/features/trade/components/meme-bits";
 import { useFittedRowCount } from "@/hooks/use-fitted-row-count";
 import { compactUsd, type MemeToken } from "@/lib/meme/api";
@@ -76,7 +76,7 @@ export interface MemeDesktopBoardProps {
   listControls?: ReactNode;
   /**
    * The catalogue's status, drawn in the list's footer above the pager: the
-   * route's "500 of 11,502" count and its "Load more".
+   * route's "500 of 11,502" count, and a retry when a page failed to load.
    */
   listStatus?: ReactNode;
   /** The token list's footer action ("Manage tokens" in the design). */
@@ -90,6 +90,14 @@ export interface MemeDesktopBoardProps {
    * pagination bar in the list's footer, in place of `listFooter`.
    */
   onPageChange?: (page: number) => void;
+  /**
+   * The catalogue holds more than the caller has loaded. The bar keeps Next
+   * open past `pageCount` and marks the count as not final; asking for the
+   * page after the last is the caller's cue to fetch it.
+   */
+  pageMore?: boolean;
+  /** The rows behind the last loaded page are on their way. */
+  pageLoadingMore?: boolean;
   /**
    * Called with the number of rows the list panel can hold, whenever that
    * changes, starting with MEME_LIST_PAGE_SIZE on the first render. The panel
@@ -213,6 +221,8 @@ export function MemeDesktopBoard({
   page = 1,
   pageCount = 1,
   onPageChange,
+  pageMore = false,
+  pageLoadingMore = false,
   onPageSizeChange,
 }: MemeDesktopBoardProps) {
   const t = useTranslations("meme");
@@ -451,9 +461,13 @@ export function MemeDesktopBoard({
           </div>
 
           {onPageChange ? (
-            // ListPagination is the bar every paged list in the app already
-            // draws, so the memecoin table and the spot table page identically.
-            // It draws its own top rule and hides itself on a single page.
+            // The catalogue runs to thousands of coins, so the bar numbers its
+            // pages rather than saying "Page 2 of 3" beside a Load more: the
+            // reader sees how far the list goes, and the route loads the pages
+            // ahead as they are reached. Its Prev and Next are ListPagination's
+            // own, so the bar is the height the row-fitting measurement above
+            // assumes. It draws its own top rule and hides itself on a single
+            // page with nothing more to load.
             // `mt-auto` is the second guarantee that it sits on the floor of
             // the panel: the rows block above already takes the spare height,
             // and this holds the bar down if a later state ever stops it.
@@ -465,7 +479,13 @@ export function MemeDesktopBoard({
               {listStatus ? (
                 <div className="border-rule border-t px-[15px] py-2">{listStatus}</div>
               ) : null}
-              <ListPagination page={page} pages={pageCount} onPage={onPageChange} />
+              <NumberedPagination
+                page={page}
+                pages={pageCount}
+                onPage={onPageChange}
+                more={pageMore}
+                loadingMore={pageLoadingMore}
+              />
             </div>
           ) : listFooter || listStatus ? (
             <div data-region="list-footer" className="mt-auto shrink-0">

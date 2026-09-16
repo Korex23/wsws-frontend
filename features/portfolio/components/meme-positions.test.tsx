@@ -184,6 +184,13 @@ function renderSection() {
 
 const row = (symbol: string) => screen.getByRole("listitem", { name: symbol });
 
+// A row shows the coin, its value and its P&L; the rest of the position opens
+// under it when the row is tapped, as the asset sheet would show it.
+function openRow(symbol: string) {
+  fireEvent.click(within(row(symbol)).getByRole("button", { expanded: false }));
+  return within(row(symbol));
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
@@ -210,8 +217,9 @@ describe("MemePositions, a position the market cannot value", () => {
   it("says Valuation unavailable, and never $0 or -100%", () => {
     setData({ positions: [unpriced] });
     renderSection();
-    const mente = within(row("MENTE"));
-    expect(mente.getByText("Valuation unavailable")).toBeInTheDocument();
+    expect(within(row("MENTE")).getByText("Valuation unavailable")).toBeInTheDocument();
+    // Opened too, so the stats underneath are held to the same rule.
+    openRow("MENTE");
     expect(row("MENTE").textContent).not.toMatch(/\$0(\.0+)?(?!\d)/);
     expect(row("MENTE").textContent).not.toContain("-100%");
   });
@@ -219,22 +227,36 @@ describe("MemePositions, a position the market cannot value", () => {
   it("keeps what is still known: the average entry and the realised P&L", () => {
     setData({ positions: [unpriced] });
     renderSection();
-    const mente = within(row("MENTE"));
+    // The total P&L on the row is the realised P&L alone.
+    expect(within(row("MENTE")).getByText("-$2.00")).toHaveClass("text-down");
+    const mente = openRow("MENTE");
     expect(mente.getByText("$1.25")).toBeInTheDocument();
-    expect(mente.getByText("-$2.00")).toBeInTheDocument();
+    expect(mente.getAllByText("-$2.00")).toHaveLength(2);
     expect(mente.getByText("Realised only")).toBeInTheDocument();
   });
 
   it("labels a missing market-data timestamp as no market data", () => {
     setData({ positions: [unpriced] });
     renderSection();
-    expect(within(row("MENTE")).getByText("No market data")).toBeInTheDocument();
+    expect(openRow("MENTE").getByText("No market data")).toBeInTheDocument();
   });
 
-  it("draws initials where the logo is null", () => {
+  it("looks the logo up by contract when the service sent none", () => {
     setData({ positions: [unpriced] });
     renderSection();
-    expect(within(row("MENTE")).getByText("MENT")).toBeInTheDocument();
+    expect(within(row("MENTE")).getByRole("img", { name: "MENTE" })).toHaveAttribute(
+      "src",
+      "/api/token-logo/base/0x4cd9a847f39106e19a4e41aea8a232e915c82af5"
+    );
+  });
+
+  it("keeps the service's own logo when it sent one", () => {
+    setData({ positions: [position({ logoUrl: "https://cdn.example/mente.png" })] });
+    renderSection();
+    expect(within(row("MENTE")).getByRole("img", { name: "MENTE" })).toHaveAttribute(
+      "src",
+      "https://cdn.example/mente.png"
+    );
   });
 });
 
@@ -305,8 +327,8 @@ describe("MemePositions position rows", () => {
       ],
     });
     renderSection();
-    expect(within(row("LEDGER")).getByText("Ledger-derived")).toBeInTheDocument();
-    expect(within(row("LIVE")).queryByText("Ledger-derived")).toBeNull();
+    expect(openRow("LEDGER").getByText("Ledger-derived")).toBeInTheDocument();
+    expect(openRow("LIVE").queryByText("Ledger-derived")).toBeNull();
   });
 
   it("shows the mark's age, and calls it stale once it passes fifteen minutes", () => {
@@ -314,7 +336,7 @@ describe("MemePositions position rows", () => {
       positions: [position({ marketDataUpdatedAt: new Date(NOW - 14 * 60_000).toISOString() })],
     });
     renderSection();
-    expect(within(row("MENTE")).getByText("Price 14 min ago")).toBeInTheDocument();
+    expect(openRow("MENTE").getByText("Price 14 min ago")).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(2 * 60_000);
@@ -325,7 +347,7 @@ describe("MemePositions position rows", () => {
   it("badges a partial cost basis and says why", () => {
     setData({ positions: [position({ costBasisStatus: "PARTIAL" })] });
     renderSection();
-    const mente = within(row("MENTE"));
+    const mente = openRow("MENTE");
     expect(mente.getByText("Partial cost basis")).toBeInTheDocument();
     expect(
       mente.getByText(/transfer or trade outside this app has no known price/)
@@ -346,7 +368,7 @@ describe("MemePositions position rows", () => {
       ],
     });
     const { onSell } = renderSection();
-    fireEvent.click(within(row("BONK")).getByRole("button", { name: "Sell BONK" }));
+    fireEvent.click(openRow("BONK").getByRole("button", { name: "Sell BONK" }));
     expect(onSell).toHaveBeenCalledWith(
       expect.objectContaining({ chainId: 101, address: MINT, symbol: "BONK", sellEnabled: true })
     );
@@ -366,9 +388,29 @@ describe("MemePositions position rows", () => {
     });
     renderSection();
     fireEvent.click(screen.getByRole("tab", { name: "Closed" }));
-    expect(within(row("SHUT")).queryByRole("button", { name: "Sell SHUT" })).toBeNull();
+    expect(openRow("SHUT").queryByRole("button", { name: "Sell SHUT" })).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Open" }));
-    expect(within(row("PAUSED")).getByRole("button", { name: "Sell PAUSED" })).toBeDisabled();
+    const paused = openRow("PAUSED");
+    expect(paused.getByRole("button", { name: "Sell PAUSED" })).toBeDisabled();
+    expect(paused.getByText("Selling is paused for this coin")).toBeInTheDocument();
+  });
+
+  it("opens a row's details on tap and folds them away again", () => {
+    renderSection();
+    const toggle = within(row("MENTE")).getByRole("button", { expanded: false });
+    expect(within(row("MENTE")).queryByText("Avg entry")).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(row("MENTE")).getByText("Avg entry")).toBeInTheDocument();
+    expect(within(row("MENTE")).getByText("Trades")).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(within(row("MENTE")).queryByText("Avg entry")).toBeNull();
   });
 });
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { friendlyError } from "@/lib/errors";
+import { scrubVenue } from "@/features/trade/lib/venue-scrub";
 import type { HlOrderRow } from "@/features/trade/lib/hyperliquid-types";
 
 interface HyperliquidOrdersListProps {
@@ -51,7 +52,7 @@ export function HyperliquidOrdersList({
     } catch (error) {
       setCancelError({
         id: order.id,
-        message: friendlyError(error, "Couldn't cancel this order."),
+        message: scrubVenue(friendlyError(error, "Couldn't cancel this order.")),
       });
     } finally {
       setCancellingId(null);

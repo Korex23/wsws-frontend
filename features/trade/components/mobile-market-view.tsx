@@ -14,13 +14,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { MarketLogo } from "@/components/ui/market-logo";
 import { AssetIcon } from "@/components/ui/asset-icon";
-import { ChevronLeftIcon } from "@/components/ui/icons";
+import { Disclosure } from "@/components/ui/disclosure";
+import { ChevronLeftIcon, TrendIcon } from "@/components/ui/icons";
 import { MemeCoin, PctChange, priceLabel } from "@/features/trade/components/meme-bits";
 import { parseBaseUnits } from "@/features/trade/components/meme-base-units";
 import { MemeTradeSheet } from "@/features/trade/components/meme-trade-sheet";
 import { PerpsSection } from "@/features/trade/components/perps-section";
 import { MemeRiskConsent } from "@/features/trade/components/meme-risk-consent";
 import { TradeTicket, USD_DECIMALS } from "@/features/trade/components/meme-trade-ticket";
+import { BoardChart } from "@/features/trade/components/meme-board-chart";
+import { BoardDisclosure } from "@/features/trade/components/meme-board-disclosure";
 import { useRiskConsent } from "@/features/trade/hooks/use-risk-consent";
 import {
   MemeMarketMetrics,
@@ -365,6 +368,11 @@ export function MobileMarketView({ rwaSlot, onAddFunds }: MobileMarketViewProps)
   // Age and the buy/sell split are not in the feed, so they draw as
   // Unavailable rather than invented.
   const [metricsOpen, setMetricsOpen] = useState(false);
+  // The coin's chart, above the side switch as on the desk's rail. Open by
+  // default on every trade ticket: the price is in view before a trade.
+  // Closing it unmounts the chart, so a folded row resolves no chart id.
+  const [memeChartOpen, setMemeChartOpen] = useState(true);
+  const memeChartPanelId = useId();
   const memeMetrics: MemeMarketMetricsData | null = ticketMeme
     ? {
         marketCap: usdMetric(ticketMeme.marketCapUsd),
@@ -667,6 +675,29 @@ export function MobileMarketView({ rwaSlot, onAddFunds }: MobileMarketViewProps)
                           <PctChange value={ticketMeme.priceChange24hPercent} />
                         </span>
                       </span>
+                    </div>
+
+                    {/* Row and panel in one gapless box, as on the board: the
+                        panel stays mounted while shut so it can fold, and the
+                        12px lead rides on the gated wrapper where the clip cuts
+                        it away, not on the Disclosure, where a shut panel would
+                        keep it. The chart itself is gated so a closed row holds
+                        no chart open. */}
+                    <div className="flex flex-col">
+                      <BoardDisclosure
+                        icon={<TrendIcon size={11} />}
+                        label={memeChartOpen ? tMeme("mobileCloseChart") : tMeme("mobileViewChart")}
+                        open={memeChartOpen}
+                        onToggle={() => setMemeChartOpen((open) => !open)}
+                        controls={memeChartPanelId}
+                      />
+                      <Disclosure open={memeChartOpen} id={memeChartPanelId}>
+                        {memeChartOpen ? (
+                          <div className="pt-3">
+                            <BoardChart token={ticketMeme} />
+                          </div>
+                        ) : null}
+                      </Disclosure>
                     </div>
 
                     <div

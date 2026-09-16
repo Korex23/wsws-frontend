@@ -134,7 +134,9 @@ describe("classifyVault", () => {
     gameId: 7,
     starter: "0x0000000000000000000000000000000000000002",
     king: me.toLowerCase(),
-    potWei: 2n * 10n ** 18n,
+    // v5 games are USDC, 6 decimals: 2 USDC, not 2 ETH.
+    pot: 2n * 10n ** 6n,
+    decimals: 6,
     endTime: NOW - 10,
     settled: false,
     ...overrides,
@@ -144,15 +146,16 @@ describe("classifyVault", () => {
     const holdings = classifyVault({
       wallet: me,
       games: [game({}), game({ gameId: 8, king: "0x03", starter: me })],
-      pendingWei: 10n ** 18n,
+      pending: 10n ** 6n,
       nowSeconds: NOW,
-      ethPriceUsd: 2000,
     });
+    // A dollar a unit: USDC is not priced through an oracle.
     expect(holdings.map((h) => [h.id, h.valueUsd])).toEqual([
-      ["vault:settle:7", 4000],
-      ["vault:settle:8", 4000],
-      ["vault:claim:pending", 2000],
+      ["vault:settle:7", 2],
+      ["vault:settle:8", 2],
+      ["vault:claim:pending", 1],
     ]);
+    expect(holdings.every((h) => h.symbol === "USDC" && h.decimals === 6)).toBe(true);
   });
 
   it("skips running, settled, and other people's games", () => {
@@ -163,9 +166,8 @@ describe("classifyVault", () => {
         game({ gameId: 9, settled: true }),
         game({ gameId: 10, king: "0x03" }),
       ],
-      pendingWei: 0n,
+      pending: 0n,
       nowSeconds: NOW,
-      ethPriceUsd: 2000,
     });
     expect(holdings).toEqual([]);
   });

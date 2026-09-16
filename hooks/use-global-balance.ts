@@ -11,7 +11,14 @@ import { usePortfolio } from "@/hooks/use-portfolio";
 // hook needs.
 const perp = createServiceClient("/api/perp", "The perps service is unavailable right now.");
 
-const POLL_MS = 20 * 1000;
+// The perps balance is not polled (llms.txt §10: no background poll on the
+// clearinghouse). It refreshes on window focus, the query client's default,
+// and whoever moves perps money invalidates it by this key.
+export function perpsBalanceQueryKey(address?: string | null) {
+  return address === undefined
+    ? (["perps-balance"] as const)
+    : (["perps-balance", address] as const);
+}
 
 async function fetchPerpsBalance(address: string): Promise<number> {
   const state = await perp.authedGet<{ withdrawable: string }>(`/ark/account-state/${address}`);
@@ -37,10 +44,11 @@ export function useGlobalBalance() {
 
   const enabled = ready && authenticated && Boolean(address);
   const perpsQuery = useQuery<number>({
-    queryKey: ["perps-balance", address],
+    queryKey: perpsBalanceQueryKey(address),
     enabled,
     queryFn: () => fetchPerpsBalance(address as string),
-    refetchInterval: POLL_MS,
+    // Refreshed when the reader returns to the tab; the app-wide default is off.
+    refetchOnWindowFocus: true,
   });
 
   // A perps balance that hasn't loaded yet, or a wallet that's never traded

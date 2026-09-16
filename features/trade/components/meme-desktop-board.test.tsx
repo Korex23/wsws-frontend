@@ -299,6 +299,31 @@ describe("MemeDesktopBoard list footer", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
   });
 
+  it("numbers the pages and lets the reader jump straight to one", () => {
+    const props = renderBoard({ page: 1, pageCount: 4, onPageChange: vi.fn() });
+    expect(screen.getByRole("button", { name: "Page 1" })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(screen.getByRole("button", { name: "Page 4" }));
+    expect(props.onPageChange).toHaveBeenCalledWith(4);
+  });
+
+  it("keeps Next open past the last loaded page while the catalogue has more", () => {
+    const props = renderBoard({ page: 3, pageCount: 3, onPageChange: vi.fn(), pageMore: true });
+    expect(screen.getByText("More pages")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(props.onPageChange).toHaveBeenCalledWith(4);
+  });
+
+  it("holds Next on the last loaded page while its rows are still arriving", () => {
+    renderBoard({
+      page: 3,
+      pageCount: 3,
+      onPageChange: vi.fn(),
+      pageMore: true,
+      pageLoadingMore: true,
+    });
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
   it("hides the bar on a single page rather than drawing a dead control", () => {
     renderBoard({ page: 1, pageCount: 1, onPageChange: vi.fn() });
     expect(screen.queryByRole("button", { name: "Next" })).toBeNull();

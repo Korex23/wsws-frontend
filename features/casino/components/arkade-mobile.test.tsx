@@ -6,6 +6,11 @@ import enMessages from "@/messages/en.json";
 import { CASINO_GAMES, type CasinoGame } from "@/features/casino/lib/games";
 
 vi.mock("@/lib/analytics/mixpanel", () => ({ track: vi.fn() }));
+// The surface reads the wallet balance for the header pill; the balance itself
+// is not under test, so the hook is stubbed to a settled, empty portfolio.
+vi.mock("@/hooks/use-portfolio", () => ({
+  usePortfolio: () => ({ tokens: [], loading: false, totalUsd: 0 }),
+}));
 
 import { track } from "@/lib/analytics/mixpanel";
 import { ArkadeMobile } from "@/features/casino/components/arkade-mobile";
@@ -32,7 +37,7 @@ const chess: CasinoGame = {
   category: "Skill",
   size: "hero",
   glyph: "♞",
-  image: "/rollout/arkade/card-chess-red-king.png",
+  image: "/casino/arkade/chess.png",
   isNew: true,
   href: "/casino/chess",
   note: "Staked head-to-head, invite or quick match",
@@ -45,29 +50,25 @@ const arkball: CasinoGame = {
   category: "Draws",
   size: "tall",
   glyph: "●",
-  image: "/casino/arkball/hero.png",
+  image: "/casino/arkade/arkball.png",
   href: "/casino/arkball",
   note: "Pick 5 white balls and 1 ArkBall",
   comingSoon: false,
 };
 
-// Coming soon and branded: the desktop keeps this one in colour, so the phone
-// has to as well.
-// A branded, coming-soon stand-in. The catalogue id has to be one this build's
-// catalogs name, since the card reads the name the player sees from them.
-const chicken: CasinoGame = {
+const lastMan: CasinoGame = {
   id: "last-standing",
   name: "The Last Man",
   category: "New",
-  size: "tall",
-  glyph: "C",
-  image: "/casino/chicken/ark-chicken.png",
-  preserveImageColor: true,
-  href: null,
-  comingSoon: true,
+  size: "hero",
+  glyph: "⌛",
+  image: "/casino/arkade/last-standing.png",
+  href: "/casino/last-standing",
+  note: "Outlast everyone, winner takes the pot",
+  comingSoon: false,
 };
 
-// Coming soon and unbranded: this one does grey out.
+// Coming soon and unbranded: no destination, so it is content, not a control.
 const ayo: CasinoGame = {
   id: "ayo",
   name: "Ayo",
@@ -80,53 +81,53 @@ const ayo: CasinoGame = {
   comingSoon: true,
 };
 
-const sample = [chess, arkball, chicken, ayo];
-
-function cards(): HTMLElement[] {
-  return screen.getAllByRole("listitem").map((item) => item.firstElementChild as HTMLElement);
-}
+const sample = [chess, arkball, lastMan, ayo];
 
 describe("ArkadeMobile", () => {
   beforeEach(() => tracked.mockClear());
 
-  it("stacks the catalogue one card per row at the comp's 204px height", () => {
+  it("draws the featured banner ahead of the rails when nothing is filtered", () => {
     renderMobile(<ArkadeMobile games={sample} />);
 
-    const list = screen.getByRole("list");
-    expect(within(list).getAllByRole("listitem")).toHaveLength(sample.length);
-    // 204px tall at the 20px radius, exactly the card the desktop comp draws.
-    // The old phone tile was a 128px minimum at 16px, which cropped the art to
-    // a strip and left the copy sitting on top of it.
-    for (const card of cards()) {
-      expect(card.className).toContain("h-[204px]");
-      expect(card.className).toContain("rounded-card");
-      expect(card.className).not.toContain("min-h-[128px]");
-    }
+    // The comp opens with the Featured spotlight over the Trending/New rails.
+    expect(screen.getByText(enMessages.casino.hub.featured)).toBeInTheDocument();
+    expect(screen.getByText(enMessages.casino.hub.trendingTitle)).toBeInTheDocument();
+    expect(screen.getByText(enMessages.casino.hub.newTitle)).toBeInTheDocument();
   });
 
-  it("draws the badge as the comp's solid white pill", () => {
-    renderMobile(<ArkadeMobile games={[chess]} />);
+  it("lays the catalogue out as the desktop card in horizontal rails", () => {
+    renderMobile(<ArkadeMobile games={[chess, arkball, lastMan]} />);
 
-    const badge = screen.getByText(enMessages.casino.hub.badgeNew);
-    expect(badge.className).toContain("bg-white");
-    expect(badge.className).toContain("rounded-full");
-    // The old chip was a dark translucent square. The comp inverts it.
-    expect(badge.className).not.toContain("bg-black/55");
+    const card = screen.getByRole("link", { name: "Play Chess" });
+    // The 204px desktop card at the 20px radius and 1.66px hairline, not the old
+    // phone tile — only the rail around it is new.
+    expect(card.className).toContain("h-[204px]");
+    expect(card.className).toContain("rounded-[20px]");
+    expect(card.className).toContain("border-[1.66px]");
+    // A real anchor so a long-press and open-in-new-tab work.
+    expect(card.tagName).toBe("A");
+    expect(card).toHaveAttribute("href", "/casino/chess");
   });
 
-  it("labels the action Play now, as the comp does", () => {
-    renderMobile(<ArkadeMobile games={[chess, arkball]} />);
+  it("wears the section's colored badge, not a white pill", () => {
+    renderMobile(<ArkadeMobile games={[chess, arkball, lastMan]} />);
 
-    expect(screen.getAllByText(enMessages.casino.hub.playNow)).toHaveLength(2);
-    expect(screen.queryByText(enMessages.casino.hub.explore)).toBeNull();
+    // Trending leads with a red Most Played tile over amber Hot ones.
+    const mostPlayed = screen.getByText(enMessages.casino.hub.badgeMostPlayed);
+    expect(mostPlayed.className).toContain("bg-[#dc343c]");
+    expect(mostPlayed.className).not.toContain("bg-white");
   });
 
-  it("leaves the balance chip out, since the comp does not draw one", () => {
-    const { container } = renderMobile(<ArkadeMobile games={sample} />);
+  it("carries a search field the phone can filter with", () => {
+    renderMobile(<ArkadeMobile games={sample} />);
 
-    // The chip was the screen's only async dependency. The comp has no balance
-    // on it, and games spend from the same wallet the rest of the app shows.
-    expect(container.querySelector('[data-sensitive="balance"]')).toBeNull();
+    const search = screen.getByRole("searchbox");
+    fireEvent.change(search, { target: { value: "chess" } });
+
+    // Filtering collapses the banner and section headings to a single rail.
+    expect(screen.queryByText(enMessages.casino.hub.trendingTitle)).toBeNull();
+    expect(screen.getByRole("link", { name: "Play Chess" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Play ArkBall" })).toBeNull();
   });
 
   it("gives every category tab a 44px hit area", () => {
@@ -135,7 +136,7 @@ describe("ArkadeMobile", () => {
     const tabs = within(screen.getByRole("group", { name: "Game categories" })).getAllByRole(
       "button"
     );
-    expect(tabs.length).toBeGreaterThan(1);
+    expect(tabs).toHaveLength(4);
     for (const tab of tabs) expect(tab.className).toContain("h-11");
   });
 
@@ -146,64 +147,27 @@ describe("ArkadeMobile", () => {
     expect(segment.style.transform).toBe("translateX(0px)");
 
     fireEvent.click(screen.getByRole("button", { name: enMessages.casino.hub.categoryCards }));
-    // 101px tabs, 12px apart, so the second slot starts 113px along.
+    // 101px tabs, 12px apart, so the third slot starts 226px along.
     expect(segment.style.transform).toBe("translateX(226px)");
   });
 
-  it("draws no search field, and keeps the heading for the outline only", () => {
-    const { container } = renderMobile(<ArkadeMobile games={sample} />);
-
-    // The phone browses by category alone. The desktop hub still has its own
-    // search, so this is a phone-only removal, not a catalogue key going away.
-    expect(screen.queryByRole("searchbox")).toBeNull();
-    expect(container.querySelector("h1")?.className).toContain("sr-only");
-  });
-
-  it("keeps branded artwork in colour when the catalogue asks for it", () => {
-    const { container } = renderMobile(<ArkadeMobile games={[chicken, ayo]} />);
-
-    const images = Array.from(container.querySelectorAll("img"));
-    const branded = images.find((img) => img.getAttribute("src") === chicken.image)!;
-    const plain = images.find((img) => img.getAttribute("src") === ayo.image)!;
-    // The desktop row honours preserveImageColor; the phone greyed everything
-    // that was coming soon, so Pilot Chicken lost its colour on a phone only.
-    expect(branded.className).not.toContain("grayscale");
-    expect(plain.className).toContain("grayscale");
-  });
-
   it("reports game_opened with the catalogue's analytics id", () => {
-    renderMobile(<ArkadeMobile games={[chess, arkball]} />);
+    renderMobile(<ArkadeMobile games={[chess, arkball, lastMan]} />);
 
     fireEvent.click(screen.getByRole("link", { name: "Play Chess" }));
     expect(tracked).toHaveBeenCalledWith("game_opened", { game: "chess" });
-    // Exactly once. The card is shared with the desktop rail and reports
-    // nothing itself, so a second call here would mean the event had been
-    // duplicated into the card as well as this surface.
+    // Exactly once. The card is shared with the desktop rail and reports nothing
+    // itself, so a second call would mean the event had been duplicated.
     expect(tracked).toHaveBeenCalledTimes(1);
 
-    // ArkBall has no agreed analytics id, so opening it reports nothing rather
-    // than inventing one.
+    // ArkBall has no agreed analytics id, so opening it reports nothing.
     tracked.mockClear();
     fireEvent.click(screen.getByRole("link", { name: "Play ArkBall" }));
     expect(tracked).not.toHaveBeenCalled();
   });
 
-  it("draws the catalogue with the shared card, as anchors", () => {
-    renderMobile(<ArkadeMobile games={[chess, arkball]} />);
-
-    // The phone navigates with a real anchor so a long press and an
-    // open-in-new-tab work; the desktop rail draws the same card as a button.
-    for (const card of cards()) {
-      expect(card.className).toContain("ws-card");
-      expect(card.tagName).toBe("A");
-      expect(card).toHaveAttribute("href");
-    }
-    // Comp metrics for the phone: a 30px badge and a 36px action pill.
-    expect(screen.getAllByText(enMessages.casino.hub.playNow)[0].className).toContain("h-9");
-  });
-
   it("does not make a control out of a game with nowhere to go", () => {
-    renderMobile(<ArkadeMobile games={[chicken]} />);
+    renderMobile(<ArkadeMobile games={[ayo]} />);
 
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.getByText(enMessages.casino.hub.badgeComingSoon)).toBeInTheDocument();
@@ -211,21 +175,21 @@ describe("ArkadeMobile", () => {
 
   it("narrows the catalogue by category, and goes back to all of it", () => {
     renderMobile(<ArkadeMobile games={sample} />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(4);
+    // chess, arkball, last-standing are playable; ayo is coming soon.
+    expect(screen.getAllByRole("link")).toHaveLength(3);
 
     fireEvent.click(screen.getByRole("button", { name: enMessages.casino.hub.categoryDraws }));
-    expect(screen.getAllByRole("listitem")).toHaveLength(1);
-    expect(screen.getByText("ArkBall")).toBeInTheDocument();
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Play ArkBall" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: enMessages.casino.hub.categoryAll }));
-    expect(screen.getAllByRole("listitem")).toHaveLength(4);
+    expect(screen.getAllByRole("link")).toHaveLength(3);
   });
 
   it("says so when a category holds nothing", () => {
     renderMobile(<ArkadeMobile games={sample} />);
 
-    // Nothing in the sample is a card game, so this is the empty state the
-    // list still has to draw now that there is no search to empty it.
+    // Nothing in the sample is a card game, so this is the empty state.
     fireEvent.click(screen.getByRole("button", { name: enMessages.casino.hub.categoryCards }));
     expect(screen.queryByRole("list")).toBeNull();
     expect(screen.getByText(enMessages.casino.hub.noGamesFound)).toBeInTheDocument();
@@ -242,6 +206,8 @@ describe("ArkadeMobile", () => {
 
   it("defaults to the shipped catalogue", () => {
     renderMobile(<ArkadeMobile />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(CASINO_GAMES.length);
+    // Every playable game becomes an anchor; coming-soon entries stay content.
+    const playable = CASINO_GAMES.filter((game) => game.href && !game.comingSoon).length;
+    expect(screen.getAllByRole("link")).toHaveLength(playable);
   });
 });
