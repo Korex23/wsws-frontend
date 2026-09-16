@@ -11,7 +11,14 @@ import {
   formatMetric,
   timeframeLabelKey,
 } from "@/features/trade/components/meme-gamified-bits";
+import { createColumnHelper, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { METRIC_KEYS } from "@/features/trade/components/meme-sort-menu";
+import {
+  ariaSortFor,
+  memeColumns,
+  metricColumnFor,
+  nextSortFor,
+} from "@/features/trade/components/meme-table-columns";
 import { useFittedRowCount } from "@/hooks/use-fitted-row-count";
 import { compactUsd, type MemeToken } from "@/lib/meme/api";
 import { catalogKey } from "@/lib/meme/catalog";
@@ -126,6 +133,18 @@ export interface MemeDesktopBoardProps {
   /** The window the change column reads. Defaults to 24h, today's column. */
   timeframe?: MemeTimeframe;
   /**
+   * The applied sort's direction, for the heading's arrow. Ignored when
+   * `sortMetric` is null.
+   */
+  sortOrder?: "asc" | "desc";
+  /**
+   * Sets the sort from a heading click. The screener owns the sort: this is the
+   * same setter the sort menu calls, so a heading is a shortcut into one piece
+   * of state rather than a second copy of it. Headings are plain text when this
+   * is absent.
+   */
+  onSortChange?: (sort: { by: ScreenerMetric; order: "asc" | "desc" } | null) => void;
+  /**
    * The applied sort. A metric the table does not already show gets a fifth
    * column, so the reader can see why the rows are in this order.
    */
@@ -186,8 +205,16 @@ const COLUMNS = "grid grid-cols-[minmax(0,1fr)_88px_110px_121px] items-center pr
 const COLUMNS_WITH_METRIC =
   "grid grid-cols-[minmax(0,1fr)_88px_110px_121px_96px] items-center pr-[26px] pl-[15px]";
 
-// Price and market cap already have columns of their own.
-const SHOWN_METRICS: ReadonlySet<ScreenerMetric> = new Set<ScreenerMetric>(["price", "marketCap"]);
+// One definition per column id. The table is built from these for its row model
+// and its sorting state; every cell is still drawn by the grid below, so these
+// carry no cell renderer.
+const columnHelper = createColumnHelper<MemeToken>();
+const TABLE_COLUMNS = [
+  columnHelper.accessor((token) => token.symbol ?? "", { id: "asset" }),
+  columnHelper.accessor((token) => token.priceUsd ?? "", { id: "price" }),
+  columnHelper.accessor((token) => token.priceChange24hPercent ?? "", { id: "change" }),
+  columnHelper.accessor((token) => token.marketCapUsd ?? "", { id: "marketCap" }),
+];
 
 const MINUTE_MS = 60_000;
 
@@ -332,6 +359,8 @@ export function MemeDesktopBoard({
   screener,
   timeframe = "24h",
   sortMetric = null,
+  sortOrder = "desc",
+  onSortChange,
   now,
   topGainers,
   emptyText,
@@ -366,7 +395,31 @@ export function MemeDesktopBoard({
   // screen when the memecoin upstream drops, so the rows keep their place and
   // the strip above them says the prices are no longer fresh. Only a failure
   // with nothing to show takes over the list.
-  const rowsShowing = tokens.length > 0;
+  // The row model, from the library the portfolio and spot tables already use.
+  // Headless: it holds the sorting state and runs the search, and every row is
+  // still drawn by the grid of buttons below (ADR-2026-09-16-meme-table-tanstack).
+  //
+  // manualSorting, because the rows arriving here are already ordered by
+  // applyScreener, which compares exact decimal strings and puts unreadable
+  // values last. TanStack's own comparators would read "3491589227" against
+  // "25564" as text or push both through Number, which is the class of bug the
+  // screener exists to avoid.
+  const table = useReactTable({
+    data: tokens,
+    columns: TABLE_COLUMNS,
+    // No filter of our own. The panel already has a search box above, and it
+    // searches the whole catalogue through the backend rather than the rows in
+    // hand, which is strictly better than anything this table could do locally.
+    manualSorting: true,
+    getRowId: (token) => `${token.chainId}:${token.address}`,
+    getCoreRowModel: getCoreRowModel(),
+  });
+  // The table instance is stable; its row model changes with the data it was
+  // given, which React Compiler cannot see, so the rows are read on every
+  // render rather than memoised against a dependency it would report as unused.
+  const visibleTokens = table.getRowModel().rows.map((row) => row.original);
+
+  const rowsShowing = visibleTokens.length > 0;
   const blocked = failed && !rowsShowing;
 
   // Cut to what the panel holds. The caller pages at the size this board last
@@ -374,10 +427,12 @@ export function MemeDesktopBoard({
   // the window changes, and for a caller that never wired onPageSizeChange up.
   // Drawing the surplus in either case would push rows into the pagination bar
   // and past the bottom of the card.
-  const rowsOnScreen = tokens.slice(0, fittedRows);
+  const rowsOnScreen = visibleTokens.slice(0, fittedRows);
 
   const slotted = trending !== undefined || screener !== undefined;
-  const metricColumn = sortMetric !== null && !SHOWN_METRICS.has(sortMetric) ? sortMetric : null;
+  const metricColumn = metricColumnFor(sortMetric);
+  // The one sort, as the column helpers read it.
+  const appliedSort = sortMetric === null ? null : { by: sortMetric, order: sortOrder };
   const columns = metricColumn === null ? COLUMNS : COLUMNS_WITH_METRIC;
   const clock = useMinuteClock(now === undefined && metricColumn === "age");
   // Without the slots the heading stays the catalogue's own 24h label, word
@@ -485,17 +540,55 @@ export function MemeDesktopBoard({
             }
           >
             <div
+              role="row"
+              data-region="token-header"
               className={`${columns} border-rule h-[41px] shrink-0 border-b font-serif text-[10.6px] font-medium tracking-[0.04em] text-white/40 uppercase`}
             >
-              <span>{tMarkets("asset")}</span>
-              <span className="text-right capitalize">{t("colPrice")}</span>
-              <span className="text-right capitalize">{changeHeading}</span>
-              <span className="text-right capitalize">{t("colMcap")}</span>
-              {metricColumn !== null ? (
-                <span className="truncate text-right capitalize">
-                  {tScreener(METRIC_KEYS[metricColumn])}
-                </span>
-              ) : null}
+              {memeColumns(metricColumn).map((column) => {
+                const label =
+                  column.id === "asset"
+                    ? tMarkets("asset")
+                    : column.id === "price"
+                      ? t("colPrice")
+                      : column.id === "change"
+                        ? changeHeading
+                        : column.id === "marketCap"
+                          ? t("colMcap")
+                          : tScreener(METRIC_KEYS[metricColumn as ScreenerMetric]);
+                const align = column.numeric ? "text-right" : "";
+                const caps = column.id === "asset" ? "" : "capitalize";
+                const truncate = column.id === "metric" ? "truncate" : "";
+                // A column with nothing to sort stays a plain cell rather than
+                // a button that looks pressable and does nothing.
+                if (column.sortsBy === null || onSortChange === undefined) {
+                  return (
+                    <span key={column.id} className={`${truncate} ${align} ${caps}`.trim()}>
+                      {label}
+                    </span>
+                  );
+                }
+                const sorted = sortMetric === column.sortsBy;
+                return (
+                  <span
+                    key={column.id}
+                    aria-sort={ariaSortFor(column, appliedSort)}
+                    className={`${truncate} ${align} ${caps}`.trim()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onSortChange(nextSortFor(column, appliedSort))}
+                      className={`cursor-pointer rounded-[4px] uppercase transition-colors hover:text-white/70 focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:outline-none ${
+                        sorted ? "text-white/80" : ""
+                      }`}
+                    >
+                      {label}
+                      <span aria-hidden className="ml-[3px] inline-block w-[7px] text-[8px]">
+                        {sorted ? (sortOrder === "asc" ? "\u25B2" : "\u25BC") : ""}
+                      </span>
+                    </button>
+                  </span>
+                );
+              })}
             </div>
 
             {failed && rowsShowing ? (
@@ -561,7 +654,7 @@ export function MemeDesktopBoard({
                     ) : null}
                   </div>
                 ) : rowsShowing ? (
-                  rowsOnScreen.map((token) => {
+                  rowsOnScreen.map((token: MemeToken) => {
                     const picked =
                       selected?.address === token.address && selected?.chainId === token.chainId;
                     const change = changeFor(token, timeframe);

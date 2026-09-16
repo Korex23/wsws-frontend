@@ -737,6 +737,8 @@ function MemeDesk() {
         }
         timeframe={screener.timeframe}
         sortMetric={screener.filters.sort?.by ?? null}
+        sortOrder={screener.filters.sort?.order ?? "desc"}
+        onSortChange={screener.setSort}
         topGainers={topGainers}
         listStatus={
           // The count describes the catalogue; a search replaces it, so it

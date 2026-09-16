@@ -695,8 +695,7 @@ describe("MemeDesktopBoard screener slots", () => {
 });
 
 describe("MemeDesktopBoard change column", () => {
-  const header = () =>
-    document.querySelector<HTMLElement>('[data-region="token-list"]')?.firstElementChild;
+  const header = () => document.querySelector<HTMLElement>('[data-region="token-header"]');
   const slots = { trending: <div>trending slot</div>, screener: <div>screener slot</div> };
 
   const active = memeToken({
@@ -750,7 +749,7 @@ describe("MemeDesktopBoard change column", () => {
 
 describe("MemeDesktopBoard sorted metric column", () => {
   const panel = () => document.querySelector<HTMLElement>('[data-region="token-list"]');
-  const header = () => panel()?.firstElementChild as HTMLElement;
+  const header = () => panel()?.querySelector('[data-region="token-header"]') as HTMLElement;
   const rowButtons = () =>
     Array.from(document.querySelectorAll<HTMLElement>('[data-region="token-rows-layer"] > button'));
   const slots = { trending: <div>trending slot</div>, screener: <div>screener slot</div> };
@@ -846,5 +845,61 @@ describe("MemeDesktopBoard top gainers", () => {
   it("marks nothing when no gainers are passed", () => {
     renderBoard({ ...slots, tokens: [up], selected: null });
     expect(screen.queryByRole("img", { name: "Top gainer on this page" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sortable headings and the search box
+// ---------------------------------------------------------------------------
+
+describe("MemeDesktopBoard headings", () => {
+  // The sort is the screener's, not the table's: a heading click and a choice
+  // in the sort menu reach the same setter, so the two can never disagree and
+  // whichever is used is also what goes to the backend.
+  it("asks for a descending sort the first time a heading is clicked", () => {
+    const onSortChange = vi.fn();
+    renderBoard({ onSortChange });
+
+    fireEvent.click(screen.getByRole("button", { name: /mkt cap/i }));
+
+    expect(onSortChange).toHaveBeenCalledWith({ by: "marketCap", order: "desc" });
+  });
+
+  it("flips the heading already sorted, then clears it", () => {
+    const onSortChange = vi.fn();
+    renderBoard({ onSortChange, sortMetric: "marketCap", sortOrder: "desc" });
+    fireEvent.click(screen.getByRole("button", { name: /mkt cap/i }));
+    expect(onSortChange).toHaveBeenLastCalledWith({ by: "marketCap", order: "asc" });
+
+    cleanup();
+    renderBoard({ onSortChange, sortMetric: "marketCap", sortOrder: "asc" });
+    fireEvent.click(screen.getByRole("button", { name: /mkt cap/i }));
+    // Third click clears it, rather than cycling back to descending and
+    // leaving no way to undo a sort from the heading.
+    expect(onSortChange).toHaveBeenLastCalledWith(null);
+  });
+
+  // A screen reader should hear which column is sorted and which way, not just
+  // see an arrow.
+  it("announces the sorted column", () => {
+    renderBoard({ onSortChange: vi.fn(), sortMetric: "price", sortOrder: "asc" });
+
+    const price = screen.getByRole("button", { name: /price/i }).parentElement;
+    expect(price).toHaveAttribute("aria-sort", "ascending");
+  });
+
+  // The asset and change columns have no screener bound behind them, so a
+  // button there would look pressable and do nothing.
+  it("leaves the columns that cannot sort as plain text", () => {
+    renderBoard({ onSortChange: vi.fn() });
+
+    expect(screen.queryByRole("button", { name: /^asset$/i })).toBeNull();
+  });
+
+  // Without a setter the board is read-only, as the phone's callers leave it.
+  it("draws plain headings when no setter is given", () => {
+    renderBoard();
+
+    expect(screen.queryByRole("button", { name: /mkt cap/i })).toBeNull();
   });
 });
