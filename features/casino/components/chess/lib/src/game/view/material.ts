@@ -4,7 +4,7 @@ import { h, type VNode } from 'snabbdom';
 
 import type { CheckCount, CheckState, MaterialDiffSide } from '@/game';
 
-import { countChecks, getMaterialDiff, getScore, NO_CHECKS } from '../material';
+import { countChecks, getCapturedMaterial, getMaterialDiff, getScore, NO_CHECKS } from '../material';
 
 function renderMaterialDiff(
   material: MaterialDiffSide,
@@ -34,12 +34,13 @@ export function renderMaterialDiffs(
   checkStates: CheckState[],
   ply: Ply,
 ): [VNode, VNode] {
-  const material = getMaterialDiff(showCaptured ? chess : '');
-  const score = getScore(material) * (bottomColor === 'white' ? 1 : -1);
+  const materialDiff = getMaterialDiff(showCaptured ? chess : '');
+  const captured = getCapturedMaterial(showCaptured ? chess : '');
+  const score = getScore(materialDiff) * (bottomColor === 'white' ? 1 : -1);
   const checks: CheckCount = showChecks ? countChecks(checkStates, ply) : NO_CHECKS;
   const topColor = opposite(bottomColor);
   return [
-    renderMaterialDiff(material[topColor], -score, 'top', checks[topColor]),
-    renderMaterialDiff(material[bottomColor], score, 'bottom', checks[bottomColor]),
+    renderMaterialDiff(captured[topColor], -score, 'top', checks[topColor]),
+    renderMaterialDiff(captured[bottomColor], score, 'bottom', checks[bottomColor]),
   ];
 }

@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { buildLichessAnalysisData } from "./lichess-analysis-data";
+import {
+  buildLichessAnalysisData,
+  describeChessMove,
+  explainCoachComment,
+} from "./lichess-analysis-data";
+
+describe("plain-language chess coaching", () => {
+  it.each([
+    ["Bf4", "Bishop to f4"],
+    ["Nf6", "Knight to f6"],
+    ["Qxe4+", "Queen captures on e4, check"],
+    ["cxd4", "Pawn captures on d4"],
+    ["O-O", "Castle kingside"],
+    ["O-O-O", "Castle queenside"],
+  ])("describes %s without requiring notation knowledge", (san, expected) => {
+    expect(describeChessMove(san, true)).toBe(expected);
+  });
+
+  it("rewrites move notation inside coach comments", () => {
+    expect(explainCoachComment("Consider Nf3 instead of Bf4.")).toBe(
+      "Consider moving the knight to f3 instead of bishop to f4."
+    );
+  });
+});
 
 const start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 

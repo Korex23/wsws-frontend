@@ -335,6 +335,11 @@ export function ChickenSection() {
   return (
     <main className={styles.game}>
       <header className={styles.header}>
+        <Link href="/casino" className={styles.backButton} aria-label="Back to Arkade">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m14.5 5-7 7 7 7" />
+          </svg>
+        </Link>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className={styles.logoDesktop} src={`${ASSET}/img/logo@2x.png`} alt="Pilot Chicken" />
         {/* eslint-disable-next-line @next/next/no-img-element */}

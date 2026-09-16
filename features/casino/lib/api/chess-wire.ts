@@ -399,6 +399,8 @@ export { formatTimeControl, parseTimeControl };
 // produce a usable result rather than throwing away a finished game.
 function drawReason(reason: string | null): Extract<ChessResult, { kind: "draw" }>["reason"] {
   const r = (reason ?? "").toLowerCase();
+  if (r.includes("timeout") && r.includes("insufficient")) return "timeout_insufficient";
+  if (r.includes("fifty") || r.includes("50")) return "fifty_move_rule";
   if (r.includes("stale")) return "stalemate";
   if (r.includes("repet") || r.includes("threefold")) return "repetition";
   if (r.includes("insufficient") || r.includes("material")) return "insufficient";
@@ -585,6 +587,8 @@ export function toChessMatch(wire: ChessMatchWire, options: ToChessMatchOptions 
     clockUpdatedAt,
     turn: toColor(wire.turn),
     result: toResult(wire.result, wire.resultReason),
+    resultReason: wire.resultReason,
+    finishedAt: wire.finishedAt,
     drawOffered: drawOfferSide,
     takeback: {
       ...EMPTY_TAKEBACK,
@@ -669,14 +673,20 @@ export function applyPositionFrame(prev: ChessMatch, frame: ChessPositionFrame):
   const san = frame.lastMove?.san;
   const moves = san && frame.ply === prev.moves.length + 1 ? [...prev.moves, san] : prev.moves;
   const canAppendStep = !!prev.round && !!frame.step && frame.ply === prev.round.steps.length;
+  const previousRoundStep = prev.round?.steps.at(-1);
+  const roundPositionChanged =
+    frame.fen !== previousRoundStep?.fen || frame.ply !== previousRoundStep.ply;
   const round: ChessRoundState | null | undefined = prev.round
     ? {
         ...prev.round,
         steps: canAppendStep
           ? [...prev.round.steps, frame.step as ChessRoundStep]
           : prev.round.steps,
-        legalMoves: frame.legalMoves ?? prev.round.legalMoves,
-        check: frame.check ?? prev.round.check,
+        // Missing position fields must not leak state from the previous ply.
+        // A later repair snapshot will repopulate them when an older backend
+        // emits a compact terminal frame without legalMoves/check.
+        legalMoves: frame.legalMoves ?? (roundPositionChanged ? [] : prev.round.legalMoves),
+        check: frame.check ?? (roundPositionChanged ? false : prev.round.check),
       }
     : prev.round;
   return {

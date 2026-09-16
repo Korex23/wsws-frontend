@@ -13,7 +13,11 @@ import {
 } from "@/features/casino/lib/api/chess";
 import { CHESS_KEYS, useChessMatchSocial } from "@/features/casino/hooks/use-casino-chess";
 import { useCasinoWallet } from "@/features/casino/hooks/use-casino-wallet";
-import { buildLichessAnalysisData } from "@/features/casino/lib/chess/lichess-analysis-data";
+import {
+  buildLichessAnalysisData,
+  describeChessMove,
+  explainCoachComment,
+} from "@/features/casino/lib/chess/lichess-analysis-data";
 import {
   renderGameGif,
   renderPositionPng,
@@ -66,11 +70,12 @@ type LichessPubsubModule = {
 const ANALYSE_CSS = "/css/analyse.round.7d845a1e.css";
 const SITE_CSS = "/css/site.5a4b7c75.css";
 const THEME_CSS = "/css/lib.theme.all.ca09c987.css";
-const ANALYSE_MODULE = "/chess/lichess/js/analyse-ark.js";
+const ANALYSE_MODULE = "/chess/lichess/js/analyse-ark.js?ark-coach=1";
 const CASH_MODULE = "/chess/lichess/javascripts/vendor/cash.min.js";
 const DIALOG_MODULE = "/compiled/lib.MYPIOGN5.js";
 const PUBSUB_MODULE = "/compiled/lib.QPQZCXK2.js";
 const DIALOG_CSS = "/chess/lichess/css/ark-analysis-dialog.css";
+const COACH_CSS = "/chess/lichess/css/ark-analysis-coach.css";
 
 const inertPowertip: LichessPowertip = {
   watchMouse() {},
@@ -144,7 +149,7 @@ function analysisShell(
   const whiteScore = match.result?.kind === "draw" ? "½" : resultWinner === "w" ? "1" : "0";
   const blackScore = match.result?.kind === "draw" ? "½" : resultWinner === "b" ? "1" : "0";
   const analysisPanel = hasAnalysis
-    ? '<div id="acpl-chart-container"><canvas id="acpl-chart"></canvas></div>'
+    ? `<div id="acpl-chart-container"><canvas id="acpl-chart"></canvas></div>`
     : `<form class="future-game-analysis" data-ark-analysis-request><button class="button text" type="submit"><span class="is3 text">${requestLabel}</span></button></form>`;
 
   return `<main class="analyse variant-${escapeHtml(match.variant)}">
@@ -205,8 +210,29 @@ type ArkAnalysisController = {
   };
 };
 
+type ArkAnalysisSound = {
+  say(text: string, cut?: boolean, force?: boolean, translated?: boolean): boolean;
+};
+
+type ArkAnalysisWindow = typeof window & {
+  site?: {
+    analysis?: ArkAnalysisController;
+    sound?: ArkAnalysisSound;
+  };
+};
+
+const COACH_VOICE_STORAGE_KEY = "ark-chess-review-coach-voice";
+
+const COACH_CLASSIFICATION = {
+  best: { title: "Best move", badge: "★" },
+  good: { title: "Good move", badge: "✓" },
+  inaccuracy: { title: "Inaccuracy", badge: "?!" },
+  mistake: { title: "Mistake", badge: "?" },
+  blunder: { title: "Blunder", badge: "??" },
+} as const;
+
 function analysisController(): ArkAnalysisController | undefined {
-  return (window as typeof window & { site?: { analysis?: ArkAnalysisController } }).site?.analysis;
+  return (window as ArkAnalysisWindow).site?.analysis;
 }
 
 function selectChatTab(key: "discussion" | "note"): boolean {
@@ -584,6 +610,99 @@ export function LichessAnalysis({ matchId }: { matchId: string | null }) {
     };
     const currentOptions = () =>
       exportOptions(match, analysisController()?.bottomColor?.() ?? data.orientation);
+    const coachMoves = new Map((completeAnalysis?.moves ?? []).map((move) => [move.ply, move]));
+    let coachVoiceEnabled = false;
+    try {
+      coachVoiceEnabled = window.localStorage.getItem(COACH_VOICE_STORAGE_KEY) === "true";
+    } catch {
+      // Storage privacy settings leave narration off without breaking review.
+    }
+    let lastSpokenCoachPly: number | null = null;
+    let renderedCoachPly: number | null = null;
+    let coachVoiceObserver: MutationObserver | null = null;
+    let coachVoiceFrame: number | null = null;
+    const coachVoiceButton = () =>
+      host.querySelector<HTMLButtonElement>("[data-ark-coach-voice]");
+    const renderCoachVoiceButton = () => {
+      const button = coachVoiceButton();
+      if (!button) return;
+      const pressed = String(coachVoiceEnabled);
+      const label = `Coach voice: ${coachVoiceEnabled ? "On" : "Off"}`;
+      if (button.getAttribute("aria-pressed") !== pressed) {
+        button.setAttribute("aria-pressed", pressed);
+      }
+      if (button.textContent !== label) button.textContent = label;
+    };
+    const renderSelectedCoachComment = () => {
+      const card = host.querySelector<HTMLElement>("[data-ark-coach-card]");
+      if (!card) return;
+      const ply = analysisController()?.node?.ply ?? 0;
+      if (ply === renderedCoachPly) return;
+      renderedCoachPly = ply;
+
+      const move = coachMoves.get(ply);
+      const title = card.querySelector<HTMLElement>("[data-ark-coach-title]");
+      const comment = card.querySelector<HTMLElement>("[data-ark-coach-comment]");
+      const badge = card.querySelector<HTMLElement>("[data-ark-coach-badge]");
+      const correction = card.querySelector<HTMLElement>("[data-ark-coach-correction]");
+      const best = card.querySelector<HTMLElement>("[data-ark-coach-best]");
+      if (!title || !comment || !badge || !correction || !best) return;
+
+      if (!move) {
+        card.dataset.classification = "good";
+        title.textContent = ply === 0 ? "Game review" : "Position review";
+        comment.textContent =
+          ply === 0
+            ? "Step through the moves to see your coach's feedback."
+            : "No coach explanation is available for this position.";
+        badge.textContent = "♟";
+        correction.hidden = true;
+        best.textContent = "";
+      } else {
+        const presentation = COACH_CLASSIFICATION[move.classification];
+        const explanation = explainCoachComment(move.coachComment.trim());
+        const showCorrection =
+          move.classification !== "best" &&
+          !!move.bestSan &&
+          move.bestSan.trim().toLowerCase() !== move.playedSan.trim().toLowerCase();
+        card.dataset.classification = move.classification;
+        title.textContent = `${presentation.title}: ${describeChessMove(move.playedSan)}`;
+        comment.textContent = explanation || `${presentation.title}. Review the resulting position.`;
+        badge.textContent = presentation.badge;
+        correction.hidden = !showCorrection;
+        best.textContent = showCorrection ? describeChessMove(move.bestSan ?? "", true) : "";
+      }
+
+      card.classList.remove("is-updating");
+      void card.offsetWidth;
+      card.classList.add("is-updating");
+    };
+    const speakSelectedCoachComment = (repeat = false) => {
+      if (!coachVoiceEnabled) return;
+      const ply = analysisController()?.node?.ply;
+      if (ply == null || (!repeat && ply === lastSpokenCoachPly)) return;
+      lastSpokenCoachPly = ply;
+      const move = coachMoves.get(ply);
+      if (!move) return;
+      const presentation = COACH_CLASSIFICATION[move.classification];
+      const correction =
+        move.classification !== "best" && move.bestSan
+          ? ` The better move was ${describeChessMove(move.bestSan)}.`
+          : "";
+      const narration = `${presentation.title}: ${describeChessMove(move.playedSan)}. ${explainCoachComment(move.coachComment.trim())}${correction}`.trim();
+      if (narration) {
+        (window as ArkAnalysisWindow).site?.sound?.say(narration, true, true, false);
+      }
+    };
+    const scheduleCoachVoice = () => {
+      if (coachVoiceFrame !== null) return;
+      coachVoiceFrame = window.requestAnimationFrame(() => {
+        coachVoiceFrame = null;
+        renderCoachVoiceButton();
+        renderSelectedCoachComment();
+        speakSelectedCoachComment();
+      });
+    };
 
     const originalFetch = window.fetch.bind(window);
     const notePath = `/${match.id}/note`;
@@ -664,7 +783,23 @@ export function LichessAnalysis({ matchId }: { matchId: string | null }) {
       const embed = target.closest<HTMLAnchorElement>("a.embed-howto");
       const exportLink = target.closest<HTMLAnchorElement>("[data-ark-export]");
       const copyButton = target.closest<HTMLButtonElement>(".copy-me__button");
+      const voiceButton = target.closest<HTMLButtonElement>("[data-ark-coach-voice]");
       const internalLink = target.closest<HTMLAnchorElement>(".action-menu a[href]");
+      if (voiceButton) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        coachVoiceEnabled = !coachVoiceEnabled;
+        try {
+          window.localStorage.setItem(COACH_VOICE_STORAGE_KEY, String(coachVoiceEnabled));
+        } catch {
+          // Narration still works for this page when storage is unavailable.
+        }
+        lastSpokenCoachPly = null;
+        renderCoachVoiceButton();
+        if (coachVoiceEnabled) speakSelectedCoachComment(true);
+        else window.speechSynthesis?.cancel();
+        return;
+      }
       if (chatTab) {
         const key = chatTab.classList.contains("note") ? "note" : "discussion";
         if (selectChatTab(key)) {
@@ -763,6 +898,7 @@ export function LichessAnalysis({ matchId }: { matchId: string | null }) {
           loadLichessStyle(THEME_CSS),
           loadLichessStyle(SITE_CSS),
           loadLichessStyle(ANALYSE_CSS),
+          loadLichessStyle(COACH_CSS),
           loadLichessScript(CASH_MODULE),
         ]);
         if (cancelled) return;
@@ -809,6 +945,15 @@ export function LichessAnalysis({ matchId }: { matchId: string | null }) {
             },
           },
         });
+        renderCoachVoiceButton();
+        renderSelectedCoachComment();
+        coachVoiceObserver = new MutationObserver(scheduleCoachVoice);
+        coachVoiceObserver.observe(host, {
+          attributes: true,
+          childList: true,
+          characterData: true,
+          subtree: true,
+        });
         selectChatTab("discussion");
         if (!cancelled) host.dataset.analysisPhase = "ready";
       } catch (error) {
@@ -822,6 +967,9 @@ export function LichessAnalysis({ matchId }: { matchId: string | null }) {
     return () => {
       cancelled = true;
       analyseModule?.destroyModule?.();
+      coachVoiceObserver?.disconnect();
+      if (coachVoiceFrame !== null) window.cancelAnimationFrame(coachVoiceFrame);
+      window.speechSynthesis?.cancel();
       host.removeEventListener("submit", requestHandler, true);
       host.removeEventListener("keydown", keyHandler, true);
       host.removeEventListener("click", clickHandler, true);

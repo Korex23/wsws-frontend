@@ -110,7 +110,16 @@ export type ChessResult =
   | { kind: "checkmate"; winner: ChessColor }
   | { kind: "resignation"; winner: ChessColor }
   | { kind: "timeout"; winner: ChessColor }
-  | { kind: "draw"; reason: "stalemate" | "agreement" | "repetition" | "insufficient" };
+  | {
+      kind: "draw";
+      reason:
+        | "stalemate"
+        | "agreement"
+        | "repetition"
+        | "insufficient"
+        | "fifty_move_rule"
+        | "timeout_insufficient";
+    };
 
 export interface ChessTakebackState {
   white: boolean;
@@ -203,6 +212,10 @@ export interface ChessMatch {
   turn: ChessColor;
   // Set once the game ends.
   result: ChessResult | null;
+  // Preserve the service's authoritative terminal metadata so the UI can
+  // explain every ending instead of collapsing unknown draws to agreement.
+  resultReason?: string | null;
+  finishedAt?: string | null;
   // The colour with an outstanding draw offer, if any.
   drawOffered: ChessColor | null;
   // Pending takeback offer state, if the match type allows takebacks at all.

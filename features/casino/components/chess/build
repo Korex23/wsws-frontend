@@ -4,7 +4,12 @@ set -e
 
 cd "$(dirname "${BASH_SOURCE:-$0}")/.build"
 
-MIN_NODE="$(cat ../../.node-version)"
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+if [ -f "$ROOT_DIR/.node-version" ]; then
+  MIN_NODE="$(cat "$ROOT_DIR/.node-version")"
+else
+  MIN_NODE="v$(node -p "require('$ROOT_DIR/package.json').engines.node.match(/[0-9]+/)[0]").0.0"
+fi
 CUR_NODE=$(node -v 2>/dev/null || echo "v0.0.0")
 LOWEST="$(printf "%s\n%s" "$MIN_NODE" "$CUR_NODE" | sort -V | head -n 1)"
 if [ "$LOWEST" != "$MIN_NODE" ]; then

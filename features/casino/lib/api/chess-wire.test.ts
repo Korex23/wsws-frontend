@@ -109,6 +109,14 @@ describe("result", () => {
       kind: "draw",
       reason: "insufficient",
     });
+    expect(toResult("draw", "fifty_move_rule")).toEqual({
+      kind: "draw",
+      reason: "fifty_move_rule",
+    });
+    expect(toResult("draw", "timeout_vs_insufficient_material")).toEqual({
+      kind: "draw",
+      reason: "timeout_insufficient",
+    });
     expect(toResult("draw", "agreement")).toEqual({ kind: "draw", reason: "agreement" });
   });
 
@@ -146,6 +154,20 @@ describe("match", () => {
     expect(toChessMatch(wire({ status: "active" })).state).toBe("in_progress");
     expect(toChessMatch(wire({ status: "finished" })).state).toBe("settled");
     expect(toChessMatch(wire({ status: "aborted" })).state).toBe("cancelled");
+  });
+
+  it("preserves authoritative terminal metadata for the result card", () => {
+    const match = toChessMatch(
+      wire({
+        status: "finished",
+        result: "draw",
+        resultReason: "fifty_move_rule",
+        finishedAt: "2026-07-30T09:12:00.000Z",
+      })
+    );
+
+    expect(match.resultReason).toBe("fifty_move_rule");
+    expect(match.finishedAt).toBe("2026-07-30T09:12:00.000Z");
   });
 
   it("converts clocks from milliseconds to seconds", () => {
@@ -372,6 +394,46 @@ describe("live game frames", () => {
     });
 
     expect(next.clockUpdatedAt).toBe("2026-07-30T09:01:06.000Z");
+  });
+
+  it("clears legal moves when a compact frame advances the position", () => {
+    const active = toChessMatch(wire(), {
+      round: {
+        steps: [
+          {
+            ply: 0,
+            uci: null,
+            san: null,
+            fen: START_FEN,
+            check: false,
+            byPlayer: null,
+            clockMsRemaining: null,
+            createdAt: null,
+          },
+        ],
+        legalMoves: ["e2e4"],
+        check: true,
+        serverTime: "2026-07-30T09:01:00.000Z",
+      },
+    });
+    const acknowledged = {
+      ...active,
+      fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+      turn: "b" as const,
+      moves: ["e4"],
+    };
+
+    const next = applyPositionFrame(acknowledged, {
+      fen: acknowledged.fen,
+      turn: "black",
+      ply: 1,
+      lastMove: { uci: "e2e4", san: "e4" },
+      clocks: { whiteMs: 299_000, blackMs: 300_000 },
+      status: "active",
+    });
+
+    expect(next.round?.legalMoves).toEqual([]);
+    expect(next.round?.check).toBe(false);
   });
 
   it("never lets a late waiting snapshot overwrite an accepted challenge", () => {

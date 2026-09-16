@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { useChessMatch } from "@/features/casino/hooks/use-casino-chess";
 import { CasinoError, CasinoLoading } from "@/features/casino/components/casino-state";
@@ -22,10 +23,7 @@ import {
   type LichessApiMove,
 } from "@/features/casino/lib/chess/lichess-round-sync";
 import { lichessRoundReviewRoute } from "@/features/casino/lib/chess/lichess-round-route";
-import {
-  createLichessSound,
-  isLichessSound,
-} from "@/features/casino/lib/chess/lichess-sound";
+import { createLichessSound, isLichessSound } from "@/features/casino/lib/chess/lichess-sound";
 import {
   lichessCssPath,
   lichessEsmPath,
@@ -35,7 +33,13 @@ import {
 } from "@/features/casino/lib/chess/lichess-assets";
 import { LichessSpectatorChat } from "@/features/casino/components/chess-app/lichess-spectator-chat";
 import { LichessSpectatorBetting } from "@/features/casino/components/chess-app/lichess-spectator-betting";
+import { ChessGameOverModal } from "@/features/casino/components/chess-app/chess-game-over-modal";
 import { countryFlag } from "@/features/casino/lib/chess/social";
+import {
+  CHESS_PLAY_ONLINE_ROUTE,
+  chessGameOverEventKey,
+  chessGameOverPresentation,
+} from "@/features/casino/lib/chess/game-over";
 
 type LichessColor = "white" | "black";
 
@@ -76,7 +80,7 @@ export const inertPowertip: LichessPowertip = {
   dispose() {},
 };
 
-const ROUND_MODULE = "/compiled/round.DDOZHOU5.js?ark-spectator-betting=2";
+const ROUND_MODULE = "/compiled/round.KX7CDMD5.js?ark-spectator-betting=3";
 const CASH_MODULE = "/chess/lichess/javascripts/vendor/cash.min.js";
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -160,28 +164,47 @@ function playerData(
     offeringDraw: match.drawOffered === (side === "white" ? "w" : "b"),
     proposingTakeback: side === "white" ? match.takeback.white : match.takeback.black,
     version,
-    user: computer && !lobbyBot
-      ? undefined
-      : {
-          id,
-          username: name,
-          online: true,
-          perfs: {},
-        },
+    user:
+      computer && !lobbyBot
+        ? undefined
+        : {
+            id,
+            username: name,
+            online: true,
+            perfs: {},
+          },
   };
 }
 
 function possibleMoves(match: ChessMatch): Record<string, string> | undefined {
   if (!match.round?.legalMoves.length) return undefined;
+  const occupied = new Set<string>();
+  const ranks = match.fen.split(" ", 1)[0]?.split("/") ?? [];
+  for (const [rankIndex, rank] of ranks.entries()) {
+    let fileIndex = 0;
+    for (const value of rank) {
+      const empty = Number.parseInt(value, 10);
+      if (Number.isFinite(empty)) {
+        fileIndex += empty;
+      } else if (fileIndex < 8 && rankIndex < 8) {
+        occupied.add(`${String.fromCharCode(97 + fileIndex)}${8 - rankIndex}`);
+        fileIndex += 1;
+      }
+    }
+  }
   const grouped = new Map<string, Set<string>>();
   for (const uci of match.round.legalMoves) {
+    if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) continue;
     const origin = uci.slice(0, 2);
+    if (!occupied.has(origin)) continue;
     const destination = uci.slice(2, 4);
     const destinations = grouped.get(origin) ?? new Set<string>();
     destinations.add(destination);
     grouped.set(origin, destinations);
   }
-  return Object.fromEntries([...grouped].map(([origin, destinations]) => [origin, [...destinations].join("")]));
+  return Object.fromEntries(
+    [...grouped].map(([origin, destinations]) => [origin, [...destinations].join("")])
+  );
 }
 
 function roundSteps(match: ChessMatch) {
@@ -206,6 +229,21 @@ function roundSteps(match: ChessMatch) {
   ];
 }
 
+export function anchoredRoundClocks(
+  match: ChessMatch,
+  now: number = Date.now()
+): Record<ChessColor, number> {
+  if (match.state !== "in_progress" || match.clockMode !== "real_time") {
+    return match.clocks;
+  }
+  const updatedAt = Date.parse(match.clockUpdatedAt);
+  const elapsed = Number.isFinite(updatedAt) ? Math.max(0, (now - updatedAt) / 1_000) : 0;
+  return {
+    ...match.clocks,
+    [match.turn]: Math.max(0, match.clocks[match.turn] - elapsed),
+  };
+}
+
 export function roundData(
   match: ChessMatch,
   viewer: ChessColor | null,
@@ -225,6 +263,7 @@ export function roundData(
   const currentPly = currentStep.ply;
   const currentTurn: LichessColor = currentPly % 2 === 0 ? "white" : "black";
   const isAuthoritativePosition = currentStep.fen === match.fen;
+  const clocks = anchoredRoundClocks(match);
 
   return {
     game: {
@@ -245,6 +284,8 @@ export function roundData(
       winner: winner(match),
       rated: match.rating?.rated ?? false,
       rematch: match.rematch.nextMatchId ?? undefined,
+      threefold: match.result?.kind === "draw" && match.result.reason === "repetition",
+      fiftyMoves: match.result?.kind === "draw" && match.result.reason === "fifty_move_rule",
     },
     local: proxy,
     player: playerData(player, viewerColor, match, spectator, currentPly, ratings[viewerColor]),
@@ -273,8 +314,8 @@ export function roundData(
             initial: Number.isFinite(initial) ? initial : 600,
             increment: Number.isFinite(increment) ? increment : 0,
             moretime: 0,
-            white: match.clocks.w,
-            black: match.clocks.b,
+            white: clocks.w,
+            black: clocks.b,
           }
         : undefined,
     pref: {
@@ -291,7 +332,9 @@ export function roundData(
       highlight: true,
       is3d: false,
       keyboardMove: false,
-      voiceMove: true,
+      // Voice input is opt-in upstream. Forcing it on loads an unnecessary
+      // grammar module and lets malformed/stale move hints crash the board.
+      voiceMove: false,
       moveEvent: 2,
       ratings: true,
       replay: 2,
@@ -308,7 +351,8 @@ function ratingForRound(
   match: ChessMatch | undefined
 ): RoundSeatRating | undefined {
   if (!ratings || !match) return undefined;
-  const perf = ratings.items.find((item) => item.perfKey === speed(match)) ??
+  const perf =
+    ratings.items.find((item) => item.perfKey === speed(match)) ??
     ratings.items.find((item) => item.perfKey === "standard");
   return perf ? { rating: perf.rating, provisional: perf.provisional } : undefined;
 }
@@ -496,7 +540,8 @@ function createRoundPowertip(host: HTMLElement): LichessPowertip {
   };
 
   const onMouseOver = (event: MouseEvent) => {
-    const target = event.target instanceof Element ? event.target.closest<HTMLElement>(".ulpt") : null;
+    const target =
+      event.target instanceof Element ? event.target.closest<HTMLElement>(".ulpt") : null;
     if (target && target !== active) show(target);
   };
   const onMouseOut = (event: MouseEvent) => {
@@ -532,9 +577,7 @@ function createRoundPowertip(host: HTMLElement): LichessPowertip {
 }
 
 function words(key: string): string {
-  return key
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^./, (letter) => letter.toUpperCase());
+  return key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function format(key: string, values: unknown[]): string {
@@ -560,9 +603,7 @@ const LICHESS_BODY_ATTRIBUTES = [
   "data-socket-domains",
 ] as const;
 const LICHESS_PIECE_PROPERTIES = ["white", "black"].flatMap((side) =>
-  ["pawn", "knight", "bishop", "rook", "queen", "king"].map(
-    (role) => `---${side}-${role}`
-  )
+  ["pawn", "knight", "bishop", "rook", "queen", "king"].map((role) => `---${side}-${role}`)
 );
 
 type StylePropertySnapshot = {
@@ -787,8 +828,7 @@ export function installLichessRuntime(
     text: string | ((values: unknown[]) => string),
     array?: (values: unknown[]) => unknown[]
   ) => {
-    const fn = (...values: unknown[]) =>
-      typeof text === "function" ? text(values) : text;
+    const fn = (...values: unknown[]) => (typeof text === "function" ? text(values) : text);
     fn.asArray = (...values: unknown[]) => array?.(values) ?? [fn(...values)];
     return fn;
   };
@@ -811,8 +851,12 @@ export function installLichessRuntime(
     hidden: "hidden",
     jumpToNextPuzzleImmediately: "Jump to next puzzle immediately",
     keepGoing: "Keep going…",
-    nbPointsAboveYourPuzzleRating: translated((values) => `${values[0]} points above your puzzle rating`),
-    nbPointsBelowYourPuzzleRating: translated((values) => `${values[0]} points below your puzzle rating`),
+    nbPointsAboveYourPuzzleRating: translated(
+      (values) => `${values[0]} points above your puzzle rating`
+    ),
+    nbPointsBelowYourPuzzleRating: translated(
+      (values) => `${values[0]} points below your puzzle rating`
+    ),
     newStreak: "New streak",
     normal: "Normal",
     notTheMove: "Not the move!",
@@ -854,10 +898,10 @@ export function LichessRound({
   seatName: string | null;
   forceSpectator?: boolean;
 }) {
+  const tGameOver = useTranslations("casino.chess.gameOver");
   const router = useRouter();
   const loadedRound = useChessMatch(matchId, seatName);
-  const isSpectator =
-    forceSpectator || (!!loadedRound.match && loadedRound.you === null);
+  const isSpectator = forceSpectator || (!!loadedRound.match && loadedRound.you === null);
   const round = isSpectator ? { ...loadedRound, you: null } : loadedRound;
   const whitePlayer =
     round.match?.computer?.side === "white" ? null : (round.match?.white?.id ?? null);
@@ -887,16 +931,59 @@ export function LichessRound({
   const [shellError, setShellError] = useState<Error | null>(null);
   const [spectatorChatMount, setSpectatorChatMount] = useState<HTMLElement | null>(null);
   const [spectatorBettingMount, setSpectatorBettingMount] = useState<HTMLElement | null>(null);
+  const [gameOverModal, setGameOverModal] = useState<{
+    eventKey: string;
+    celebrate: boolean;
+    announce: boolean;
+  } | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<LichessController | null>(null);
   const proxyRef = useRef<Record<string, any> | null>(null);
   const appliedRevisionRef = useRef<string | null>(null);
+  const observedMatchIdRef = useRef<string | null>(null);
+  const handledResultRef = useRef<string | null>(null);
+  const sawLiveGameRef = useRef(false);
   const seatRatingsRef = useRef(seatRatings);
   seatRatingsRef.current = seatRatings;
   const roundRef = useRef(round);
   roundRef.current = round;
   const roundReady = !!round.match && hasCurrentRoundPosition(round.match);
   const controllerBootstrapReady = controllerRef.current !== null || roundReady;
+
+  useEffect(() => {
+    const match = round.match;
+    if (!match) return;
+    if (observedMatchIdRef.current !== match.id) {
+      observedMatchIdRef.current = match.id;
+      handledResultRef.current = null;
+      sawLiveGameRef.current = false;
+      setGameOverModal(null);
+    }
+    if (match.state === "in_progress") {
+      sawLiveGameRef.current = true;
+      return;
+    }
+    const terminal = match.state === "settled" || match.state === "cancelled";
+    if (!terminal || (match.state === "settled" && !match.result)) return;
+
+    const eventKey = chessGameOverEventKey(match);
+    if (handledResultRef.current === eventKey) return;
+    handledResultRef.current = eventKey;
+    const announce = sawLiveGameRef.current;
+    const presentation = chessGameOverPresentation(match, round.you);
+    let celebrate = announce && presentation.outcome === "win";
+    if (celebrate) {
+      try {
+        const storageKey = `ark-chess-celebrated:${eventKey}`;
+        if (window.sessionStorage.getItem(storageKey)) celebrate = false;
+        else window.sessionStorage.setItem(storageKey, "1");
+      } catch {
+        // Storage privacy settings should not suppress the result itself.
+      }
+    }
+    sawLiveGameRef.current = false;
+    setGameOverModal({ eventKey, celebrate, announce });
+  }, [round.match, round.you]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -938,9 +1025,7 @@ export function LichessRound({
     const spectatorChat = host.querySelector<HTMLElement>("[data-ark-spectator-chat]");
     if (spectatorChat) spectatorChat.hidden = !isSpectator;
     setSpectatorChatMount(
-      isSpectator
-        ? host.querySelector<HTMLElement>("[data-ark-spectator-chat-content]")
-        : null
+      isSpectator ? host.querySelector<HTMLElement>("[data-ark-spectator-chat-content]") : null
     );
     return () => host.replaceChildren();
   }, [isSpectator, matchId, shellHtml]);
@@ -973,9 +1058,7 @@ export function LichessRound({
 
     const routeAnalysisLink = (event: MouseEvent) => {
       const anchor =
-        event.target instanceof Element
-          ? event.target.closest<HTMLAnchorElement>("a[href]")
-          : null;
+        event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
       const href = anchor?.getAttribute("href");
       if (!href) return;
       const route = lichessRoundReviewRoute(href, matchId, controllerRef.current?.ply ?? 0);
@@ -1041,7 +1124,7 @@ export function LichessRound({
         router.push(`/casino/chess/review?match=${matchId}`);
       },
       newOpponent() {
-        router.push("/casino/chess?setup=ai#game-setup");
+        router.push(CHESS_PLAY_ONLINE_ROUTE);
       },
     };
     proxyRef.current = proxy;
@@ -1065,12 +1148,7 @@ export function LichessRound({
         if (cancelled) return;
         const element = hostRef.current?.querySelector<HTMLElement>(".round__app");
         if (!element?.isConnected) throw new Error("Round view was replaced during initialization");
-        const data = roundData(
-          activeRound.match,
-          activeRound.you,
-          proxy,
-          seatRatingsRef.current
-        );
+        const data = roundData(activeRound.match, activeRound.you, proxy, seatRatingsRef.current);
         proxy.data = data;
         if (host) {
           host.dataset.roundPhase = "initializing";
@@ -1094,9 +1172,7 @@ export function LichessRound({
         controllerRef.current = controller;
         appliedRevisionRef.current = roundRevision(data);
         if (isSpectator && host) {
-          let bettingShell = host.querySelector<HTMLElement>(
-            "[data-ark-spectator-betting]"
-          );
+          let bettingShell = host.querySelector<HTMLElement>("[data-ark-spectator-betting]");
           let bettingContent = bettingShell?.querySelector<HTMLElement>(
             "[data-ark-spectator-betting-content]"
           );
@@ -1110,9 +1186,7 @@ export function LichessRound({
             bettingShell.append(bettingContent);
             host.querySelector(".round")?.append(bettingShell);
           }
-          let bettingSlot = host.querySelector<HTMLElement>(
-            "[data-ark-spectator-betting-slot]"
-          );
+          let bettingSlot = host.querySelector<HTMLElement>("[data-ark-spectator-betting-slot]");
           if (!bettingSlot) {
             bettingSlot = document.createElement("div");
             bettingSlot.className = "round__app__betting";
@@ -1171,6 +1245,30 @@ export function LichessRound({
   }
 
   const loading = round.isLoading || !shellHtml || !round.match;
+  const terminal = round.match?.state === "settled" || round.match?.state === "cancelled";
+  const resultEventKey = round.match ? chessGameOverEventKey(round.match) : null;
+  const viewerPlayerId = round.match ? viewerId(round.match, round.you) : undefined;
+  const viewerWallet =
+    round.you === "w"
+      ? round.match?.white?.walletAddress
+      : round.you === "b"
+        ? round.match?.black?.walletAddress
+        : undefined;
+  const offeredBy = round.match?.rematch.offeredBy?.toLowerCase() ?? null;
+  const viewerRematchIds = [viewerPlayerId, viewerWallet]
+    .filter((value): value is string => !!value)
+    .map((value) => value.toLowerCase());
+  const yourRematchOffer = offeredBy !== null && viewerRematchIds.includes(offeredBy);
+  const rematchReadyId = round.match?.rematch.nextMatchId ?? null;
+  const rematchLabel = round.match?.computer
+    ? tGameOver("playAgain")
+    : rematchReadyId
+      ? tGameOver("openRematch")
+      : yourRematchOffer
+        ? tGameOver("rematchOffered")
+        : offeredBy
+          ? tGameOver("acceptRematch")
+          : tGameOver("rematch");
 
   return (
     <>
@@ -1185,17 +1283,64 @@ export function LichessRound({
       />
       {loading ? <CasinoLoading label="Loading game" /> : null}
       {isSpectator && spectatorChatMount && round.match
-        ? createPortal(
-            <LichessSpectatorChat match={round.match} />,
-            spectatorChatMount
-          )
+        ? createPortal(<LichessSpectatorChat match={round.match} />, spectatorChatMount)
         : null}
       {isSpectator && spectatorBettingMount && round.match
-        ? createPortal(
-            <LichessSpectatorBetting match={round.match} />,
-            spectatorBettingMount
-          )
+        ? createPortal(<LichessSpectatorBetting match={round.match} />, spectatorBettingMount)
         : null}
+      {round.match ? (
+        <ChessGameOverModal
+          match={round.match}
+          viewer={round.you}
+          open={gameOverModal?.eventKey === resultEventKey}
+          celebrate={gameOverModal?.celebrate ?? false}
+          announce={gameOverModal?.announce ?? false}
+          rematching={round.requestingRematch}
+          rematchLabel={rematchLabel}
+          rematchDisabled={yourRematchOffer}
+          anchorElement={hostRef.current?.querySelector(".cg-wrap")}
+          onClose={() => setGameOverModal(null)}
+          onOpen={
+            terminal && resultEventKey
+              ? () =>
+                  setGameOverModal({ eventKey: resultEventKey, celebrate: false, announce: false })
+              : undefined
+          }
+          onReview={() => {
+            setGameOverModal(null);
+            router.push(`/casino/chess/review?match=${encodeURIComponent(round.match!.id)}`);
+          }}
+          onNewGame={() => {
+            setGameOverModal(null);
+            router.push(CHESS_PLAY_ONLINE_ROUTE);
+          }}
+          onRematch={
+            round.you && round.match.state === "settled"
+              ? async () => {
+                  if (round.match!.computer) {
+                    setGameOverModal(null);
+                    router.push(CHESS_PLAY_ONLINE_ROUTE);
+                    return;
+                  }
+                  if (rematchReadyId) {
+                    setGameOverModal(null);
+                    router.push(
+                      `/casino/chess/play?match=${encodeURIComponent(rematchReadyId)}`
+                    );
+                    return;
+                  }
+                  const next = await round.rematch();
+                  if (next.rematch.nextMatchId) {
+                    setGameOverModal(null);
+                    router.push(
+                      `/casino/chess/play?match=${encodeURIComponent(next.rematch.nextMatchId)}`
+                    );
+                  }
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </>
   );
 }

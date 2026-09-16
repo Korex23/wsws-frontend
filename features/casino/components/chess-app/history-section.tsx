@@ -18,6 +18,8 @@ const DRAW_REASON_KEYS = {
   agreement: "reasonAgreement",
   repetition: "reasonRepetition",
   insufficient: "reasonInsufficient",
+  fifty_move_rule: "reasonFiftyMove",
+  timeout_insufficient: "reasonTimeoutInsufficient",
 } as const;
 
 // The result of a finished game from this player's side of the board, spelled

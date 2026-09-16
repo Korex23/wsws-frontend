@@ -1,11 +1,12 @@
 import fg from 'fast-glob';
 import fs from 'node:fs';
-import { dirname, join, basename } from 'node:path';
+import { dirname, join, basename, relative } from 'node:path';
 
 import { env, type Package, type Hash } from './env.ts';
 
 export async function parsePackages(): Promise<void> {
-  for (const dir of (await glob('ui/[^@.]*/package.json')).map(pkg => dirname(pkg))) {
+  const uiRoot = relative(env.rootDir, env.uiDir);
+  for (const dir of (await glob(`${uiRoot}/[^@.]*/package.json`)).map(pkg => dirname(pkg))) {
     const pkgInfo = await parsePackage(dir);
     env.packages.set(pkgInfo.name, pkgInfo);
   }
@@ -93,7 +94,9 @@ async function parsePackage(root: string): Promise<Package> {
   const build = pkgInfo.pkg.build;
 
   // 'hash' and 'sync' paths beginning with '/' are repo relative, otherwise they are package relative
-  const normalize = (file: string) => (file.startsWith('/') ? file.slice(1) : join('ui', pkgInfo.name, file));
+  const uiRoot = relative(env.rootDir, env.uiDir);
+  const normalize = (file: string) =>
+    file.startsWith('/') ? file.slice(1) : join(uiRoot, pkgInfo.name, file);
   const normalizeObject = <T extends Record<string, any>>(o: T) =>
     Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'string' ? normalize(v) : v]));
 

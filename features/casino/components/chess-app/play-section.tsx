@@ -273,6 +273,8 @@ const DRAW_REASON_KEYS = {
   agreement: "reasonAgreement",
   repetition: "reasonRepetition",
   insufficient: "reasonInsufficient",
+  fifty_move_rule: "reasonFiftyMove",
+  timeout_insufficient: "reasonTimeoutInsufficient",
 } as const;
 
 function resultLine(t: Translator, match: ChessMatch, you: ChessColor | null): string {

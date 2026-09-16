@@ -108,6 +108,84 @@ const glyphs = {
   blunder: { id: 4, name: "Blunder", symbol: "??" },
 } as const;
 
+const SAN_TOKEN = String.raw`(?:O-O-O|O-O|[KQRBN]?[a-h1-8]{0,2}x?[a-h][1-8](?:=[QRBN])?[+#]?)`;
+const SAN_PATTERN = new RegExp(`^${SAN_TOKEN}$`);
+const SAN_IN_TEXT_PATTERN = new RegExp(`\\b(${SAN_TOKEN})`, "g");
+const CONSIDER_SAN_PATTERN = new RegExp(`\\bConsider\\s+(${SAN_TOKEN})`, "g");
+
+const PIECE_NAMES: Record<string, string> = {
+  K: "king",
+  Q: "queen",
+  R: "rook",
+  B: "bishop",
+  N: "knight",
+};
+
+type DescribedSan = {
+  piece: string;
+  destination: string;
+  capture: boolean;
+  promotion: string | null;
+  suffix: string;
+};
+
+function parseSan(san: string): DescribedSan | null {
+  const normalized = san.trim().replaceAll("0", "O");
+  if (!SAN_PATTERN.test(normalized) || normalized.startsWith("O-O")) return null;
+  const match = /^([KQRBN])?([a-h1-8]{0,2})(x)?([a-h][1-8])(?:=([QRBN]))?([+#])?$/.exec(normalized);
+  if (!match) return null;
+  return {
+    piece: PIECE_NAMES[match[1] ?? ""] ?? "pawn",
+    destination: match[4],
+    capture: !!match[3],
+    promotion: match[5] ? PIECE_NAMES[match[5]] : null,
+    suffix: match[6] === "#" ? ", checkmate" : match[6] === "+" ? ", check" : "",
+  };
+}
+
+export function describeChessMove(san: string, capitalize = false): string {
+  const normalized = san.trim().replaceAll("0", "O");
+  let description: string;
+  if (/^O-O-O[+#]?$/.test(normalized)) description = "castle queenside";
+  else if (/^O-O[+#]?$/.test(normalized)) description = "castle kingside";
+  else {
+    const move = parseSan(normalized);
+    if (!move) return san;
+    description = move.capture
+      ? `${move.piece} captures on ${move.destination}`
+      : `${move.piece} to ${move.destination}`;
+    if (move.promotion) description += ` and promotes to ${move.promotion}`;
+    description += move.suffix;
+  }
+  return capitalize ? description[0].toUpperCase() + description.slice(1) : description;
+}
+
+function describeChessAction(san: string): string {
+  const normalized = san.trim().replaceAll("0", "O");
+  if (/^O-O-O[+#]?$/.test(normalized)) return "castling queenside";
+  if (/^O-O[+#]?$/.test(normalized)) return "castling kingside";
+  const move = parseSan(normalized);
+  if (!move) return san;
+  const action = move.capture
+    ? `capturing on ${move.destination} with the ${move.piece}`
+    : `moving the ${move.piece} to ${move.destination}`;
+  return `${action}${move.promotion ? ` and promoting to a ${move.promotion}` : ""}${move.suffix}`;
+}
+
+export function explainCoachComment(comment: string): string {
+  const actions: string[] = [];
+  const withActions = comment.replace(CONSIDER_SAN_PATTERN, (_match, san: string) => {
+    const index = actions.push(`Consider ${describeChessAction(san)}`) - 1;
+    return `__ARK_CHESS_ACTION_${index}__`;
+  });
+  return withActions
+    .replace(SAN_IN_TEXT_PATTERN, (san: string) => describeChessMove(san))
+    .replace(
+      /__ARK_CHESS_ACTION_(\d+)__/g,
+      (_match, index: string) => actions[Number(index)] ?? ""
+    );
+}
+
 function color(value: "w" | "b"): LichessColor {
   return value === "w" ? "white" : "black";
 }
@@ -224,8 +302,8 @@ function annotateNode(node: LichessTreePart, move: ReplayAnalysisMove): void {
       id: `analysis-${move.ply}`,
       by: "lichess",
       text:
-        move.coachComment ||
-        `${glyph.name}.${move.bestSan ? ` ${move.bestSan} was best.` : " Review this move."}`,
+        explainCoachComment(move.coachComment) ||
+        `${glyph.name}.${move.bestSan ? ` ${describeChessMove(move.bestSan, true)} was best.` : " Review this move."}`,
     },
   ];
 }

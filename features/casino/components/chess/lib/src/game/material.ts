@@ -3,11 +3,45 @@ import { charToRole, ROLES, type Board } from 'chessops';
 
 import type { CheckCount, CheckState, MaterialDiff } from './interfaces';
 
-export function getMaterialDiff(chess: FEN | Board): MaterialDiff {
-  const diff: MaterialDiff = {
+const STARTING_MATERIAL: Record<Role, number> = {
+  king: 1,
+  queen: 1,
+  rook: 2,
+  bishop: 2,
+  knight: 2,
+  pawn: 8,
+};
+
+function emptyMaterial(): MaterialDiff {
+  return {
     white: { king: 0, queen: 0, rook: 0, bishop: 0, knight: 0, pawn: 0 },
     black: { king: 0, queen: 0, rook: 0, bishop: 0, knight: 0, pawn: 0 },
   };
+}
+
+function materialCounts(chess: FEN | Board): MaterialDiff {
+  const counts = emptyMaterial();
+  if (isFen(chess)) {
+    const fenLike = chess.split(' ')[0];
+    for (const ch of fenLike) {
+      const role = charToRole(ch);
+      if (!role) {
+        if (ch === '[' || ch === ' ') break;
+        continue;
+      }
+      counts[ch === ch.toLowerCase() ? 'black' : 'white'][role]++;
+    }
+  } else {
+    for (const role of ROLES) {
+      counts.white[role] = chess.pieces('white', role).size();
+      counts.black[role] = chess.pieces('black', role).size();
+    }
+  }
+  return counts;
+}
+
+export function getMaterialDiff(chess: FEN | Board): MaterialDiff {
+  const diff = emptyMaterial();
   if (isFen(chess)) {
     const fenLike = chess.split(' ')[0];
     for (let i = 0, part = 0; i < fenLike.length && part < 8; i++) {
@@ -30,6 +64,19 @@ export function getMaterialDiff(chess: FEN | Board): MaterialDiff {
     }
   }
   return diff;
+}
+
+// Each side owns the pieces it captured. This differs from getMaterialDiff,
+// which deliberately cancels equal trades and is only suitable for the score.
+export function getCapturedMaterial(chess: FEN | Board): MaterialDiff {
+  const captured = emptyMaterial();
+  if (isFen(chess) && chess.length === 0) return captured;
+  const counts = materialCounts(chess);
+  for (const role of ROLES) {
+    captured.white[role] = Math.max(0, STARTING_MATERIAL[role] - counts.black[role]);
+    captured.black[role] = Math.max(0, STARTING_MATERIAL[role] - counts.white[role]);
+  }
+  return captured;
 }
 
 export function getScore(diff: MaterialDiff): number {

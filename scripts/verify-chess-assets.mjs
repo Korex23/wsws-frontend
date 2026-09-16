@@ -2,7 +2,11 @@ import { readFileSync, statSync } from "node:fs";
 import { validateAssetSummary } from "./lib/chess-r2-assets.mjs";
 
 const requiredLocalAssets = [
-  "public/compiled/round.DDOZHOU5.js",
+  "public/compiled/round.KX7CDMD5.js",
+  "public/compiled/lib.K4SQT4HR.js",
+  "public/compiled/lib.KEXPHETH.js",
+  "public/compiled/lib.L56HYLR4.js",
+  "public/compiled/lib.LSL3H4TG.js",
   "public/compiled/voice.move.FKEXI2WL.js",
   "public/compiled/voice.vosk.NRDKBVQB.js",
   "public/css/voice.21b8d714.css",
