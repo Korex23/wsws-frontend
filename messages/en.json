@@ -3182,6 +3182,7 @@
   },
   "migrate": {
     "updateBalance": "Move to Market 2.0",
+    "updateBalanceLinked": "Move remaining funds",
     "updating": "Moving your account…",
     "updateDone": "Moved. Your wallet, balances and history are on Market 2.0.",
     "updateNothing": "You're all set — your account is on Market 2.0.",
@@ -3206,6 +3207,8 @@
     "skippedHeading": "Can't move from here",
     "irreversibleWarning": "Closes at the current price. This can't be undone.",
     "nothingToMove": "Nothing left to move.",
+    "gateFinish": "Continue to Market 2.0",
+    "gateNotDone": "Some of your money is still on the old wallet. Try again to move it before continuing.",
     "moveButton": "Move {amount}",
     "close": "Close",
     "cancel": "Cancel",

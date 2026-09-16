@@ -32,6 +32,13 @@ export function useLegacySigner(): LegacySigner | null {
     const evm = getWalletAddress(user, "ethereum");
     const solana = getWalletAddress(user, "solana");
     if (!evm && !solana) return null;
+    // The ADDRESS is on the user record the moment sign-in lands; the wallet
+    // OBJECT arrives later, once Privy's embedded-wallet iframe has initialised.
+    // A signer handed out in between fails every send — "No EVM wallet is
+    // connected", "iframe not initialized" — which is exactly what the
+    // automatic sweep did when it fired on the first render after login. So no
+    // signer until the wallet it would spend from is actually here.
+    if (evm && !wallets.some((w) => w.walletClientType === "privy")) return null;
     return {
       addresses: { evm, solana },
       sendBatch,

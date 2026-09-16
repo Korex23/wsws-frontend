@@ -219,7 +219,7 @@ function UpdateBalanceInner({ adapters }: { adapters: readonly VenueAdapter[] })
         className="ws-pressable flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-full border-2 border-white bg-white/6 py-[12px] font-sans text-[15px] font-semibold tracking-[-0.15px] whitespace-nowrap text-white transition-opacity active:bg-white/12 disabled:cursor-wait disabled:opacity-40 md:gap-[8px] md:border-[1.53px] md:px-[24px] md:py-[19.88px] md:font-serif md:text-[21px] md:leading-[1.1] md:tracking-[-0.21px]"
       >
         <RefreshIcon size={15} className="shrink-0 md:size-[26.49px]" />
-        {busy ? t("updating") : t("updateBalance")}
+        {busy ? t("updating") : migrationLinked ? t("updateBalanceLinked") : t("updateBalance")}
       </button>
       {reviewOpen ? (
         <MoveOldMoneyFrame onClose={() => setReviewOpen(false)}>

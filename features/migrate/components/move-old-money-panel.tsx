@@ -35,12 +35,29 @@ import {
 import { useMigrationRun } from "@/features/migrate/hooks/use-migration-run";
 import { useMigrationStatus } from "@/features/migrate/hooks/use-migration-status";
 
-export type MigrationEntry = "balance_card" | "account_modal";
+export type MigrationEntry = "balance_card" | "account_modal" | "gate";
+
+/** What a host needs to decide whether the user may leave. */
+export interface MigrationProgress {
+  /** The pairing exists — this run linked it, or the service already had it. */
+  linked: boolean;
+  /** Discovery has answered at least once; before that `remaining` is unknown. */
+  discovered: boolean;
+  /** Holdings still on the old side after the automatic run. */
+  remaining: number;
+}
 
 export interface MoveOldMoneyPanelProps {
   adapters: readonly VenueAdapter[];
   entry: MigrationEntry;
   onClose: () => void;
+  /**
+   * Gate mode: hides every "leave without finishing" affordance. The host
+   * owns the exit and says through `canFinish` when it is allowed.
+   */
+  locked?: boolean;
+  canFinish?: boolean;
+  onProgress?: (progress: MigrationProgress) => void;
 }
 
 const PRIMARY =
@@ -55,7 +72,14 @@ const NO_OPT_IN: ReadonlySet<string> = new Set();
 // holds everywhere, run the settlement, read the summary. Must render inside
 // LegacyPrivyProvider; the sheet and the balance-card button each provide
 // their own.
-export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPanelProps) {
+export function MoveOldMoneyPanel({
+  adapters,
+  entry,
+  onClose,
+  locked = false,
+  canFinish = true,
+  onProgress,
+}: MoveOldMoneyPanelProps) {
   const t = useTranslations("migrate");
   const locale = useLocale();
   const privy = usePrivy();
@@ -142,6 +166,17 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
     () => (autoResult ? holdings.filter((h) => !autoResult.results.get(h.id)?.ok) : holdings),
     [holdings, autoResult]
   );
+  // Tell the host where things stand. `linkLanded` is a ref, but a landed link
+  // refetches the status, which is a dep here, so the report catches up.
+  const serverLinked = status.data?.linked === true;
+  const discovered = holdingsQuery.dataUpdatedAt > 0;
+  useEffect(() => {
+    onProgress?.({
+      linked: serverLinked || linkLanded.current,
+      discovered,
+      remaining: remaining.length,
+    });
+  }, [onProgress, serverLinked, discovered, remaining.length]);
   const checked = optIn ?? defaultOptIn(remaining);
   const groups = useMemo(() => reviewGroups(remaining, checked, now), [remaining, checked, now]);
 
@@ -172,7 +207,7 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
         `[migrate] moved: ${outcome.outcome}, $${outcome.movedUsd.toFixed(2)} across ${outcome.movedCount} item(s)`
       );
       track("migration_completed", { outcome: outcome.outcome, moved_usd: outcome.movedUsd });
-      if (outcome.outcome === "complete" && (linkLanded.current || status.data?.linked === true)) {
+      if (outcome.outcome === "complete" && (linkLanded.current || serverLinked)) {
         markMigrationComplete();
       }
       // Anything that landed is the user's money in their new wallet, so it
@@ -181,7 +216,7 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
       void newPortfolio.refetchUntilChanged("all");
       return outcome;
     },
-    [remaining, now, runner, newPortfolio]
+    [remaining, now, runner, newPortfolio, serverLinked]
   );
 
   // A plain transfer carries no decision, so it no longer waits for one: the
@@ -321,9 +356,19 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
               {t("retry")}
             </button>
           ) : null}
-          <button onClick={onClose} className={SECONDARY}>
-            {t("done")}
-          </button>
+          {locked ? (
+            canFinish ? (
+              <button onClick={onClose} className={PRIMARY}>
+                {t("gateFinish")}
+              </button>
+            ) : (
+              <p className="text-[13.5px] text-white/60">{t("gateNotDone")}</p>
+            )
+          ) : (
+            <button onClick={onClose} className={SECONDARY}>
+              {t("done")}
+            </button>
+          )}
         </div>
       </Step>
     );
@@ -392,9 +437,11 @@ export function MoveOldMoneyPanel({ adapters, entry, onClose }: MoveOldMoneyPane
         <button onClick={start} disabled={nothing} className={PRIMARY}>
           {t("moveButton", { amount: formatUsd(groups.movingUsd) })}
         </button>
-        <button onClick={onClose} className={SECONDARY}>
-          {t("close")}
-        </button>
+        {locked ? null : (
+          <button onClick={onClose} className={SECONDARY}>
+            {t("close")}
+          </button>
+        )}
       </div>
       {confirming ? (
         <ConfirmDialog

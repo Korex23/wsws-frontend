@@ -3182,6 +3182,7 @@
   },
   "migrate": {
     "updateBalance": "Passer à Market 2.0",
+    "updateBalanceLinked": "Transférer le solde restant",
     "updating": "Transfert de votre compte…",
     "updateDone": "Terminé. Votre portefeuille, vos soldes et votre historique sont sur Market 2.0.",
     "updateNothing": "Tout est prêt — votre compte est sur Market 2.0.",
@@ -3206,6 +3207,8 @@
     "skippedHeading": "Impossible d'ici",
     "irreversibleWarning": "Clôture au prix actuel. Irréversible.",
     "nothingToMove": "Plus rien à déplacer.",
+    "gateFinish": "Continuer vers Market 2.0",
+    "gateNotDone": "Une partie de votre argent est encore sur l’ancien portefeuille. Réessayez avant de continuer.",
     "moveButton": "Déplacer {amount}",
     "close": "Fermer",
     "cancel": "Annuler",

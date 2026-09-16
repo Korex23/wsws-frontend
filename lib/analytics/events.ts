@@ -47,7 +47,7 @@ export type PageName =
  */
 export interface AnalyticsEvents {
   // Migration of money out of the old Privy wallets. Never carries addresses.
-  migration_started: { entry: "balance_card" | "account_modal" };
+  migration_started: { entry: "balance_card" | "account_modal" | "gate" };
   migration_linked: void;
   migration_reviewed: {
     holdings: number;

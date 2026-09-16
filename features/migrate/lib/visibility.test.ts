@@ -68,12 +68,13 @@ describe("offerMigration", () => {
   });
 
   it("keeps the device flag when the service could not say", () => {
-    // EMPTY_MIGRATION_STATUS carries linked: null — "no answer", not "no".
+    // EMPTY_MIGRATION_STATUS carries linked: null — "no answer", not "no" —
+    // and nothing known on the old side, so the device's memory stands.
     expect(
       offerMigration({
         complete: true,
         localHistory: true,
-        status: status({ hasLegacyFunds: true }),
+        status: status({ hasLegacyFunds: false }),
       })
     ).toBe(false);
   });
@@ -82,15 +83,37 @@ describe("offerMigration", () => {
     expect(offerMigration({ complete: true, localHistory: true, status: undefined })).toBe(false);
   });
 
-  it("never offers once the service says linked, whatever the device says", () => {
+  it("never offers once linked with nothing left on the old side, whatever the device says", () => {
     expect(
       offerMigration({
         complete: false,
         localHistory: true,
-        status: status({ linked: true, hasLegacyFunds: true }),
+        status: status({ linked: true, hasLegacyFunds: false }),
         legacyAccount: true,
       })
     ).toBe(false);
+  });
+
+  // Linking moves the identity, not the tokens. Seen live: a linked account
+  // with $1 still on the old wallet, sweep failed, and the button gone.
+  it("keeps offering a linked account while the old wallet still holds funds", () => {
+    expect(
+      offerMigration({
+        complete: true,
+        localHistory: false,
+        status: status({ linked: true, hasLegacyFunds: true }),
+      })
+    ).toBe(true);
+  });
+
+  it("keeps offering while a deposit is still landing on the old wallet", () => {
+    expect(
+      offerMigration({
+        complete: true,
+        localHistory: false,
+        status: status({ linked: true, pendingOnramps: ["onramp-1"] }),
+      })
+    ).toBe(true);
   });
 
   it("offers on local history alone", () => {

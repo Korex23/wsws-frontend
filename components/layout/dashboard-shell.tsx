@@ -31,6 +31,11 @@ const WithdrawModal = dynamic(
   () => import("@/features/funds/components/withdraw-modal").then((m) => m.WithdrawModal),
   { ssr: false }
 );
+// The migration gate: nothing for everyone who is not offered the migration;
+// for those who are, it holds the whole app until they finish.
+const MigrationGateHost = dynamic(() => import("@/components/layout/migration-gate-host"), {
+  ssr: false,
+});
 
 interface DashboardShellProps {
   nav: NavItem[];
@@ -99,6 +104,7 @@ export function DashboardShell({ nav, activeSection, children }: DashboardShellP
 
         {children}
       </main>
+      <MigrationGateHost />
 
       {/* One sentence for the whole app when the server is unreachable — see
           the note in the component for why it is not one per panel. */}

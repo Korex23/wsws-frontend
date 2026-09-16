@@ -3182,6 +3182,7 @@
   },
   "migrate": {
     "updateBalance": "Mudar para o Market 2.0",
+    "updateBalanceLinked": "Mover fundos restantes",
     "updating": "A mover a sua conta…",
     "updateDone": "Pronto. A sua carteira, saldos e histórico estão no Market 2.0.",
     "updateNothing": "Tudo pronto — a sua conta está no Market 2.0.",
@@ -3206,6 +3207,8 @@
     "skippedHeading": "Não dá para mover daqui",
     "irreversibleWarning": "Fecha ao preço atual. Não pode ser desfeito.",
     "nothingToMove": "Não sobrou nada para mover.",
+    "gateFinish": "Continuar para o Market 2.0",
+    "gateNotDone": "Parte do seu dinheiro ainda está na carteira antiga. Tente novamente antes de continuar.",
     "moveButton": "Mover {amount}",
     "close": "Fechar",
     "cancel": "Cancelar",

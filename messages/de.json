@@ -3182,6 +3182,7 @@
   },
   "migrate": {
     "updateBalance": "Zu Market 2.0 wechseln",
+    "updateBalanceLinked": "Restguthaben übertragen",
     "updating": "Dein Konto wird übertragen…",
     "updateDone": "Fertig. Wallet, Guthaben und Verlauf sind auf Market 2.0.",
     "updateNothing": "Alles erledigt — dein Konto ist auf Market 2.0.",
@@ -3206,6 +3207,8 @@
     "skippedHeading": "Von hier nicht möglich",
     "irreversibleWarning": "Wird zum aktuellen Preis geschlossen. Nicht rückgängig zu machen.",
     "nothingToMove": "Nichts mehr zu bewegen.",
+    "gateFinish": "Weiter zu Market 2.0",
+    "gateNotDone": "Ein Teil deines Geldes liegt noch im alten Wallet. Versuche es erneut, bevor du fortfährst.",
     "moveButton": "{amount} bewegen",
     "close": "Schließen",
     "cancel": "Abbrechen",

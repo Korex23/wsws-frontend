@@ -3182,6 +3182,7 @@
   },
   "migrate": {
     "updateBalance": "Pasar a Market 2.0",
+    "updateBalanceLinked": "Mover fondos restantes",
     "updating": "Moviendo tu cuenta…",
     "updateDone": "Listo. Tu billetera, saldos e historial están en Market 2.0.",
     "updateNothing": "Todo listo: tu cuenta está en Market 2.0.",
@@ -3206,6 +3207,8 @@
     "skippedHeading": "No se puede mover desde aquí",
     "irreversibleWarning": "Se cierra al precio actual. No se puede deshacer.",
     "nothingToMove": "No queda nada por mover.",
+    "gateFinish": "Continuar a Market 2.0",
+    "gateNotDone": "Parte de tu dinero sigue en la billetera antigua. Inténtalo de nuevo antes de continuar.",
     "moveButton": "Mover {amount}",
     "close": "Cerrar",
     "cancel": "Cancelar",

@@ -113,9 +113,16 @@ export function offerMigration(input: {
    */
   legacyAccount?: boolean;
 }): boolean {
-  // Already linked: the mapping exists, the ledgers re-key themselves, and
-  // there is nothing left to ask the user for. `linked` is the whole test,
-  // because linking is what the offer is FOR.
+  // Money still on the old wallet, or a deposit still landing there, keeps
+  // the offer open no matter what else is true — linked or not, flagged done
+  // on this device or not. Linking moves the identity; it does not move the
+  // tokens, and a linked account with $1 still sitting on the old address is
+  // exactly who this button is for. (The service also reports this while a
+  // ledger re-key is unfinished; re-pressing re-drives it, which is the
+  // documented retry.)
+  if (input.status?.hasLegacyFunds || input.status?.pendingOnramps.length) return true;
+  // Already linked and nothing left on the old side: the mapping exists, the
+  // ledgers re-key themselves, and there is nothing left to ask the user for.
   if (input.status?.linked === true) return false;
   // Marked done on this device. That flag only fills the gap the service
   // leaves (not loaded, or could not say): when the service has answered
@@ -133,7 +140,6 @@ export function offerMigration(input: {
   // kash points and tier — none of which a balance can see. A user with $0 and
   // four years of history has the most to lose by never linking, and used to
   // be the one this stayed silent for.
-  if (input.status?.hasLegacyFunds || input.status?.pendingOnramps.length) return true;
   if (input.localHistory) return true;
   if (input.legacyAccount) return true;
   return false;
